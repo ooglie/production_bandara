@@ -1,0 +1,1764 @@
+<?php
+
+namespace App\Services;
+
+use App\Models\BandaraCreditTransaction;
+use App\Models\BandaraCreditWallet;
+use App\Models\User;
+use Carbon\CarbonInterface;
+use Illuminate\Database\Eloquent\Builder;
+use Illuminate\Database\Eloquent\Model;
+use Illuminate\Support\Carbon;
+use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Schema;
+use Illuminate\Support\Str;
+
+class BandaraCreditService
+{
+    public function getOrCreateWallet(User|int $user): BandaraCreditWallet
+    {
+        $userId = $this->resolveUserId($user);
+
+        return BandaraCreditWallet::firstOrCreate(
+            ['user_id' => $userId],
+            [
+                'balance' => 0,
+                'tier' => 'silver',
+            ]
+        );
+    }
+
+    public function currentBalance(User|int $user): int
+    {
+        if (! $this->isEligibleUserForBandaraCredit($user)) {
+            return 0;
+        }
+
+        return (int) $this->getOrCreateWallet($user)->balance;
+    }
+
+
+    public function redemptionEnabledForUser(User|int|null $user): bool
+    {
+        return (bool) ($this->redemptionStatusForUser($user)['enabled'] ?? false);
+    }
+
+    public function redemptionStatusForUser(User|int|null $user): array
+    {
+        $programEnabled = (bool) config('bandara_credit.enabled', false);
+        $shadowMode = (bool) config('bandara_credit.shadow_mode', true);
+        $redeemEnabled = (bool) config('bandara_credit.redeem_enabled', false);
+        $eligibleUser = $this->isEligibleUserForBandaraCredit($user);
+
+        $reason = null;
+        $message = null;
+
+        if (! $programEnabled) {
+            $reason = 'program_disabled';
+            $message = 'Bandara Credit is currently disabled.';
+        } elseif ($shadowMode) {
+            $reason = 'shadow_mode';
+            $message = 'Bandara Credit redemption is in shadow mode and is not available at checkout yet.';
+        } elseif (! $redeemEnabled) {
+            $reason = 'redemption_disabled';
+            $message = 'Bandara Credit redemption is currently disabled. You can still earn credits on eligible orders.';
+        } elseif (! $eligibleUser) {
+            $reason = 'user_not_eligible';
+            $message = 'Bandara Credit redemption is available only for eligible B2C retail customers.';
+        }
+
+        return [
+            'enabled' => $reason === null,
+            'program_enabled' => $programEnabled,
+            'shadow_mode' => $shadowMode,
+            'redeem_enabled' => $redeemEnabled,
+            'eligible_user' => $eligibleUser,
+            'reason' => $reason,
+            'message' => $message,
+        ];
+    }
+
+    public function previewRedemptionForAmount(User|int $user, int|float $orderAmount, ?int $requestedPoints = null): array
+    {
+        $userId = $this->resolveUserId($user);
+        $orderAmount = round(max(0, (float) $orderAmount), 2);
+        $pointValue = max(0.01, (float) config('bandara_credit.redemption.point_value', 1));
+        $minimumPoints = max(0, (int) config('bandara_credit.redemption.minimum_points', 500));
+        $maxPercentage = max(0, min(100, (float) config('bandara_credit.redemption.max_order_percentage', 20)));
+        $minimumPayable = max(0, (float) config('bandara_credit.redemption.minimum_payable_amount', 1));
+
+        $status = $this->redemptionStatusForUser($userId);
+        $enabled = (bool) $status['enabled'];
+        $eligibleUser = (bool) $status['eligible_user'];
+        $availablePoints = $eligibleUser ? $this->availableRedeemablePoints($userId) : 0;
+
+        $orderCapAmount = $maxPercentage > 0
+            ? round($orderAmount * ($maxPercentage / 100), 2)
+            : 0.0;
+
+        $payableCapAmount = max(0, round($orderAmount - $minimumPayable, 2));
+        $maxAmount = min($orderCapAmount, $payableCapAmount);
+        $maxPointsByOrder = (int) floor($maxAmount / $pointValue);
+        $maxRedeemablePoints = max(0, min($availablePoints, $maxPointsByOrder));
+
+        $requestedPoints = $requestedPoints === null ? null : max(0, (int) $requestedPoints);
+        $appliedPoints = 0;
+        $messages = [];
+        $valid = true;
+
+        if (! $enabled) {
+            $valid = $requestedPoints === null || $requestedPoints === 0;
+            $messages[] = (string) ($status['message'] ?? 'Bandara Credit redemption is currently disabled.');
+        } elseif ($requestedPoints !== null && $requestedPoints > 0) {
+            if ($minimumPoints > 0 && $requestedPoints < $minimumPoints) {
+                $valid = false;
+                $messages[] = "Minimum redemption is {$minimumPoints} credits.";
+            }
+
+            if ($requestedPoints > $availablePoints) {
+                $valid = false;
+                $messages[] = 'Requested credits exceed your available Bandara Credit balance.';
+            }
+
+            if ($requestedPoints > $maxRedeemablePoints) {
+                $valid = false;
+                $messages[] = 'Requested credits exceed the maximum redeemable amount for this order.';
+            }
+
+            if ($valid) {
+                $appliedPoints = min($requestedPoints, $maxRedeemablePoints);
+            }
+        }
+
+        $appliedAmount = round($appliedPoints * $pointValue, 2);
+
+        return [
+            'enabled' => $enabled,
+            'program_enabled' => (bool) $status['program_enabled'],
+            'shadow_mode' => (bool) $status['shadow_mode'],
+            'redeem_enabled' => (bool) $status['redeem_enabled'],
+            'eligible_user' => $eligibleUser,
+            'reason' => $status['reason'],
+            'available_points' => $availablePoints,
+            'reserved_points' => $this->reservedRedemptionPointsForUser($userId),
+            'minimum_points' => $minimumPoints,
+            'point_value' => $pointValue,
+            'max_order_percentage' => $maxPercentage,
+            'minimum_payable_amount' => $minimumPayable,
+            'order_amount' => $orderAmount,
+            'max_redeemable_points' => $maxRedeemablePoints,
+            'max_redeemable_amount' => round($maxRedeemablePoints * $pointValue, 2),
+            'requested_points' => $requestedPoints,
+            'applied_points' => $appliedPoints,
+            'applied_amount' => $appliedAmount,
+            'remaining_payable' => round(max(0, $orderAmount - $appliedAmount), 2),
+            'valid' => $valid,
+            'messages' => array_values(array_filter($messages)),
+        ];
+    }
+
+    public function reserveRedemptionForOrder(Model $order, int $points, int|float|null $orderAmountBeforeCredit = null): array
+    {
+        $orderId = $order->exists ? (int) $order->getKey() : null;
+        $userId = $this->nullableInt($this->orderValue($order, 'user_id'));
+        $points = max(0, $points);
+
+        if ($orderId === null || $userId === null || $points <= 0) {
+            return $this->writeResult('skipped', 'nothing_to_reserve', $orderId, $userId);
+        }
+
+        if (! $this->redemptionEnabledForUser($userId)) {
+            return $this->writeResult('skipped', 'redemption_disabled_or_user_not_eligible', $orderId, $userId);
+        }
+
+        return DB::transaction(function () use ($order, $orderId, $userId, $points, $orderAmountBeforeCredit) {
+            $this->lockOrCreateWallet($userId);
+
+            $orderAmount = $orderAmountBeforeCredit !== null
+                ? (float) $orderAmountBeforeCredit
+                : (float) (($order->getAttribute('grand_total') ?? 0) + ($order->getAttribute('bandara_credit_redeemed_amount') ?? 0));
+
+            $quote = $this->previewRedemptionForAmount($userId, $orderAmount, $points);
+
+            if (! ($quote['valid'] ?? false) || (int) ($quote['applied_points'] ?? 0) !== $points) {
+                return $this->writeResult(
+                    action: 'skipped',
+                    reason: 'redemption_quote_invalid',
+                    orderId: $orderId,
+                    userId: $userId,
+                    extra: ['redemption' => $quote]
+                );
+            }
+
+            $key = $this->redemptionKey($orderId);
+            $tx = $this->lockTransactionByKey($key);
+            $amount = -1 * $points;
+
+            $payload = $this->transactionPayload(
+                userId: $userId,
+                orderId: $orderId,
+                type: 'redeem',
+                amount: $amount,
+                status: 'reserved',
+                key: $key,
+                note: 'Bandara Credit reserved for order #'.$this->orderLabel($order),
+                meta: [
+                    'source' => 'checkout',
+                    'points' => $points,
+                    'rupee_value' => (float) ($quote['applied_amount'] ?? 0),
+                    'point_value' => (float) ($quote['point_value'] ?? 1),
+                    'order_amount_before_credit' => round($orderAmount, 2),
+                ]
+            );
+
+            if ($tx) {
+                if ($tx->status === 'posted') {
+                    return $this->writeResult('skipped', 'redemption_already_posted', $orderId, $userId, wallet: $this->walletSnapshot($userId));
+                }
+
+                $tx->forceFill($payload)->save();
+            } else {
+                BandaraCreditTransaction::query()->create($payload);
+            }
+
+            $wallet = $this->syncWalletForUser($userId);
+
+            return $this->writeResult(
+                action: 'reserved',
+                reason: null,
+                orderId: $orderId,
+                userId: $userId,
+                wallet: $wallet,
+                extra: [
+                    'reserved_points' => $points,
+                    'reserved_amount' => (float) ($quote['applied_amount'] ?? 0),
+                    'redemption' => $quote,
+                ]
+            );
+        });
+    }
+
+    public function postReservedRedemptionForOrder(Model $order): array
+    {
+        $orderId = $order->exists ? (int) $order->getKey() : null;
+        $userId = $this->nullableInt($this->orderValue($order, 'user_id'));
+
+        if ($orderId === null || $userId === null) {
+            return $this->writeResult('skipped', 'missing_order_or_user', $orderId, $userId);
+        }
+
+        return DB::transaction(function () use ($order, $orderId, $userId) {
+            $tx = $this->lockTransactionByKey($this->redemptionKey($orderId));
+
+            if (! $tx || (int) $tx->amount >= 0) {
+                return $this->writeResult('skipped', 'no_reserved_redemption', $orderId, $userId, wallet: $this->walletSnapshot($userId));
+            }
+
+            if ($tx->status === 'posted') {
+                return $this->writeResult('skipped', 'redemption_already_posted', $orderId, $userId, wallet: $this->walletSnapshot($userId));
+            }
+
+            if ($tx->status !== 'reserved') {
+                return $this->writeResult('skipped', 'redemption_not_reserved', $orderId, $userId, wallet: $this->walletSnapshot($userId));
+            }
+
+            $meta = $tx->meta ?? [];
+            $meta['posted_at'] = now()->toDateTimeString();
+
+            $tx->forceFill([
+                'status' => 'posted',
+                'note' => 'Bandara Credit redeemed for paid order #'.$this->orderLabel($order),
+                'meta' => $meta,
+            ])->save();
+
+            $wallet = $this->syncWalletForUser($userId);
+
+            return $this->writeResult(
+                action: 'posted',
+                reason: null,
+                orderId: $orderId,
+                userId: $userId,
+                wallet: $wallet,
+                extra: [
+                    'redeemed_points' => abs((int) $tx->amount),
+                    'redemption_transaction_id' => $tx->id,
+                ]
+            );
+        });
+    }
+
+    public function releaseReservedRedemptionForOrder(Model $order, string $reason = 'released'): array
+    {
+        $orderId = $order->exists ? (int) $order->getKey() : null;
+        $userId = $this->nullableInt($this->orderValue($order, 'user_id'));
+
+        if ($orderId === null || $userId === null) {
+            return $this->writeResult('skipped', 'missing_order_or_user', $orderId, $userId);
+        }
+
+        return DB::transaction(function () use ($orderId, $userId, $reason) {
+            $tx = $this->lockTransactionByKey($this->redemptionKey($orderId));
+
+            if (! $tx || $tx->status !== 'reserved' || (int) $tx->amount >= 0) {
+                return $this->writeResult('skipped', 'no_reserved_redemption_to_release', $orderId, $userId, wallet: $this->walletSnapshot($userId));
+            }
+
+            $releasedPoints = abs((int) $tx->amount);
+            $meta = $tx->meta ?? [];
+            $meta['release_reason'] = $reason;
+            $meta['released_at'] = now()->toDateTimeString();
+
+            $tx->forceFill([
+                'status' => 'cancelled',
+                'note' => 'Bandara Credit reservation released.',
+                'meta' => $meta,
+            ])->save();
+
+            $wallet = $this->syncWalletForUser($userId);
+
+            return $this->writeResult(
+                action: 'released',
+                reason: $reason,
+                orderId: $orderId,
+                userId: $userId,
+                wallet: $wallet,
+                extra: ['released_points' => $releasedPoints]
+            );
+        });
+    }
+
+    public function reversePostedRedemptionForOrder(Model $order, string $reason = 'order_cancelled'): array
+    {
+        $orderId = $order->exists ? (int) $order->getKey() : null;
+        $userId = $this->nullableInt($this->orderValue($order, 'user_id'));
+
+        if ($orderId === null || $userId === null) {
+            return $this->writeResult('skipped', 'missing_order_or_user', $orderId, $userId);
+        }
+
+        return DB::transaction(function () use ($order, $orderId, $userId, $reason) {
+            $postedRedemptions = BandaraCreditTransaction::query()
+                ->where('user_id', $userId)
+                ->where('order_id', $orderId)
+                ->where('type', 'redeem')
+                ->where('status', 'posted')
+                ->where('amount', '<', 0)
+                ->lockForUpdate()
+                ->get();
+
+            $reversed = 0;
+            $rows = [];
+
+            foreach ($postedRedemptions as $postedTx) {
+                $points = abs((int) $postedTx->amount);
+                if ($points <= 0) {
+                    continue;
+                }
+
+                $key = $this->redemptionReversalKey($orderId, (int) $postedTx->id);
+                $reversal = $this->lockTransactionByKey($key);
+
+                if ($reversal && $reversal->status === 'posted') {
+                    continue;
+                }
+
+                $payload = $this->transactionPayload(
+                    userId: $userId,
+                    orderId: $orderId,
+                    type: 'redeem_reversal',
+                    amount: $points,
+                    status: 'posted',
+                    key: $key,
+                    note: 'Bandara Credit redemption reversed for order #'.$this->orderLabel($order),
+                    meta: [
+                        'source' => 'order_cancellation',
+                        'reason' => $reason,
+                        'reverses_transaction_id' => $postedTx->id,
+                    ]
+                );
+
+                if ($reversal) {
+                    $reversal->forceFill($payload)->save();
+                } else {
+                    BandaraCreditTransaction::query()->create($payload);
+                }
+
+                $reversed += $points;
+                $rows[] = ['transaction_id' => $postedTx->id, 'points' => $points];
+            }
+
+            $wallet = $reversed > 0 ? $this->syncWalletForUser($userId) : $this->walletSnapshot($userId);
+
+            return $this->writeResult(
+                action: $reversed > 0 ? 'reversed' : 'skipped',
+                reason: $reversed > 0 ? null : 'nothing_to_reverse',
+                orderId: $orderId,
+                userId: $userId,
+                wallet: $wallet,
+                extra: ['reversed_points' => $reversed, 'redemption_reversals' => $rows]
+            );
+        });
+    }
+
+    public function cancelRedemptionForOrder(Model $order, string $reason = 'order_cancelled'): array
+    {
+        $release = $this->releaseReservedRedemptionForOrder($order, $reason);
+        $reverse = $this->reversePostedRedemptionForOrder($order, $reason);
+
+        return [
+            'action' => (($release['action'] ?? null) !== 'skipped' || ($reverse['action'] ?? null) !== 'skipped') ? 'cancelled' : 'skipped',
+            'reason' => null,
+            'order_id' => $release['order_id'] ?? $reverse['order_id'] ?? null,
+            'user_id' => $release['user_id'] ?? $reverse['user_id'] ?? null,
+            'release' => $release,
+            'reverse' => $reverse,
+        ];
+    }
+
+    public function previewEarnForOrder(Model|array $order): array
+    {
+        $userId = $this->nullableInt($this->orderValue($order, 'user_id'));
+        $orderId = $this->extractOrderId($order);
+
+        $eligibleSpend = $this->normalizeMoney(
+            $this->orderValue($order, 'eligible_spend', 0)
+        );
+
+        $placedAt = $this->normalizeDate(
+            $this->orderValue($order, 'placed_at', now())
+        );
+
+        $perAmountSpent = max(
+            1,
+            (int) config('bandara_credit.earning.per_amount_spent', 100)
+        );
+
+        $creditAmount = max(
+            1,
+            (int) config('bandara_credit.earning.credit_amount', 1)
+        );
+
+        $repeatWindowDays = (int) config('bandara_credit.earning.repeat_window_days', 10);
+        $welcomeCredit = (int) config('bandara_credit.earning.welcome_credit', 100);
+        $welcomeMinOrderValue = (int) config('bandara_credit.earning.welcome_min_order_value', 999);
+
+        $rules = [
+            'per_amount_spent' => $perAmountSpent,
+            'credit_amount' => $creditAmount,
+            'repeat_window_days' => $repeatWindowDays,
+            'welcome_credit' => $welcomeCredit,
+            'welcome_min_order_value' => $welcomeMinOrderValue,
+        ];
+
+        $baseCredit = intdiv($eligibleSpend, $perAmountSpent) * $creditAmount;
+
+        if ($userId !== null && ! $this->isEligibleUserForBandaraCredit($userId)) {
+            return [
+                'eligible_user' => false,
+                'eligibility_reason' => 'user_not_eligible',
+                'eligible_spend' => $eligibleSpend,
+                'base_credit' => 0,
+                'repeat_bonus' => 0,
+                'welcome_bonus' => 0,
+                'total_credit_preview' => 0,
+                'qualifies_repeat_bonus' => false,
+                'qualifies_welcome_bonus' => false,
+                'rules' => $rules,
+            ];
+        }
+
+        $qualifiesRepeat = false;
+        if (
+            $userId !== null &&
+            (bool) config('bandara_credit.repeat_bonus_enabled', true)
+        ) {
+            $qualifiesRepeat = $this->qualifiesForRepeatBonus(
+                userId: $userId,
+                placedAt: $placedAt,
+                excludeOrderId: $orderId
+            );
+        }
+
+        $qualifiesWelcome = false;
+        if (
+            $userId !== null &&
+            (bool) config('bandara_credit.welcome_bonus_enabled', true)
+        ) {
+            $qualifiesWelcome = $this->qualifiesForWelcomeBonus(
+                userId: $userId,
+                eligibleSpend: $eligibleSpend,
+                minimumOrderValue: $welcomeMinOrderValue,
+                placedAt: $placedAt,
+                excludeOrderId: $orderId
+            );
+        }
+
+        $repeatBonus = $qualifiesRepeat ? $baseCredit : 0;
+        $welcomeBonus = $qualifiesWelcome ? $welcomeCredit : 0;
+
+        return [
+            'eligible_user' => $userId === null ? null : true,
+            'eligibility_reason' => null,
+            'eligible_spend' => $eligibleSpend,
+            'base_credit' => $baseCredit,
+            'repeat_bonus' => $repeatBonus,
+            'welcome_bonus' => $welcomeBonus,
+            'total_credit_preview' => $baseCredit + $repeatBonus + $welcomeBonus,
+            'qualifies_repeat_bonus' => $qualifiesRepeat,
+            'qualifies_welcome_bonus' => $qualifiesWelcome,
+            'rules' => $rules,
+        ];
+    }
+
+    public function previewTierForUser(User|int $user): array
+    {
+        $userId = $this->resolveUserId($user);
+
+        if (! $this->isEligibleUserForBandaraCredit($userId)) {
+            return [
+                'eligible_user' => false,
+                'tier' => 'ineligible',
+                'rolling_spend' => 0,
+                'birthday_credit' => 0,
+                'current_tier_min_threshold' => null,
+                'next_tier' => null,
+                'next_tier_threshold' => null,
+                'amount_to_next_tier' => 0,
+                'progress_percentage' => 0.0,
+            ];
+        }
+
+        $rollingSpend = (int) floor(
+            $this->successfulOrdersForUser($userId)
+                ->where($this->orderColumn('placed_at'), '>=', now()->subYear())
+                ->sum($this->orderColumn('eligible_spend'))
+        );
+
+        $preview = $this->previewTierForSpend($rollingSpend);
+        $preview['eligible_user'] = true;
+
+        return $preview;
+    }
+
+    public function previewTierForSpend(int|float $rollingSpend): array
+    {
+        $rollingSpend = max(0, (int) floor($rollingSpend));
+
+        $birthdayEnabled = (bool) config('bandara_credit.birthday_bonus_enabled', true);
+        $tiersEnabled = (bool) config('bandara_credit.tiers_enabled', true);
+
+        $silverThreshold = (int) config('bandara_credit.tiers.silver.threshold', 0);
+        $silverBirthday = $birthdayEnabled
+            ? (int) config('bandara_credit.tiers.silver.birthday_credit', 100)
+            : 0;
+
+        $goldThreshold = (int) config('bandara_credit.tiers.gold.threshold', 10000);
+        $goldBirthday = $birthdayEnabled
+            ? (int) config('bandara_credit.tiers.gold.birthday_credit', 150)
+            : 0;
+
+        $platinumThreshold = (int) config('bandara_credit.tiers.platinum.threshold', 25000);
+        $platinumBirthday = $birthdayEnabled
+            ? (int) config('bandara_credit.tiers.platinum.birthday_credit', 200)
+            : 0;
+
+        if (! $tiersEnabled) {
+            return [
+                'tier' => 'silver',
+                'rolling_spend' => $rollingSpend,
+                'birthday_credit' => $silverBirthday,
+                'current_tier_min_threshold' => $silverThreshold,
+                'next_tier' => null,
+                'next_tier_threshold' => null,
+                'amount_to_next_tier' => 0,
+                'progress_percentage' => 100.0,
+            ];
+        }
+
+        if ($rollingSpend >= $platinumThreshold) {
+            return [
+                'tier' => 'platinum',
+                'rolling_spend' => $rollingSpend,
+                'birthday_credit' => $platinumBirthday,
+                'current_tier_min_threshold' => $platinumThreshold,
+                'next_tier' => null,
+                'next_tier_threshold' => null,
+                'amount_to_next_tier' => 0,
+                'progress_percentage' => 100.0,
+            ];
+        }
+
+        if ($rollingSpend >= $goldThreshold) {
+            return [
+                'tier' => 'gold',
+                'rolling_spend' => $rollingSpend,
+                'birthday_credit' => $goldBirthday,
+                'current_tier_min_threshold' => $goldThreshold,
+                'next_tier' => 'platinum',
+                'next_tier_threshold' => $platinumThreshold,
+                'amount_to_next_tier' => max(0, $platinumThreshold - $rollingSpend),
+                'progress_percentage' => $this->progressPercentage(
+                    current: $rollingSpend,
+                    currentTierMin: $goldThreshold,
+                    nextTierThreshold: $platinumThreshold
+                ),
+            ];
+        }
+
+        return [
+            'tier' => 'silver',
+            'rolling_spend' => $rollingSpend,
+            'birthday_credit' => $silverBirthday,
+            'current_tier_min_threshold' => $silverThreshold,
+            'next_tier' => 'gold',
+            'next_tier_threshold' => $goldThreshold,
+            'amount_to_next_tier' => max(0, $goldThreshold - $rollingSpend),
+            'progress_percentage' => $this->progressPercentage(
+                current: $rollingSpend,
+                currentTierMin: $silverThreshold,
+                nextTierThreshold: $goldThreshold
+            ),
+        ];
+    }
+
+    /**
+     * Order lifecycle entry point used by controllers. This is intentionally
+     * separate from the manual CLI post method so AUTO_POST can control
+     * automatic queue/post writes from order status changes. Cancellation
+     * reversals are corrective accounting and remain available.
+     */
+    public function syncOrderLifecycle(Model $order, ?string $previousStatus = null): array
+    {
+        $status = strtolower((string) $this->orderValue($order, 'status', ''));
+        $successfulStatuses = array_map(
+            fn ($value) => strtolower((string) $value),
+            (array) config('bandara_credit.successful_statuses', ['delivered', 'completed'])
+        );
+
+        $cancelledStatuses = array_map(
+            fn ($value) => strtolower((string) $value),
+            (array) config('bandara_credit.cancelled_statuses', ['cancelled'])
+        );
+
+        if (in_array($status, $cancelledStatuses, true)) {
+            $earn = $this->cancelEarnForOrder($order, respectAutoPost: false);
+            $redemption = $this->cancelRedemptionForOrder($order, 'order_cancelled');
+
+            return [
+                'action' => (($earn['action'] ?? null) !== 'skipped' || ($redemption['action'] ?? null) !== 'skipped') ? 'cancelled' : 'skipped',
+                'reason' => null,
+                'order_id' => $earn['order_id'] ?? $redemption['order_id'] ?? null,
+                'user_id' => $earn['user_id'] ?? $redemption['user_id'] ?? null,
+                'earn' => $earn,
+                'redemption' => $redemption,
+            ];
+        }
+
+        if (in_array($status, $successfulStatuses, true)) {
+            return $this->postEarnForSuccessfulOrder($order, respectAutoPost: true);
+        }
+
+        return $this->queueEarnForOrder($order, respectAutoPost: true);
+    }
+
+    public function queueEarnForOrder(Model $order, bool $respectAutoPost = false): array
+    {
+        $guard = $this->earningGuard(
+            order: $order,
+            requireSuccessful: false,
+            respectAutoPost: $respectAutoPost
+        );
+
+        $preview = $this->safePreview($order);
+
+        if (! $guard['allowed']) {
+            return $this->writeResult(
+                action: $guard['reason'] === 'shadow_mode' ? 'shadow' : 'skipped',
+                reason: $guard['reason'],
+                orderId: $guard['order_id'],
+                userId: $guard['user_id'],
+                preview: $preview
+            );
+        }
+
+        $components = $this->earnComponentsForPreview($preview);
+        $total = array_sum($components);
+
+        if ($total <= 0) {
+            return $this->writeResult(
+                action: 'skipped',
+                reason: 'nothing_to_queue',
+                orderId: $guard['order_id'],
+                userId: $guard['user_id'],
+                preview: $preview
+            );
+        }
+
+        return DB::transaction(function () use ($guard, $order, $preview, $components) {
+            $orderId = (int) $guard['order_id'];
+            $userId = (int) $guard['user_id'];
+            $created = [];
+            $updated = [];
+            $skipped = [];
+
+            if ($this->hasPostedLegacyEarnForOrder($orderId, $userId)) {
+                return $this->writeResult(
+                    action: 'skipped',
+                    reason: 'legacy_reward_already_posted',
+                    orderId: $orderId,
+                    userId: $userId,
+                    preview: $preview,
+                    wallet: $this->syncWalletForUser($userId)
+                );
+            }
+
+            $this->cancelLegacyPendingOrderReward($orderId, $userId);
+
+            foreach ($components as $type => $amount) {
+                if ($amount <= 0) {
+                    continue;
+                }
+
+                $tx = $this->lockTransactionByKey($this->transactionKey($orderId, $type));
+                $payload = $this->transactionPayload(
+                    userId: $userId,
+                    orderId: $orderId,
+                    type: $type,
+                    amount: $amount,
+                    status: 'pending',
+                    key: $this->transactionKey($orderId, $type),
+                    note: 'Pending Bandara Credit for order #'.$this->orderLabel($order),
+                    meta: $this->previewMeta($preview) + ['source' => 'order_lifecycle']
+                );
+
+                if ($tx) {
+                    if ($tx->status === 'posted') {
+                        $skipped[] = ['type' => $type, 'amount' => (int) $tx->amount, 'reason' => 'already_posted'];
+                        continue;
+                    }
+
+                    $dirty = (int) $tx->amount !== $amount || (string) $tx->status !== 'pending';
+
+                    $tx->forceFill($payload)->save();
+
+                    if ($dirty) {
+                        $updated[] = ['type' => $type, 'amount' => $amount];
+                    }
+
+                    continue;
+                }
+
+                BandaraCreditTransaction::query()->create($payload);
+                $created[] = ['type' => $type, 'amount' => $amount];
+            }
+
+            $changed = count($created) + count($updated);
+
+            return $this->writeResult(
+                action: $changed > 0 ? 'queued' : 'skipped',
+                reason: $changed > 0 ? null : 'already_queued_or_posted',
+                orderId: $orderId,
+                userId: $userId,
+                preview: $preview,
+                wallet: $this->walletSnapshot($userId),
+                extra: [
+                    'queued' => $changed > 0,
+                    'transactions_queued' => array_values(array_merge($created, $updated)),
+                    'queued_components' => array_values(array_merge($created, $updated)),
+                    'skipped_components' => $skipped,
+                    'total_queued' => (int) array_sum(array_column(array_merge($created, $updated), 'amount')),
+                ]
+            );
+        });
+    }
+
+    public function canPostEarnForOrder(Model $order): bool
+    {
+        return $this->earningGuard(
+            order: $order,
+            requireSuccessful: true,
+            respectAutoPost: false
+        )['allowed'];
+    }
+
+    public function postEarnForSuccessfulOrder(Model $order, bool $respectAutoPost = false): array
+    {
+        $guard = $this->earningGuard(
+            order: $order,
+            requireSuccessful: true,
+            respectAutoPost: $respectAutoPost
+        );
+
+        $preview = $this->safePreview($order);
+
+        if (! $guard['allowed']) {
+            return $this->writeResult(
+                action: $guard['reason'] === 'shadow_mode' ? 'shadow' : 'skipped',
+                reason: $guard['reason'],
+                orderId: $guard['order_id'],
+                userId: $guard['user_id'],
+                preview: $preview,
+                legacyKeys: true
+            );
+        }
+
+        $components = $this->earnComponentsForPreview($preview);
+        $total = array_sum($components);
+
+        if ($total <= 0) {
+            return $this->writeResult(
+                action: 'skipped',
+                reason: 'nothing_to_post',
+                orderId: $guard['order_id'],
+                userId: $guard['user_id'],
+                preview: $preview,
+                legacyKeys: true
+            );
+        }
+
+        return DB::transaction(function () use ($guard, $order, $preview, $components) {
+            $orderId = (int) $guard['order_id'];
+            $userId = (int) $guard['user_id'];
+            $posted = [];
+            $skipped = [];
+            $releasedReversals = 0;
+
+            $wallet = $this->lockOrCreateWallet($userId);
+
+            if ($this->hasPostedLegacyEarnForOrder($orderId, $userId)) {
+                $wallet = $this->syncWalletForUser($userId);
+
+                return $this->writeResult(
+                    action: 'skipped',
+                    reason: 'legacy_reward_already_posted',
+                    orderId: $orderId,
+                    userId: $userId,
+                    preview: $preview,
+                    wallet: $wallet,
+                    legacyKeys: true
+                );
+            }
+
+            $this->cancelLegacyPendingOrderReward($orderId, $userId);
+            $releasedReversals = $this->releaseEarnReversalsForOrder($orderId, $userId);
+
+            foreach ($components as $type => $amount) {
+                if ($amount <= 0) {
+                    continue;
+                }
+
+                $key = $this->transactionKey($orderId, $type);
+                $tx = $this->lockTransactionByKey($key);
+                $payload = $this->transactionPayload(
+                    userId: $userId,
+                    orderId: $orderId,
+                    type: $type,
+                    amount: $amount,
+                    status: 'posted',
+                    key: $key,
+                    note: 'Bandara Credit earned for order #'.$this->orderLabel($order),
+                    meta: $this->previewMeta($preview) + ['source' => 'order_lifecycle']
+                );
+
+                if ($tx) {
+                    if ($tx->status === 'posted') {
+                        $skipped[] = ['type' => $type, 'amount' => (int) $tx->amount, 'reason' => 'already_posted'];
+                        continue;
+                    }
+
+                    $tx->forceFill($payload)->save();
+                    $posted[] = ['type' => $type, 'amount' => $amount];
+                    continue;
+                }
+
+                BandaraCreditTransaction::query()->create($payload);
+                $posted[] = ['type' => $type, 'amount' => $amount];
+            }
+
+            $wallet = $this->syncWalletForUser($userId);
+
+            $totalPosted = (int) array_sum(array_column($posted, 'amount'));
+            $changed = $totalPosted > 0 || $releasedReversals > 0;
+
+            return $this->writeResult(
+                action: $changed ? 'posted' : 'skipped',
+                reason: $changed ? null : 'already_posted_or_nothing_to_post',
+                orderId: $orderId,
+                userId: $userId,
+                preview: $preview,
+                wallet: $wallet,
+                extra: [
+                    'posted' => $changed,
+                    'transactions_posted' => $posted,
+                    'skipped_components' => $skipped,
+                    'total_posted' => $totalPosted,
+                    'released_reversals' => $releasedReversals,
+                ],
+                legacyKeys: true
+            );
+        });
+    }
+
+    public function cancelEarnForOrder(Model $order, bool $respectAutoPost = false): array
+    {
+        $guard = $this->cancellationGuard($order, $respectAutoPost);
+
+        if (! $guard['allowed']) {
+            return $this->writeResult(
+                action: $guard['reason'] === 'shadow_mode' ? 'shadow' : 'skipped',
+                reason: $guard['reason'],
+                orderId: $guard['order_id'],
+                userId: $guard['user_id'],
+                legacyKeys: true
+            );
+        }
+
+        return DB::transaction(function () use ($guard, $order) {
+            $orderId = (int) $guard['order_id'];
+            $userId = (int) $guard['user_id'];
+
+            $cancelledPending = $this->cancelPendingEarnTransactions($orderId, $userId);
+            $legacyPendingCancelled = $this->cancelLegacyPendingOrderReward($orderId, $userId);
+            $reversalChanged = 0;
+            $reversals = [];
+
+            $postedEarnTransactions = BandaraCreditTransaction::query()
+                ->where('user_id', $userId)
+                ->where('order_id', $orderId)
+                ->whereIn('type', $this->allPositiveEarnTypes())
+                ->where('status', 'posted')
+                ->where('amount', '>', 0)
+                ->lockForUpdate()
+                ->get();
+
+            foreach ($postedEarnTransactions as $postedTx) {
+                $amountToReverse = abs((int) $postedTx->amount);
+                if ($amountToReverse <= 0) {
+                    continue;
+                }
+
+                $key = $this->reversalKey($orderId, (string) $postedTx->type);
+                $tx = $this->lockTransactionByKey($key);
+                $payload = $this->transactionPayload(
+                    userId: $userId,
+                    orderId: $orderId,
+                    type: 'earn_reversal',
+                    amount: -1 * $amountToReverse,
+                    status: 'posted',
+                    key: $key,
+                    note: 'Bandara Credit reversed for cancelled order #'.$this->orderLabel($order),
+                    meta: [
+                        'source' => 'order_cancellation',
+                        'reverses_transaction_id' => $postedTx->id,
+                        'reverses_type' => (string) $postedTx->type,
+                    ]
+                );
+
+                if ($tx) {
+                    if ((string) $tx->status !== 'posted' || (int) $tx->amount !== -1 * $amountToReverse) {
+                        $tx->forceFill($payload)->save();
+                        $reversalChanged += $amountToReverse;
+                    }
+                } else {
+                    BandaraCreditTransaction::query()->create($payload);
+                    $reversalChanged += $amountToReverse;
+                }
+
+                $reversals[] = [
+                    'type' => (string) $postedTx->type,
+                    'amount' => $amountToReverse,
+                ];
+            }
+
+            $changed = $cancelledPending + $legacyPendingCancelled + $reversalChanged;
+            $wallet = $changed > 0
+                ? $this->syncWalletForUser($userId)
+                : $this->walletSnapshot($userId);
+
+            return $this->writeResult(
+                action: $changed > 0 ? 'cancelled' : 'skipped',
+                reason: $changed > 0 ? null : 'nothing_to_cancel',
+                orderId: $orderId,
+                userId: $userId,
+                wallet: $wallet,
+                extra: [
+                    'cancelled_pending' => $cancelledPending + $legacyPendingCancelled,
+                    'reversed_posted' => $reversalChanged,
+                    'total_reversed' => $reversalChanged,
+                    'transactions_reversed' => $reversals,
+                ],
+                legacyKeys: true
+            );
+        });
+    }
+
+    public function syncWalletForUser(User|int $user): BandaraCreditWallet
+    {
+        $userId = $this->resolveUserId($user);
+        $wallet = $this->lockOrCreateWallet($userId);
+
+        $balance = (int) BandaraCreditTransaction::query()
+            ->where('user_id', $userId)
+            ->where(function (Builder $query) {
+                $query->where('status', 'posted')
+                    ->orWhere(function (Builder $query) {
+                        $query->where('status', 'reserved')
+                            ->where('type', 'redeem')
+                            ->where('amount', '<', 0);
+                    });
+            })
+            ->sum('amount');
+
+        $tierPreview = $this->previewTierForUser($userId);
+        $tier = ($tierPreview['eligible_user'] ?? false)
+            ? (string) ($tierPreview['tier'] ?? 'silver')
+            : (string) $wallet->tier;
+
+        $wallet->forceFill([
+            'balance' => max($balance, 0),
+            'tier' => $tier,
+        ])->save();
+
+        return $wallet->refresh();
+    }
+
+    public function snapshotForUser(int $userId): array
+    {
+        $programEnabled = (bool) config('bandara_credit.enabled', false);
+        $redeemEnabled = $programEnabled
+            && ! (bool) config('bandara_credit.shadow_mode', true)
+            && (bool) config('bandara_credit.redeem_enabled', false);
+
+        if (! $programEnabled || ! $this->isEligibleUserForBandaraCredit($userId)) {
+            return [
+                'programEnabled' => $programEnabled,
+                'redeemEnabled' => $redeemEnabled,
+                'redemptionEnabled' => $redeemEnabled,
+                'eligibleUser' => false,
+                'availablePoints' => 0,
+                'pendingPoints' => 0,
+                'reservedPoints' => 0,
+                'lifetimePoints' => 0,
+                'lifetimeRedeemedPoints' => 0,
+                'pointsHistory' => [],
+                'nextRewardAt' => (int) config('bandara_credit.next_reward_at', config('bandara_credit.redemption.minimum_points', 500)),
+                'currentTier' => 'ineligible',
+                'earnEnabled' => (bool) config('bandara_credit.earn_enabled', false),
+            ];
+        }
+
+        $wallet = DB::table('bandara_credit_wallets')
+            ->where('user_id', $userId)
+            ->first();
+
+        $availablePoints = (int) ($wallet->balance ?? 0);
+        $currentTier = (string) ($wallet->tier ?? 'silver');
+        $reservedRedemptionPoints = $this->reservedRedemptionPointsForUser($userId);
+
+        $pendingPoints = (int) DB::table('bandara_credit_transactions')
+            ->where('user_id', $userId)
+            ->whereIn('status', ['pending', 'reserved'])
+            ->where('amount', '>', 0)
+            ->sum('amount');
+
+        if ((bool) config('bandara_credit.earn_enabled', false)) {
+            $queuedOrderIds = DB::table('bandara_credit_transactions')
+                ->where('user_id', $userId)
+                ->whereIn('status', ['pending', 'reserved'])
+                ->whereNotNull('order_id')
+                ->pluck('order_id')
+                ->map(fn ($id) => (int) $id)
+                ->unique()
+                ->values()
+                ->all();
+
+            $orderModel = config('bandara_credit.order_model');
+            $orderInstance = new $orderModel();
+
+            $pendingEstimate = (int) round(
+                $this->pendingOrdersForUser($userId)
+                    ->when(! empty($queuedOrderIds), function (Builder $query) use ($queuedOrderIds, $orderInstance) {
+                        $query->whereNotIn($orderInstance->getKeyName(), $queuedOrderIds);
+                    })
+                    ->get()
+                    ->sum(function ($order) {
+                        $preview = $this->previewEarnForOrder($order);
+
+                        return (int) ($preview['total_credit_preview'] ?? 0);
+                    })
+            );
+
+            $pendingPoints += $pendingEstimate;
+        }
+
+        $lifetimePoints = (int) DB::table('bandara_credit_transactions')
+            ->where('bandara_credit_transactions.user_id', $userId)
+            ->where('bandara_credit_transactions.amount', '>', 0)
+            ->where('bandara_credit_transactions.status', 'posted')
+            ->whereNotIn('bandara_credit_transactions.type', ['redeem_reversal'])
+            ->sum('bandara_credit_transactions.amount');
+
+        $lifetimeRedeemedPoints = abs((int) DB::table('bandara_credit_transactions')
+            ->where('bandara_credit_transactions.user_id', $userId)
+            ->where('bandara_credit_transactions.amount', '<', 0)
+            ->where('bandara_credit_transactions.status', 'posted')
+            ->whereIn('bandara_credit_transactions.type', ['redeem', 'redeemed', 'redemption', 'debit', 'use'])
+            ->sum('bandara_credit_transactions.amount'));
+
+        $pointsHistory = DB::table('bandara_credit_transactions')
+            ->leftJoin('orders', 'orders.id', '=', 'bandara_credit_transactions.order_id')
+            ->where('bandara_credit_transactions.user_id', $userId)
+            ->select([
+                'bandara_credit_transactions.id as tx_id',
+                'bandara_credit_transactions.order_id as tx_order_id',
+                'bandara_credit_transactions.amount as tx_amount',
+                'bandara_credit_transactions.type as tx_type',
+                'bandara_credit_transactions.status as tx_status',
+                'bandara_credit_transactions.note as tx_note',
+                'bandara_credit_transactions.created_at as tx_created_at',
+                'orders.order_number as order_number',
+            ])
+            ->orderByDesc('bandara_credit_transactions.created_at')
+            ->orderByDesc('bandara_credit_transactions.id')
+            ->limit(max(1, (int) config('bandara_credit.history_limit', 8)))
+            ->get()
+            ->map(function ($tx) {
+                $status = strtolower((string) ($tx->tx_status ?? 'posted'));
+                $points = (int) ($tx->tx_amount ?? 0);
+
+                $subtitleParts = [];
+
+                if (! empty($tx->tx_order_id)) {
+                    $subtitleParts[] = 'Order #'.($tx->order_number ?? $tx->tx_order_id);
+                }
+
+                if (! empty($tx->tx_note)) {
+                    $subtitleParts[] = Str::limit((string) $tx->tx_note, 60);
+                }
+
+                if ($status !== 'posted') {
+                    $subtitleParts[] = Str::headline($status);
+                }
+
+                return [
+                    'title' => $this->titleForTransaction($tx->tx_type ?? null, $points),
+                    'order_number' => $tx->order_number ?? null,
+                    'subtitle' => collect($subtitleParts)->filter()->implode(' • '),
+                    'points' => $points,
+                    'status' => $status,
+                    'date' => ! empty($tx->tx_created_at)
+                        ? Carbon::parse($tx->tx_created_at)->format('d M Y')
+                        : null,
+                ];
+            })
+            ->values()
+            ->all();
+
+        return [
+            'programEnabled' => true,
+            'redeemEnabled' => $redeemEnabled,
+            'redemptionEnabled' => $redeemEnabled,
+            'earnEnabled' => (bool) config('bandara_credit.earn_enabled', false),
+            'eligibleUser' => true,
+            'availablePoints' => $availablePoints,
+            'pendingPoints' => $pendingPoints,
+            'reservedPoints' => $reservedRedemptionPoints,
+            'lifetimePoints' => $lifetimePoints,
+            'lifetimeRedeemedPoints' => $lifetimeRedeemedPoints,
+            'pointsHistory' => $pointsHistory,
+            'nextRewardAt' => (int) config('bandara_credit.next_reward_at', config('bandara_credit.redemption.minimum_points', 500)),
+            'currentTier' => $currentTier,
+        ];
+    }
+
+    protected function earningGuard(Model $order, bool $requireSuccessful, bool $respectAutoPost): array
+    {
+        $orderId = $order->exists ? (int) $order->getKey() : null;
+        $userId = $this->nullableInt($this->orderValue($order, 'user_id'));
+        $status = strtolower((string) $this->orderValue($order, 'status', ''));
+
+        if (! (bool) config('bandara_credit.enabled', false)) {
+            return $this->guardResult(false, 'feature_disabled', $orderId, $userId);
+        }
+
+        if ($respectAutoPost && ! (bool) config('bandara_credit.auto_post_enabled', false)) {
+            return $this->guardResult(false, 'auto_post_disabled', $orderId, $userId);
+        }
+
+        if (! (bool) config('bandara_credit.earn_enabled', false)) {
+            return $this->guardResult(false, 'earn_disabled', $orderId, $userId);
+        }
+
+        if ((bool) config('bandara_credit.shadow_mode', true)) {
+            return $this->guardResult(false, 'shadow_mode', $orderId, $userId);
+        }
+
+        if ($orderId === null) {
+            return $this->guardResult(false, 'missing_order_id', null, $userId);
+        }
+
+        if ($userId === null) {
+            return $this->guardResult(false, 'missing_user_id', $orderId, null);
+        }
+
+        if (! $this->isEligibleUserForBandaraCredit($userId)) {
+            return $this->guardResult(false, 'user_not_eligible', $orderId, $userId);
+        }
+
+        if ($requireSuccessful && ! in_array(
+            $status,
+            array_map(fn ($value) => strtolower((string) $value), (array) config('bandara_credit.successful_statuses', ['delivered', 'completed'])),
+            true
+        )) {
+            return $this->guardResult(false, 'order_not_successful', $orderId, $userId);
+        }
+
+        return $this->guardResult(true, null, $orderId, $userId);
+    }
+
+    protected function cancellationGuard(Model $order, bool $respectAutoPost): array
+    {
+        $orderId = $order->exists ? (int) $order->getKey() : null;
+        $userId = $this->nullableInt($this->orderValue($order, 'user_id'));
+
+        if ($orderId === null) {
+            return $this->guardResult(false, 'missing_order_id', null, $userId);
+        }
+
+        if ($userId === null) {
+            return $this->guardResult(false, 'missing_user_id', $orderId, null);
+        }
+
+        // Cancellation is corrective accounting. It must be allowed even if
+        // auto-posting, earning, or shadow mode have since been switched off;
+        // otherwise already-posted credits could remain spendable after a
+        // cancelled order.
+        return $this->guardResult(true, null, $orderId, $userId);
+    }
+
+    protected function guardResult(bool $allowed, ?string $reason, ?int $orderId, ?int $userId): array
+    {
+        return [
+            'allowed' => $allowed,
+            'reason' => $reason,
+            'order_id' => $orderId,
+            'user_id' => $userId,
+        ];
+    }
+
+    protected function writeResult(
+        string $action,
+        ?string $reason,
+        ?int $orderId,
+        ?int $userId,
+        ?array $preview = null,
+        ?BandaraCreditWallet $wallet = null,
+        array $extra = [],
+        bool $legacyKeys = false
+    ): array {
+        $base = [
+            'action' => $action,
+            'reason' => $reason,
+            'order_id' => $orderId,
+            'user_id' => $userId,
+            'wallet_balance' => $wallet ? (int) $wallet->balance : null,
+            'tier' => $wallet ? (string) $wallet->tier : null,
+            'preview' => $preview,
+        ];
+
+        if ($legacyKeys) {
+            $base += [
+                'posted' => $action === 'posted',
+                'cancelled' => $action === 'cancelled',
+                'transactions_posted' => $extra['transactions_posted'] ?? [],
+                'transactions_reversed' => $extra['transactions_reversed'] ?? [],
+                'total_posted' => (int) ($extra['total_posted'] ?? 0),
+                'total_reversed' => (int) ($extra['total_reversed'] ?? ($extra['reversed_posted'] ?? 0)),
+            ];
+        }
+
+        return array_merge($base, $extra);
+    }
+
+    protected function safePreview(Model $order): array
+    {
+        try {
+            return $this->previewEarnForOrder($order);
+        } catch (\Throwable) {
+            return [
+                'eligible_user' => null,
+                'eligible_spend' => 0,
+                'base_credit' => 0,
+                'repeat_bonus' => 0,
+                'welcome_bonus' => 0,
+                'total_credit_preview' => 0,
+            ];
+        }
+    }
+
+    protected function earnComponentsForPreview(array $preview): array
+    {
+        return [
+            'base_earned' => max(0, (int) ($preview['base_credit'] ?? 0)),
+            'repeat_bonus' => max(0, (int) ($preview['repeat_bonus'] ?? 0)),
+            'welcome_bonus' => max(0, (int) ($preview['welcome_bonus'] ?? 0)),
+        ];
+    }
+
+    protected function transactionPayload(
+        int $userId,
+        int $orderId,
+        string $type,
+        int $amount,
+        string $status,
+        string $key,
+        ?string $note = null,
+        array $meta = []
+    ): array {
+        return [
+            'user_id' => $userId,
+            'order_id' => $orderId,
+            'amount' => $amount,
+            'type' => $type,
+            'status' => $status,
+            'idempotency_key' => $key,
+            'meta' => empty($meta) ? null : $meta,
+            'note' => $note,
+        ];
+    }
+
+    protected function previewMeta(array $preview): array
+    {
+        return [
+            'eligible_spend' => (int) ($preview['eligible_spend'] ?? 0),
+            'base_credit' => (int) ($preview['base_credit'] ?? 0),
+            'repeat_bonus' => (int) ($preview['repeat_bonus'] ?? 0),
+            'welcome_bonus' => (int) ($preview['welcome_bonus'] ?? 0),
+            'total_credit_preview' => (int) ($preview['total_credit_preview'] ?? 0),
+        ];
+    }
+
+    protected function transactionKey(int $orderId, string $type): string
+    {
+        return "order:{$orderId}:{$type}";
+    }
+
+    protected function reversalKey(int $orderId, string $type): string
+    {
+        return "order:{$orderId}:{$type}:reversal";
+    }
+
+    protected function legacyOrderRewardKey(int $orderId): string
+    {
+        return 'order-reward:'.$orderId;
+    }
+
+    protected function lockTransactionByKey(string $key): ?BandaraCreditTransaction
+    {
+        return BandaraCreditTransaction::query()
+            ->where('idempotency_key', $key)
+            ->lockForUpdate()
+            ->first();
+    }
+
+    protected function orderEarnTypes(): array
+    {
+        return ['base_earned', 'repeat_bonus', 'welcome_bonus', 'birthday_bonus'];
+    }
+
+    protected function legacyEarnTypes(): array
+    {
+        return ['order_reward', 'order_credit', 'earn', 'credit'];
+    }
+
+    protected function allPositiveEarnTypes(): array
+    {
+        return array_values(array_unique(array_merge($this->orderEarnTypes(), $this->legacyEarnTypes())));
+    }
+
+    protected function hasPostedLegacyEarnForOrder(int $orderId, int $userId): bool
+    {
+        return BandaraCreditTransaction::query()
+            ->where('user_id', $userId)
+            ->where('order_id', $orderId)
+            ->whereIn('type', $this->legacyEarnTypes())
+            ->where('status', 'posted')
+            ->exists();
+    }
+
+    protected function cancelLegacyPendingOrderReward(int $orderId, int $userId): int
+    {
+        return BandaraCreditTransaction::query()
+            ->where('user_id', $userId)
+            ->where('idempotency_key', $this->legacyOrderRewardKey($orderId))
+            ->whereIn('status', ['pending', 'reserved'])
+            ->update([
+                'status' => 'cancelled',
+                'updated_at' => now(),
+            ]);
+    }
+
+    protected function cancelPendingEarnTransactions(int $orderId, int $userId): int
+    {
+        return BandaraCreditTransaction::query()
+            ->where('user_id', $userId)
+            ->where('order_id', $orderId)
+            ->whereIn('type', $this->orderEarnTypes())
+            ->whereIn('status', ['pending', 'reserved'])
+            ->update([
+                'status' => 'cancelled',
+                'updated_at' => now(),
+            ]);
+    }
+
+    protected function postedEarnTotalForOrder(int $orderId, int $userId): int
+    {
+        return (int) BandaraCreditTransaction::query()
+            ->where('user_id', $userId)
+            ->where('order_id', $orderId)
+            ->whereIn('type', $this->allPositiveEarnTypes())
+            ->where('status', 'posted')
+            ->where('amount', '>', 0)
+            ->sum('amount');
+    }
+
+    protected function releaseEarnReversalsForOrder(int $orderId, int $userId): int
+    {
+        $reversals = BandaraCreditTransaction::query()
+            ->where('user_id', $userId)
+            ->where('order_id', $orderId)
+            ->where('type', 'earn_reversal')
+            ->where('status', 'posted')
+            ->where('amount', '<', 0)
+            ->lockForUpdate()
+            ->get();
+
+        $released = (int) $reversals->sum(fn (BandaraCreditTransaction $tx) => abs((int) $tx->amount));
+
+        foreach ($reversals as $tx) {
+            $tx->forceFill([
+                'status' => 'reversed',
+            ])->save();
+        }
+
+        return $released;
+    }
+
+
+    protected function availableRedeemablePoints(int $userId): int
+    {
+        $balance = (int) BandaraCreditTransaction::query()
+            ->where('user_id', $userId)
+            ->where(function (Builder $query) {
+                $query->where('status', 'posted')
+                    ->orWhere(function (Builder $query) {
+                        $query->where('status', 'reserved')
+                            ->where('type', 'redeem')
+                            ->where('amount', '<', 0);
+                    });
+            })
+            ->sum('amount');
+
+        return max(0, $balance);
+    }
+
+    protected function reservedRedemptionPointsForUser(int $userId): int
+    {
+        return abs((int) BandaraCreditTransaction::query()
+            ->where('user_id', $userId)
+            ->where('type', 'redeem')
+            ->where('status', 'reserved')
+            ->where('amount', '<', 0)
+            ->sum('amount'));
+    }
+
+    protected function redemptionKey(int $orderId): string
+    {
+        return "order:{$orderId}:redeem";
+    }
+
+    protected function redemptionReversalKey(int $orderId, int $transactionId): string
+    {
+        return "order:{$orderId}:redeem:{$transactionId}:reversal";
+    }
+
+    protected function walletSnapshot(int $userId): ?BandaraCreditWallet
+    {
+        return BandaraCreditWallet::query()->where('user_id', $userId)->first();
+    }
+
+    protected function lockOrCreateWallet(int $userId): BandaraCreditWallet
+    {
+        $now = now();
+
+        BandaraCreditWallet::query()->insertOrIgnore([
+            'user_id' => $userId,
+            'balance' => 0,
+            'tier' => 'silver',
+            'created_at' => $now,
+            'updated_at' => $now,
+        ]);
+
+        return BandaraCreditWallet::query()
+            ->where('user_id', $userId)
+            ->lockForUpdate()
+            ->firstOrFail();
+    }
+
+    protected function titleForTransaction(?string $type, int $points): string
+    {
+        $type = strtolower(trim((string) $type));
+
+        return match ($type) {
+            'base_earned' => 'Order credit earned',
+            'repeat_bonus' => 'Repeat order bonus',
+            'welcome_bonus' => 'Welcome bonus',
+            'birthday_bonus' => 'Birthday bonus',
+            'earn_reversal' => 'Credit reversed',
+            'redeem' => $points < 0 ? 'Bandara Credit redeemed' : 'Bandara Credit restored',
+            'redeem_reversal', 'redeem_release' => 'Bandara Credit restored',
+            'order_reward', 'order_credit', 'earn', 'credit' => 'Order reward credited',
+            'redeemed', 'redemption', 'debit', 'use' => 'Reward redeemed',
+            'refund_credit' => 'Refund credit added',
+            'expiry', 'expired' => 'Credit expired',
+            'adjustment', 'manual_adjustment', 'manual_credit', 'admin_credit' => $points >= 0 ? 'Manual credit added' : 'Manual adjustment',
+            'admin_debit' => 'Manual debit',
+            default => $points >= 0
+                ? Str::headline($type ?: 'Credit added')
+                : Str::headline($type ?: 'Credit used'),
+        };
+    }
+
+    public function isEligibleUserForBandaraCredit(User|int|null $user): bool
+    {
+        if ($user === null) {
+            return false;
+        }
+
+        $userModel = $user instanceof User ? $user : User::query()->find($user);
+
+        if (! $userModel) {
+            return false;
+        }
+
+        $mode = strtolower(trim((string) config('bandara_credit.eligibility.mode', 'b2c')));
+
+        if ($mode === 'all') {
+            return true;
+        }
+
+        if (in_array($mode, ['b2c', 'b2c_only', 'customer_type', 'column'], true)) {
+            $column = (string) config('bandara_credit.eligibility.column', 'customer_type');
+            $b2cValue = strtolower(trim((string) config('bandara_credit.eligibility.b2c_value', 'b2c')));
+
+            if (! Schema::hasColumn($userModel->getTable(), $column)) {
+                return false;
+            }
+
+            return strtolower(trim((string) $userModel->getAttribute($column))) === $b2cValue;
+        }
+
+        $allowedRoles = (array) config('bandara_credit.eligibility.allowed_roles', ['Customer']);
+
+        try {
+            return method_exists($userModel, 'hasAnyRole')
+                ? $userModel->hasAnyRole($allowedRoles)
+                : false;
+        } catch (\Throwable) {
+            return false;
+        }
+    }
+
+    protected function qualifiesForRepeatBonus(
+        int $userId,
+        CarbonInterface $placedAt,
+        ?int $excludeOrderId = null
+    ): bool {
+        $previousOrder = $this->successfulOrdersForUser($userId, $excludeOrderId)
+            ->where($this->orderColumn('placed_at'), '<', $placedAt)
+            ->orderByDesc($this->orderColumn('placed_at'))
+            ->first();
+
+        if (! $previousOrder) {
+            return false;
+        }
+
+        $previousPlacedAt = $this->normalizeDate(
+            data_get($previousOrder, $this->orderColumn('placed_at'))
+        );
+
+        return $previousPlacedAt->diffInDays($placedAt)
+            <= (int) config('bandara_credit.earning.repeat_window_days', 10);
+    }
+
+    protected function qualifiesForWelcomeBonus(
+        int $userId,
+        int $eligibleSpend,
+        int $minimumOrderValue,
+        CarbonInterface $placedAt,
+        ?int $excludeOrderId = null
+    ): bool {
+        if ($eligibleSpend < $minimumOrderValue) {
+            return false;
+        }
+
+        if ($this->hasActiveWelcomeBonusForUser($userId, $excludeOrderId)) {
+            return false;
+        }
+
+        return ! $this->successfulOrdersForUser($userId, $excludeOrderId)
+            ->where($this->orderColumn('placed_at'), '<', $placedAt)
+            ->exists();
+    }
+
+    protected function hasActiveWelcomeBonusForUser(int $userId, ?int $excludeOrderId = null): bool
+    {
+        try {
+            $orderModel = config('bandara_credit.order_model');
+            $orderInstance = new $orderModel();
+            $ordersTable = $orderInstance->getTable();
+            $orderKey = $orderInstance->getKeyName();
+            $statusColumn = $this->orderColumn('status');
+            $cancelledStatuses = (array) config('bandara_credit.cancelled_statuses', ['cancelled']);
+
+            $query = BandaraCreditTransaction::query()
+                ->where('bandara_credit_transactions.user_id', $userId)
+                ->where('bandara_credit_transactions.type', 'welcome_bonus')
+                ->whereIn('bandara_credit_transactions.status', ['pending', 'posted', 'reserved'])
+                ->leftJoin($ordersTable, $ordersTable.'.'.$orderKey, '=', 'bandara_credit_transactions.order_id')
+                ->where(function (Builder $query) use ($ordersTable, $statusColumn, $cancelledStatuses) {
+                    $query->whereNull('bandara_credit_transactions.order_id')
+                        ->orWhereNull($ordersTable.'.'.$statusColumn)
+                        ->orWhereNotIn($ordersTable.'.'.$statusColumn, $cancelledStatuses);
+                });
+
+            if ($excludeOrderId !== null) {
+                $query->where(function (Builder $query) use ($excludeOrderId) {
+                    $query->whereNull('bandara_credit_transactions.order_id')
+                        ->orWhere('bandara_credit_transactions.order_id', '!=', $excludeOrderId);
+                });
+            }
+
+            return $query->exists();
+        } catch (\Throwable) {
+            return false;
+        }
+    }
+
+    protected function successfulOrdersForUser(int $userId, ?int $excludeOrderId = null): Builder
+    {
+        $orderModel = config('bandara_credit.order_model');
+        $orderInstance = new $orderModel();
+
+        /** @var Builder $query */
+        $query = $orderModel::query();
+
+        $query
+            ->where($this->orderColumn('user_id'), $userId)
+            ->whereIn(
+                $this->orderColumn('status'),
+                (array) config('bandara_credit.successful_statuses', ['delivered', 'completed'])
+            );
+
+        if ($excludeOrderId !== null) {
+            $query->where($orderInstance->getKeyName(), '!=', $excludeOrderId);
+        }
+
+        return $query;
+    }
+
+    protected function pendingOrdersForUser(int $userId): Builder
+    {
+        $orderModel = config('bandara_credit.order_model');
+
+        /** @var Builder $query */
+        $query = $orderModel::query();
+
+        $statusColumn = $this->orderColumn('status');
+        $userColumn = $this->orderColumn('user_id');
+
+        $successfulStatuses = (array) config('bandara_credit.successful_statuses', ['delivered', 'completed']);
+        $excludedStatuses = array_values(array_unique(array_merge($successfulStatuses, ['cancelled'])));
+
+        $query->where($userColumn, $userId);
+
+        $query->where(function ($q) use ($statusColumn, $excludedStatuses) {
+            $q->whereNull($statusColumn)
+              ->orWhereNotIn($statusColumn, $excludedStatuses);
+        });
+
+        return $query;
+    }
+
+    protected function orderColumn(string $key): string
+    {
+        return (string) config("bandara_credit.order_mapping.{$key}");
+    }
+
+    protected function orderValue(Model|array $order, string $key, mixed $default = null): mixed
+    {
+        $column = $this->orderColumn($key);
+
+        if (is_array($order)) {
+            return $order[$column] ?? $order[$key] ?? $default;
+        }
+
+        return data_get($order, $column, data_get($order, $key, $default));
+    }
+
+    protected function extractOrderId(Model|array $order): ?int
+    {
+        if (is_array($order)) {
+            return isset($order['id']) ? (int) $order['id'] : null;
+        }
+
+        return $order->exists ? (int) $order->getKey() : null;
+    }
+
+    protected function resolveUserId(User|int $user): int
+    {
+        return $user instanceof User ? (int) $user->getKey() : (int) $user;
+    }
+
+    protected function normalizeMoney(mixed $value): int
+    {
+        return max(0, (int) floor((float) $value));
+    }
+
+    protected function normalizeDate(mixed $value): Carbon
+    {
+        if ($value instanceof CarbonInterface) {
+            return Carbon::instance($value);
+        }
+
+        return Carbon::parse($value);
+    }
+
+    protected function nullableInt(mixed $value): ?int
+    {
+        if ($value === null || $value === '') {
+            return null;
+        }
+
+        return (int) $value;
+    }
+
+    protected function progressPercentage(
+        int $current,
+        int $currentTierMin,
+        ?int $nextTierThreshold
+    ): float {
+        if ($nextTierThreshold === null || $nextTierThreshold <= $currentTierMin) {
+            return 100.0;
+        }
+
+        $progress = (($current - $currentTierMin) / ($nextTierThreshold - $currentTierMin)) * 100;
+
+        return round(max(0, min(100, $progress)), 2);
+    }
+
+    protected function orderLabel(Model $order): string
+    {
+        return (string) ($order->getAttribute('order_number') ?: $order->getKey());
+    }
+}
