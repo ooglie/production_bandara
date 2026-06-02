@@ -48,7 +48,7 @@ class CheckoutController extends Controller
 
         $pricingUpdatedCount = $this->syncCartPricesPreservingWeights($cartService, $cart);
 
-        $items = CartItem::with(['product', 'productVariant'])
+        $items = CartItem::with(['product.hsnCode', 'productVariant'])
             ->where('cart_id', $cart->id)
             ->orderBy('id')
             ->get();
@@ -91,7 +91,7 @@ class CheckoutController extends Controller
 
         $taxable = max($subtotal - $discount, 0);
 
-        $gst = $this->calculateGstFromItems($items, (float) $discount, $selectedAddress?->state);
+        $gst = $this->calculateGstFromItems($items, (float) $discount, $selectedAddress?->state, $user);
 
         $shippingTotal = 0.0;
         $grandTotal = round($taxable + (float) $gst['tax_total'] + $shippingTotal, 2);
@@ -112,7 +112,7 @@ class CheckoutController extends Controller
         $itemWeight = 0.0;
         $sellUnit = 'piece';
         foreach ($items as $it) {
-            $product = $it->product ?: Product::query()->find($it->product_id);
+            $product = $it->product ?: Product::query()->with('hsnCode')->find($it->product_id);
 
             $itemWeight += (float) ($it->item_weight ?? 0);
             $sellUnit = (string) ($product?->sell_unit ?? 'piece');
@@ -208,7 +208,7 @@ class CheckoutController extends Controller
 
         $this->syncCartPricesPreservingWeights($cartService, $cart);
 
-        $items = CartItem::with(['product', 'productVariant'])
+        $items = CartItem::with(['product.hsnCode', 'productVariant'])
             ->where('cart_id', $cart->id)
             ->orderBy('id')
             ->get();
@@ -292,7 +292,7 @@ class CheckoutController extends Controller
         $taxable = max($subtotal - $discountTotal, 0);
 
         // ✅ GST per item using products.gst_rate (not hard-coded)
-        $gst = $this->calculateGstFromItems($items, (float) $discountTotal, $address->state);
+        $gst = $this->calculateGstFromItems($items, (float) $discountTotal, $address->state, $user);
 
         $shippingTotal = 0.0;
         $grandTotal = round($taxable + (float) $gst['tax_total'] + $shippingTotal, 2);
@@ -719,7 +719,7 @@ class CheckoutController extends Controller
     protected function validateCartStockBeforeOrder($items): ?string
     {
         foreach ($items as $it) {
-            $product = $it->product ?: Product::query()->find($it->product_id);
+            $product = $it->product ?: Product::query()->with('hsnCode')->find($it->product_id);
             if (! $product) {
                 return 'One of the products in your cart is no longer available.';
             }
@@ -929,13 +929,31 @@ class CheckoutController extends Controller
         return $path . ($queryString !== '' ? '?' . $queryString : '') . $fragment;
     }
 
+    protected function calculateLineTotalForCartItem(Product $product, ?ProductVariant $variant, float $qty, float $unitPrice, ?float $lineWeight = null): float
+    {
+        $pricingUnit = strtolower((string) ($variant?->pricing_unit ?? ($product->sell_unit === 'kg' ? 'kg' : 'pack')));
+        $pricingUnit = in_array($pricingUnit, ['kg', 'pack'], true) ? $pricingUnit : 'pack';
+
+        if ($pricingUnit === 'kg') {
+            $weight = (float) ($lineWeight ?? 0);
+            if ($weight <= 0) {
+                $unitWeight = (float) ($variant?->product_weight ?? $product->product_weight ?? 0);
+                $weight = round($qty * $unitWeight, 3);
+            }
+
+            return round(max($weight, 0) * $unitPrice, 2);
+        }
+
+        return round(max($qty, 0) * $unitPrice, 2);
+    }
+
     /**
      * Snapshot weighted cart rows before sync and restore their selected weight after sync.
      * This prevents slab/weight-based selections from being zeroed out on checkout load.
      */
     protected function syncCartPricesPreservingWeights(CartService $cartService, $cart): int
     {
-        $beforeItems = CartItem::with(['product', 'productVariant'])
+        $beforeItems = CartItem::with(['product.hsnCode', 'productVariant'])
             ->where('cart_id', $cart->id)
             ->orderBy('id')
             ->get()
@@ -944,7 +962,7 @@ class CheckoutController extends Controller
         $updatedCount = $cartService->syncPrices($cart);
 
         if ($beforeItems->isNotEmpty()) {
-            $afterItems = CartItem::with(['product', 'productVariant'])
+            $afterItems = CartItem::with(['product.hsnCode', 'productVariant'])
                 ->whereIn('id', $beforeItems->keys()->all())
                 ->get();
 
@@ -966,14 +984,21 @@ class CheckoutController extends Controller
                 $afterTotal = round((float) ($after->total ?? 0), 2);
 
                 $weightChanged = abs($afterWeight - $beforeWeight) > 0.0009;
-                $totalChanged = abs($afterTotal - $beforeTotal) > 0.009;
+                if ($weightChanged) {
+                    $product = $after->product;
+                    $variant = $after->productVariant;
+                    $unitPrice = (float) ($after->unit_price ?? 0);
+                    $quantity = (float) ($after->quantity ?? 0);
 
-                if ($weightChanged || $totalChanged) {
+                    $recalculatedTotal = $product
+                        ? $this->calculateLineTotalForCartItem($product, $variant, $quantity, $unitPrice, $beforeWeight)
+                        : $beforeTotal;
+
                     DB::table('cart_items')
                         ->where('id', $after->id)
                         ->update([
                             'item_weight' => $beforeWeight,
-                            'total' => $beforeTotal,
+                            'total' => $recalculatedTotal,
                         ]);
                 }
             }
@@ -989,7 +1014,12 @@ class CheckoutController extends Controller
      * - Returns:
      *   gst_type, cgst_amount, sgst_amount, igst_amount, tax_total, line_tax_map
      */
-    private function calculateGstFromItems($items, float $discountTotal, ?string $state): array
+    private function productGstRate(?Product $product): float
+    {
+        return app(\App\Services\GstRateService::class)->rateForProduct($product, request()->user());
+    }
+
+    private function calculateGstFromItems($items, float $discountTotal, ?string $state, ?\App\Models\User $user = null): array
     {
         $state = trim((string) $state);
         $isMaharashtra = $state !== '' && strcasecmp($state, 'Maharashtra') === 0;
@@ -1036,13 +1066,10 @@ class CheckoutController extends Controller
         foreach ($items as $it) {
             $id = $it->id;
 
-            $product = $it->product ?: Product::query()->find($it->product_id);
+            $product = $it->product ?: Product::query()->with('hsnCode')->find($it->product_id);
 
-            // gst_rate stored as percent e.g. 0, 5, 12, 18
-            $ratePercent = (float) ($product?->gst_rate ?? 0);
-            if ($ratePercent < 0) {
-                $ratePercent = 0;
-            }
+            // GST percent resolved from HSN/product/default fallback.
+            $ratePercent = app(\App\Services\GstRateService::class)->rateForCartItem($it, $user);
 
             $sub = (float) ($subtotals[$id] ?? 0);
             $disc = (float) ($lineDiscounts[$id] ?? 0);

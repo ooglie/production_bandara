@@ -50,12 +50,7 @@
         </div>
 
         <div class="flex items-center gap-2">
-            @if($isB2BCart && \Illuminate\Support\Facades\Route::has('b2b.portfolio'))
-                <a href="{{ route('b2b.portfolio') }}"
-                   class="text-[11px] px-3 py-1 rounded-sm border border-gray-300 dark:border-gray-700 hover:bg-gray-100 dark:hover:bg-gray-800">
-                    Back to B2B portfolio
-                </a>
-            @elseif(\Illuminate\Support\Facades\Route::has('shop.index'))
+            @if(\Illuminate\Support\Facades\Route::has('shop.index'))
                 <a href="{{ route('shop.index') }}"
                    class="text-[11px] px-3 py-1 rounded-sm border border-gray-300 dark:border-gray-700 hover:bg-gray-100 dark:hover:bg-gray-800">
                     Continue shopping
@@ -106,12 +101,6 @@
             </p>
         </div>
     @else
-        @if($isB2BCart && $items->contains(fn($item) => in_array((string)($item->b2b_order_mode ?? ''), ['pieces','weight'], true)))
-            <div class="rounded-sm border border-amber-200 bg-amber-50 px-3 py-2 text-[11px] text-amber-800 dark:border-amber-900 dark:bg-amber-950/30 dark:text-amber-200">
-                Some B2B items are pending actual supplied weight. They can be submitted now, and the final invoice amount will be confirmed by the team.
-            </div>
-        @endif
-
         <div class="grid gap-4 lg:grid-cols-3">
 
             {{-- Items --}}
@@ -146,7 +135,6 @@
                                 $isKg = $sellUnit === 'kg';
 
                                 $isPieceGroup = (bool) ($representative->is_piece_selected ?? false);
-                                $isB2BPendingWeight = in_array((string) ($representative->b2b_order_mode ?? ''), ['pieces', 'weight'], true);
                                 $pieceMeta = $representative->selected_piece_meta ?? null;
 
                                 $groupQty = $rowGroup->count();
@@ -222,6 +210,29 @@
                                     : (float) ((int) round($qtyForMath + $step));
 
                                 $atMax = (!$isPieceGroup && $maxQty !== null && $maxQty > 0 && $qtyForMath >= ($maxQty - 1e-9));
+
+                                $displayUnitPrice = $unitPrice;
+                                $displayLineTotal = $lineTotal;
+                                $displayPriceNote = null;
+
+                                if ($product) {
+                                    $quote = app(\App\Services\PricingService::class)->quote(auth()->user(), $product, $variant);
+                                    $displayUnitPrice = (float) ($quote['price'] ?? $unitPrice);
+                                    $displayPriceNote = ($quote['display_price_includes_gst'] ?? false) ? 'incl GST' : 'excl GST';
+
+                                    if ($isPieceGroup) {
+                                        $displayTaxMultiplier = ($quote['display_price_includes_gst'] ?? false)
+                                            ? (1 + max($gstRate, 0) / 100)
+                                            : 1;
+                                        $perSlabPrice = round((float) ($representative->total ?? 0) * $displayTaxMultiplier, 2);
+                                        $displayLineTotal = round($lineTotal * $displayTaxMultiplier, 2);
+                                    } else {
+                                        $pricingUnit = strtolower((string) ($variant?->pricing_unit ?? ($product?->pricing_unit ?? ($isKg ? 'kg' : 'pack'))));
+                                        $displayLineTotal = $pricingUnit === 'kg'
+                                            ? round(max((float) $itemWeight, 0) * $displayUnitPrice, 2)
+                                            : round($qtyForMath * $displayUnitPrice, 2);
+                                    }
+                                }
                             @endphp
 
                             <tr class="text-gray-700 dark:text-gray-200">
@@ -233,17 +244,6 @@
                                     @if(!$isB2BCart && $variantLabel)
                                         <div class="mt-1 text-[10px] text-gray-500 dark:text-gray-400">
                                             {{ $variantLabel }}
-                                        </div>
-                                    @endif
-
-                                    @if($isB2BCart && $isB2BPendingWeight)
-                                        <div class="mt-1 text-[10px] text-amber-700 dark:text-amber-300">
-                                            Final weight/invoice pending.
-                                            @if($representative->b2b_order_mode === 'pieces')
-                                                Requested: {{ (int) ($representative->requested_piece_count ?? $representative->quantity) }} pieces.
-                                            @else
-                                                Requested: {{ $fmtW($representative->requested_weight_kg ?? $representative->quantity) }} approx.
-                                            @endif
                                         </div>
                                     @endif
 
@@ -380,13 +380,19 @@
                                 <td class="px-3 py-2 whitespace-nowrap">
                                     @if($isPieceGroup)
                                         ₹{{ number_format($perSlabPrice, 2) }} / slab
+                                        @if($displayPriceNote)
+                                            <div class="mt-1 text-[10px] text-gray-500 dark:text-gray-400">{{ $displayPriceNote }}</div>
+                                        @endif
                                     @else
-                                        ₹{{ number_format($unitPrice, 2) }}
+                                        ₹{{ number_format($displayUnitPrice, 2) }}
+                                        @if($displayPriceNote)
+                                            <div class="mt-1 text-[10px] text-gray-500 dark:text-gray-400">{{ $displayPriceNote }}</div>
+                                        @endif
                                     @endif
                                 </td>
 
                                 <td class="px-3 py-2 whitespace-nowrap text-right">
-                                    @if($isB2BCart && $isB2BPendingWeight) Pending @else ₹{{ number_format($lineTotal, 2) }} @endif
+                                    ₹{{ number_format($displayLineTotal, 2) }}
                                 </td>
 
                                 <td class="px-3 py-2 whitespace-nowrap text-right">
@@ -427,7 +433,7 @@
                 <h2 class="font-semibold text-gray-900 dark:text-gray-50">Summary</h2>
 
                 <div class="flex items-center justify-between text-[11px]">
-                    <span class="text-gray-600 dark:text-gray-300">Subtotal</span>
+                    <span class="text-gray-600 dark:text-gray-300">Subtotal <span class="text-[10px] text-gray-400">(excl GST)</span></span>
                     <span class="text-gray-900 dark:text-gray-50">₹{{ number_format($subtotal, 2) }}</span>
                 </div>
 
@@ -473,12 +479,12 @@
                 @endif
 
                 <div class="flex items-center justify-between text-[11px]">
-                    <span class="text-gray-600 dark:text-gray-300">Total after discount</span>
+                    <span class="text-gray-600 dark:text-gray-300">Total after discount <span class="text-[10px] text-gray-400">(excl GST)</span></span>
                     <span class="text-gray-900 dark:text-gray-50">₹{{ number_format($totalAfterDiscount ?? $subtotal, 2) }}</span>
                 </div>
 
                 <div class="text-[10px] text-gray-500 dark:text-gray-400">
-                    Taxes and shipping are calculated at checkout.
+                    Item rows show your customer-facing price mode. The summary is ex-GST; taxes and shipping are calculated at checkout.
                 </div>
 
                 @auth

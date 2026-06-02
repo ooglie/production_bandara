@@ -112,10 +112,6 @@ class CheckoutController extends Controller
         $itemWeight = 0.0;
         $sellUnit = 'piece';
         foreach ($items as $it) {
-            if ($this->isB2BPendingWeightCartItem($it)) {
-                continue;
-            }
-
             $product = $it->product ?: Product::query()->find($it->product_id);
 
             $itemWeight += (float) ($it->item_weight ?? 0);
@@ -223,8 +219,6 @@ class CheckoutController extends Controller
             return $this->emptyCartRedirect($request);
         }
 
-        $hasPendingWeightItems = $items->contains(fn ($item) => $this->isB2BPendingWeightCartItem($item));
-
         $stockError = $this->validateCartStockBeforeOrder($items);
         if ($stockError !== null) {
             return redirect()
@@ -242,7 +236,7 @@ class CheckoutController extends Controller
             foreach ($items as $it) {
                 if ($it->product && ! $terms->canBuy($user, $it->product, $it->productVariant?->sellUnit, $it->productVariant)) {
                     return $this->b2bCartBlockedRedirect()
-                        ->withErrors(['cart' => ($it->product->name ?? 'This product') . ' is not assigned to your B2B portfolio. Please request access before buying.']);
+                        ->withErrors(['cart' => ($it->product->name ?? 'This product') . ' does not have a configured B2B price. Please contact the team before buying.']);
                 }
             }
 
@@ -306,7 +300,7 @@ class CheckoutController extends Controller
         $paymentMethod = (string) ($data['payment_method'] ?? 'razorpay');
         $payLaterOption = app(B2BPayLaterService::class)->checkoutOptionFor($user, $grandTotal);
 
-        if (! $hasPendingWeightItems && $paymentMethod === 'pay_later' && ! ($payLaterOption['eligible'] ?? false)) {
+        if ($paymentMethod === 'pay_later' && ! ($payLaterOption['eligible'] ?? false)) {
             return redirect()
                 ->to($this->appendQueryParameter($this->checkoutIndexUrl($request), 'address_id', (string) $address->id))
                 ->withErrors(['payment_method' => $payLaterOption['reason'] ?? 'Pay Later is not available for this order.'])
@@ -368,7 +362,6 @@ class CheckoutController extends Controller
             $data,
             $paymentMethod,
             $payLaterOption,
-            $hasPendingWeightItems,
             &$order
         ) {
             $order = new Order();
@@ -505,9 +498,6 @@ class CheckoutController extends Controller
 
                 $oi->product_id = $it->product_id;
                 $oi->product_variant_id = $variant?->id ?: $lineVariantId;
-                if (Schema::hasColumn('order_items', 'product_sell_unit_id')) {
-                    $oi->product_sell_unit_id = $this->sellUnitIdForCartItem($it, $variant);
-                }
 
                 $oi->product_name = $product?->name ?? 'Product';
                 $oi->pricing_unit = $getpriceUnit;
@@ -523,30 +513,6 @@ class CheckoutController extends Controller
 
                 if (! empty($selectedPieceSnapshot)) {
                     $snapshot['selected_piece'] = $selectedPieceSnapshot;
-                }
-
-                if ($this->isB2BPendingWeightCartItem($it)) {
-                    $mode = (string) ($it->b2b_order_mode ?? '');
-                    $requestedPieces = $mode === 'pieces' ? (int) ($it->requested_piece_count ?? $it->quantity ?? 0) : null;
-                    $requestedWeight = $mode === 'weight' ? round((float) ($it->requested_weight_kg ?? $it->quantity ?? 0), 3) : null;
-
-                    $snapshot['b2b_pending_weight'] = [
-                        'mode' => $mode,
-                        'requested_piece_count' => $requestedPieces,
-                        'requested_weight_kg' => $requestedWeight,
-                        'price_per_kg' => round((float) ($it->unit_price ?? 0), 2),
-                        'note' => 'Final invoice amount is pending actual supplied weight.',
-                    ];
-
-                    if (Schema::hasColumn('order_items', 'b2b_order_mode')) {
-                        $oi->b2b_order_mode = $mode;
-                    }
-                    if (Schema::hasColumn('order_items', 'requested_piece_count')) {
-                        $oi->requested_piece_count = $requestedPieces;
-                    }
-                    if (Schema::hasColumn('order_items', 'requested_weight_kg')) {
-                        $oi->requested_weight_kg = $requestedWeight;
-                    }
                 }
 
                 $oi->attributes_snapshot = ! empty($snapshot) ? $snapshot : null;
@@ -583,17 +549,11 @@ class CheckoutController extends Controller
             $invoice = new Invoice();
             $invoice->order_id = $order->id;
             $invoice->invoice_number = 'BA-' . now()->format('dmy') . '-' . Str::upper(Str::random(6));
-            $invoice->status = $hasPendingWeightItems ? 'pending' : ($paymentMethod === 'pay_later' ? 'due' : 'pending');
+            $invoice->status = $paymentMethod === 'pay_later' ? 'due' : 'pending';
             $invoice->invoice_date = now()->toDateString();
-            $invoice->due_date = $hasPendingWeightItems
-                ? null
-                : ($paymentMethod === 'pay_later'
-                    ? now()->addDays((int) ($payLaterOption['terms_days'] ?? 7))->toDateString()
-                    : now()->addDays(7)->toDateString());
-
-            if (Schema::hasColumn('invoices', 'requires_weight_finalization')) {
-                $invoice->requires_weight_finalization = $hasPendingWeightItems;
-            }
+            $invoice->due_date = $paymentMethod === 'pay_later'
+                ? now()->addDays((int) ($payLaterOption['terms_days'] ?? 7))->toDateString()
+                : now()->addDays(7)->toDateString();
 
             $invoice->subtotal = round($order->subtotal, 2);
             $invoice->tax_total = round($order->tax_total, 2);
@@ -617,10 +577,6 @@ class CheckoutController extends Controller
                 InvoiceItem::create([
                     'invoice_id'    => $invoice->id,
                     'order_item_id' => $oi->id,
-                    'product_sell_unit_id' => Schema::hasColumn('invoice_items', 'product_sell_unit_id') ? ($oi->product_sell_unit_id ?? null) : null,
-                    'b2b_order_mode' => Schema::hasColumn('invoice_items', 'b2b_order_mode') ? ($oi->b2b_order_mode ?? null) : null,
-                    'requested_piece_count' => Schema::hasColumn('invoice_items', 'requested_piece_count') ? ($oi->requested_piece_count ?? null) : null,
-                    'requested_weight_kg' => Schema::hasColumn('invoice_items', 'requested_weight_kg') ? ($oi->requested_weight_kg ?? null) : null,
                     'description'   => $oi->product_name,
                     'quantity'      => $oi->quantity,
                     'item_weight'   => $oi->item_weight,
@@ -633,7 +589,7 @@ class CheckoutController extends Controller
                 ]);
             }
 
-            if ($paymentMethod === 'pay_later' && ! $hasPendingWeightItems) {
+            if ($paymentMethod === 'pay_later') {
                 // Pay Later is an accepted B2B credit order, not a failed/pending
                 // Razorpay payment. Commit stock immediately inside this transaction
                 // so an inventory failure rolls the order back instead of creating a
@@ -652,12 +608,6 @@ class CheckoutController extends Controller
 
         if (! $order) {
             return back()->withErrors(['checkout' => 'Something went wrong. Please try again.']);
-        }
-
-        if ($hasPendingWeightItems) {
-            return redirect()
-                ->route('orders.show', $order)
-                ->with('status', 'B2B order placed. Final weight and invoice amount will be confirmed by the team before payment/invoice finalization.');
         }
 
         if ($paymentMethod === 'pay_later') {
@@ -702,7 +652,7 @@ class CheckoutController extends Controller
         }
 
         if (($user->customer_type ?? 'b2c') === 'b2b') {
-            return redirect()->route(Route::has('b2b.checkout.index') ? 'b2b.checkout.index' : 'b2b.dashboard')
+            return redirect()->route('checkout.index')
                 ->withErrors(['bandara_credit_points' => 'Bandara Credit redemption is not available for B2B checkout.']);
         }
 
@@ -769,10 +719,6 @@ class CheckoutController extends Controller
     protected function validateCartStockBeforeOrder($items): ?string
     {
         foreach ($items as $it) {
-            if ($this->isB2BPendingWeightCartItem($it)) {
-                continue;
-            }
-
             $product = $it->product ?: Product::query()->find($it->product_id);
             if (! $product) {
                 return 'One of the products in your cart is no longer available.';
@@ -876,22 +822,6 @@ class CheckoutController extends Controller
         return [];
     }
 
-    protected function isB2BPendingWeightCartItem(CartItem $item): bool
-    {
-        return in_array((string) ($item->b2b_order_mode ?? ''), ['pieces', 'weight'], true);
-    }
-
-    protected function sellUnitIdForCartItem(CartItem $item, ?ProductVariant $variant = null): ?int
-    {
-        if (Schema::hasColumn('cart_items', 'product_sell_unit_id') && ! empty($item->product_sell_unit_id)) {
-            return (int) $item->product_sell_unit_id;
-        }
-
-        $variantSellUnitId = (int) ($variant?->product_sell_unit_id ?? $item->productVariant?->product_sell_unit_id ?? 0);
-
-        return $variantSellUnitId > 0 ? $variantSellUnitId : null;
-    }
-
     protected function addressReturnToSessionKey(): string
     {
         return 'customer.addresses.return_to';
@@ -908,10 +838,6 @@ class CheckoutController extends Controller
             return $returnTo;
         }
 
-        if ($this->isB2BRequest($request) && Route::has('b2b.checkout.index')) {
-            return route('b2b.checkout.index', [], false);
-        }
-
         if (Route::has('checkout.index')) {
             return route('checkout.index', [], false);
         }
@@ -921,23 +847,11 @@ class CheckoutController extends Controller
 
     protected function emptyCartRedirect(Request $request)
     {
-        if ($this->isB2BRequest($request) && Route::has('b2b.dashboard')) {
-            return redirect()->route('b2b.dashboard')->with('status', 'Your cart is empty.');
-        }
-
         return redirect()->route('cart.index')->with('status', 'Your cart is empty.');
     }
 
     protected function b2bCartBlockedRedirect()
     {
-        if (Route::has('b2b.catalog.index')) {
-            return redirect()->route('b2b.catalog.index');
-        }
-
-        if (Route::has('b2b.dashboard')) {
-            return redirect()->route('b2b.dashboard');
-        }
-
         return redirect()->route('cart.index');
     }
 
@@ -1015,6 +929,24 @@ class CheckoutController extends Controller
         return $path . ($queryString !== '' ? '?' . $queryString : '') . $fragment;
     }
 
+    protected function calculateLineTotalForCartItem(Product $product, ?ProductVariant $variant, float $qty, float $unitPrice, ?float $lineWeight = null): float
+    {
+        $pricingUnit = strtolower((string) ($variant?->pricing_unit ?? ($product->sell_unit === 'kg' ? 'kg' : 'pack')));
+        $pricingUnit = in_array($pricingUnit, ['kg', 'pack'], true) ? $pricingUnit : 'pack';
+
+        if ($pricingUnit === 'kg') {
+            $weight = (float) ($lineWeight ?? 0);
+            if ($weight <= 0) {
+                $unitWeight = (float) ($variant?->product_weight ?? $product->product_weight ?? 0);
+                $weight = round($qty * $unitWeight, 3);
+            }
+
+            return round(max($weight, 0) * $unitPrice, 2);
+        }
+
+        return round(max($qty, 0) * $unitPrice, 2);
+    }
+
     /**
      * Snapshot weighted cart rows before sync and restore their selected weight after sync.
      * This prevents slab/weight-based selections from being zeroed out on checkout load.
@@ -1052,14 +984,21 @@ class CheckoutController extends Controller
                 $afterTotal = round((float) ($after->total ?? 0), 2);
 
                 $weightChanged = abs($afterWeight - $beforeWeight) > 0.0009;
-                $totalChanged = abs($afterTotal - $beforeTotal) > 0.009;
+                if ($weightChanged) {
+                    $product = $after->product;
+                    $variant = $after->productVariant;
+                    $unitPrice = (float) ($after->unit_price ?? 0);
+                    $quantity = (float) ($after->quantity ?? 0);
 
-                if ($weightChanged || $totalChanged) {
+                    $recalculatedTotal = $product
+                        ? $this->calculateLineTotalForCartItem($product, $variant, $quantity, $unitPrice, $beforeWeight)
+                        : $beforeTotal;
+
                     DB::table('cart_items')
                         ->where('id', $after->id)
                         ->update([
                             'item_weight' => $beforeWeight,
-                            'total' => $beforeTotal,
+                            'total' => $recalculatedTotal,
                         ]);
                 }
             }

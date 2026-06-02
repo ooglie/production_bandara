@@ -30,7 +30,7 @@
     $basePrice      = (float) ($priceQuote['compare_at_price'] ?? $product->base_price ?? 0);
     $b2bMoq         = (float) ($priceQuote['moq'] ?? 1);
 
-    $gstRate = (float) ($product->effective_gst_rate ?? $product->gst_rate ?? 0);
+    $gstRate = app(\App\Services\GstRateService::class)->rateForProduct($product, auth()->user());
 
     $mrpDisplay = (float) ($product->mrp_price ?? 0);
     if ($mrpDisplay > 0 && ($product->b2c_price_includes_gst ?? true) && $gstRate > 0) {

@@ -33,7 +33,7 @@
     $base      = (float)($cardQuote['compare_at_price'] ?? $effective);
     $mrp       = $product->mrp_price !== null ? (float)$product->mrp_price : null;
     if ($mrp !== null && ($cardQuote['display_price_includes_gst'] ?? true)) {
-        $gstRate = (float) ($product->effective_gst_rate ?? $product->gst_rate ?? 0);
+        $gstRate = app(\App\Services\GstRateService::class)->rateForProduct($product, auth()->user());
         if ($gstRate > 0) {
             $mrp = round($mrp * (1 + ($gstRate / 100)), 2);
         }

@@ -27,13 +27,21 @@ class CartController extends Controller
         $coupon = null;
         $discount = 0.0;
         $totalAfterDiscount = 0.0;
+        $cartGst = [
+            'tax_total' => 0.0,
+            'taxable' => 0.0,
+            'line_tax_map' => [],
+            'line_discounts' => [],
+            'line_subtotals' => [],
+        ];
+        $cartGrandTotal = 0.0;
         $couponNotice = null;
 
         if ($cart) {
             $pricingUpdatedCount = $cartService->syncPrices($cart);
             $pricingUpdatedCount += $this->reapplySelectedPiecePricing($cart);
 
-            $items = CartItem::with(['product', 'productVariant'])
+            $items = CartItem::with(['product.hsnCode', 'productVariant'])
                 ->where('cart_id', $cart->id)
                 ->orderBy('id')
                 ->get();
@@ -56,6 +64,8 @@ class CartController extends Controller
             }
 
             $totalAfterDiscount = max($subtotal - $discount, 0);
+            $cartGst = $this->calculateCartGstFromItems($items, (float) $discount, $request->user());
+            $cartGrandTotal = round($totalAfterDiscount + (float) ($cartGst['tax_total'] ?? 0), 2);
         }
 
         return view('customer.cart.index', [
@@ -66,8 +76,81 @@ class CartController extends Controller
             'coupon'              => $coupon,
             'discount'            => $discount,
             'totalAfterDiscount'  => $totalAfterDiscount,
+            'cartGst'             => $cartGst,
+            'cartGrandTotal'      => $cartGrandTotal,
             'couponNotice'        => $couponNotice,
         ]);
+    }
+
+    private function calculateCartGstFromItems($items, float $discountTotal = 0.0, ?\App\Models\User $user = null): array
+    {
+        $subtotals = [];
+        $sumSubtotal = 0.0;
+
+        foreach ($items as $it) {
+            $sub = round((float) ($it->total ?? 0), 2);
+            $subtotals[$it->id] = $sub;
+            $sumSubtotal += $sub;
+        }
+
+        $sumSubtotal = round($sumSubtotal, 2);
+        $discountTotal = round(max($discountTotal, 0), 2);
+        $allocatedDiscount = 0.0;
+        $ids = array_keys($subtotals);
+        $lastId = end($ids);
+
+        $lineDiscounts = [];
+        foreach ($subtotals as $id => $sub) {
+            if ($sumSubtotal <= 0) {
+                $lineDiscounts[$id] = 0.0;
+                continue;
+            }
+
+            if ($id === $lastId) {
+                $lineDiscounts[$id] = round($discountTotal - $allocatedDiscount, 2);
+            } else {
+                $discount = round(($sub / $sumSubtotal) * $discountTotal, 2);
+                $lineDiscounts[$id] = $discount;
+                $allocatedDiscount += $discount;
+            }
+        }
+
+        $lineTaxMap = [];
+        $taxableTotal = 0.0;
+        $taxTotal = 0.0;
+
+        foreach ($items as $it) {
+            $id = $it->id;
+            $product = $it->product ?: Product::query()->with('hsnCode')->find($it->product_id);
+            $ratePercent = app(\App\Services\GstRateService::class)->rateForCartItem($it, $user);
+            $sub = (float) ($subtotals[$id] ?? 0);
+            $discount = (float) ($lineDiscounts[$id] ?? 0);
+
+            $taxableLine = round(max($sub - $discount, 0), 2);
+            $taxLine = round($taxableLine * ($ratePercent / 100), 2);
+
+            $lineTaxMap[$id] = [
+                'rate_percent' => $ratePercent,
+                'taxable' => $taxableLine,
+                'tax' => $taxLine,
+            ];
+
+            $taxableTotal += $taxableLine;
+            $taxTotal += $taxLine;
+        }
+
+        return [
+            'taxable' => round($taxableTotal, 2),
+            'tax_total' => round($taxTotal, 2),
+            'line_tax_map' => $lineTaxMap,
+            'line_discounts' => $lineDiscounts,
+            'line_subtotals' => $subtotals,
+        ];
+    }
+
+    private function productGstRate(?Product $product): float
+    {
+        return app(\App\Services\GstRateService::class)->rateForProduct($product, request()->user());
     }
 
     public function add(Request $request, CartService $cartService)

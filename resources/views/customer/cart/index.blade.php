@@ -129,7 +129,7 @@
 
                                 $name = $product?->name ?? 'Product';
                                 $variantLabel = $variant ? ($variant->sku ?? ('Variant #' . $variant->id)) : null;
-                                $gstRate = (float)($product?->gst_rate ?? 0);
+                                $gstRate = app(\App\Services\GstRateService::class)->rateForProduct($product, auth()->user());
 
                                 $sellUnit = strtolower((string)($product?->sell_unit ?? 'piece'));
                                 $isKg = $sellUnit === 'kg';
@@ -215,14 +215,23 @@
                                 $displayLineTotal = $lineTotal;
                                 $displayPriceNote = null;
 
-                                if ($isB2BCart && $product) {
+                                if ($product) {
                                     $quote = app(\App\Services\PricingService::class)->quote(auth()->user(), $product, $variant);
                                     $displayUnitPrice = (float) ($quote['price'] ?? $unitPrice);
-                                    $pricingUnit = strtolower((string) ($variant?->pricing_unit ?? ($product?->pricing_unit ?? ($isKg ? 'kg' : 'pack'))));
-                                    $displayLineTotal = $pricingUnit === 'kg'
-                                        ? round(max((float) $itemWeight, 0) * $displayUnitPrice, 2)
-                                        : round($qtyForMath * $displayUnitPrice, 2);
                                     $displayPriceNote = ($quote['display_price_includes_gst'] ?? false) ? 'incl GST' : 'excl GST';
+
+                                    if ($isPieceGroup) {
+                                        $displayTaxMultiplier = ($quote['display_price_includes_gst'] ?? false)
+                                            ? (1 + max($gstRate, 0) / 100)
+                                            : 1;
+                                        $perSlabPrice = round((float) ($representative->total ?? 0) * $displayTaxMultiplier, 2);
+                                        $displayLineTotal = round($lineTotal * $displayTaxMultiplier, 2);
+                                    } else {
+                                        $pricingUnit = strtolower((string) ($variant?->pricing_unit ?? ($product?->pricing_unit ?? ($isKg ? 'kg' : 'pack'))));
+                                        $displayLineTotal = $pricingUnit === 'kg'
+                                            ? round(max((float) $itemWeight, 0) * $displayUnitPrice, 2)
+                                            : round($qtyForMath * $displayUnitPrice, 2);
+                                    }
                                 }
                             @endphp
 
@@ -371,6 +380,9 @@
                                 <td class="px-3 py-2 whitespace-nowrap">
                                     @if($isPieceGroup)
                                         ₹{{ number_format($perSlabPrice, 2) }} / slab
+                                        @if($displayPriceNote)
+                                            <div class="mt-1 text-[10px] text-gray-500 dark:text-gray-400">{{ $displayPriceNote }}</div>
+                                        @endif
                                     @else
                                         ₹{{ number_format($displayUnitPrice, 2) }}
                                         @if($displayPriceNote)
@@ -421,7 +433,7 @@
                 <h2 class="font-semibold text-gray-900 dark:text-gray-50">Summary</h2>
 
                 <div class="flex items-center justify-between text-[11px]">
-                    <span class="text-gray-600 dark:text-gray-300">Subtotal</span>
+                    <span class="text-gray-600 dark:text-gray-300">Subtotal <span class="text-[10px] text-gray-400">(excl GST)</span></span>
                     <span class="text-gray-900 dark:text-gray-50">₹{{ number_format($subtotal, 2) }}</span>
                 </div>
 
@@ -467,12 +479,27 @@
                 @endif
 
                 <div class="flex items-center justify-between text-[11px]">
-                    <span class="text-gray-600 dark:text-gray-300">Total after discount</span>
+                    <span class="text-gray-600 dark:text-gray-300">Total after discount <span class="text-[10px] text-gray-400">(excl GST)</span></span>
                     <span class="text-gray-900 dark:text-gray-50">₹{{ number_format($totalAfterDiscount ?? $subtotal, 2) }}</span>
                 </div>
 
+                @php
+                    $cartGstTotal = (float) ($cartGst['tax_total'] ?? 0);
+                    $cartTotalInclGst = (float) ($cartGrandTotal ?? (($totalAfterDiscount ?? $subtotal) + $cartGstTotal));
+                @endphp
+
+                <div class="flex items-center justify-between text-[11px]">
+                    <span class="text-gray-600 dark:text-gray-300">Estimated GST</span>
+                    <span class="text-gray-900 dark:text-gray-50">₹{{ number_format($cartGstTotal, 2) }}</span>
+                </div>
+
+                <div class="border-t border-gray-200 dark:border-gray-800 pt-3 flex items-center justify-between text-xs font-semibold">
+                    <span class="text-gray-900 dark:text-gray-50">Estimated total <span class="text-[10px] font-normal text-gray-400">(incl GST)</span></span>
+                    <span class="text-gray-900 dark:text-gray-50">₹{{ number_format($cartTotalInclGst, 2) }}</span>
+                </div>
+
                 <div class="text-[10px] text-gray-500 dark:text-gray-400">
-                    Taxes and shipping are calculated at checkout.
+                    Item rows show your customer-facing price mode. GST is estimated from product/HSN rates and finalized at checkout after address selection.
                 </div>
 
                 @auth

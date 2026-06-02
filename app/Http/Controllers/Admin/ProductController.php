@@ -213,7 +213,17 @@ class ProductController extends Controller
         $name = trim((string) $validated['name']);
         $slug = $this->resolveSlug($validated['slug'] ?? null, $name, $product);
 
-        $gstRate = $this->toDecimal($validated['gst_rate']) ?? 0.0;
+        $gstRate = $this->toDecimal($validated['gst_rate'] ?? null);
+        $hsnRate = null;
+        if (! empty($validated['hsn_code_id'])) {
+            $hsnRate = $this->toDecimal(HsnCode::query()->whereKey($validated['hsn_code_id'])->value('gst_rate'));
+        }
+
+        if (($gstRate === null || $gstRate <= 0) && $hsnRate !== null && $hsnRate > 0) {
+            $gstRate = $hsnRate;
+        }
+
+        $gstRate = $gstRate ?? 0.0;
         $b2cPriceIncludesGst = $request->boolean('b2c_price_includes_gst', true);
         $b2bPriceIncludesGst = $request->boolean('b2b_price_includes_gst', false);
         $factor = 1 + ($gstRate / 100);

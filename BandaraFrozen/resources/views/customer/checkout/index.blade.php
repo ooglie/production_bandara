@@ -215,7 +215,7 @@
 
                             $qty = (float) ($it->quantity ?? 0);
                             $pw  = (float) ($p?->product_weight ?? 0);
-                            $gstRate = app(\App\Services\GstRateService::class)->rateForProduct($p, auth()->user());
+                            $gstRate = (float) ($p?->gst_rate ?? 0);
 
                             // FIX:
                             // For production/slab items, selected weight is stored in cart_items.item_weight.

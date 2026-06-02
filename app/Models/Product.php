@@ -242,7 +242,7 @@ class Product extends Model
     public function getPriceWithGstAttribute(): float
     {
         $base = (float) ($this->base_price ?? 0);
-        $rate = (float) ($this->gst_rate ?? 0);
+        $rate = (float) $this->effective_gst_rate;
 
         return round($base * (1 + ($rate / 100)), 2);
     }
@@ -259,7 +259,7 @@ class Product extends Model
 
     public function getEffectiveGstRateAttribute(): float
     {
-        return (float) ($this->hsnCode?->gst_rate ?? $this->gst_rate ?? 0);
+        return app(\App\Services\GstRateService::class)->rateForProduct($this);
     }
 
     public function b2bAssignments()

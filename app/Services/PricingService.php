@@ -306,7 +306,7 @@ class PricingService
 
     protected function gstRateFor(Product $product): float
     {
-        return (float) ($product->effective_gst_rate ?? $product->gst_rate ?? 0);
+        return app(GstRateService::class)->rateForProduct($product);
     }
 
     protected function b2cPriceIncludesGst(Product $product): bool
