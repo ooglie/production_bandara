@@ -29,7 +29,17 @@ return Application::configure(basePath: dirname(__DIR__))
         ]);
     })
     ->withExceptions(function (Exceptions $exceptions): void {
-        //
+        $exceptions->render(function (\Spatie\Permission\Exceptions\UnauthorizedException $e, \Illuminate\Http\Request $request) {
+            $user = $request->user();
+
+            if ($user?->hasRole('DeliveryAgent') && \Illuminate\Support\Facades\Route::has('delivery.index')) {
+                return redirect()
+                    ->route('delivery.index')
+                    ->with('status', 'Delivery agents can access only their assigned delivery dashboard.');
+            }
+
+            return null;
+        });
     })->create();
 
     return [

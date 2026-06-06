@@ -64,11 +64,22 @@ class LoginController extends Controller
                 ->update(['user_id' => $user->id, 'session_id' => null]);
         }
 
-        // ✅ If Laravel stored an intended URL (like /checkout), honor it for
-        // both B2C and B2B customers. The storefront is now unified and prices
-        // are resolved by account type after login.
         $fallback = $this->redirectPathFor($user);
 
+        // Delivery agents should never be sent to a stale/customer/admin
+        // intended URL after login. Mobile browsers often preserve an
+        // intended URL from a previous protected page, which can send a
+        // DeliveryAgent user to a route protected by another role and cause
+        // a 403 immediately after successful login.
+        if ($user->hasRole('DeliveryAgent')) {
+            $request->session()->forget('url.intended');
+
+            return redirect()->to($fallback);
+        }
+
+        // ✅ If Laravel stored an intended URL (like /checkout), honor it for
+        // storefront customers. The storefront is unified and prices are
+        // resolved by account type after login.
         return redirect()->intended($fallback);
     }
 
