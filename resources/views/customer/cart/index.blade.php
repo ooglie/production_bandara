@@ -489,17 +489,48 @@
                 @endphp
 
                 <div class="flex items-center justify-between text-[11px]">
-                    <span class="text-gray-600 dark:text-gray-300">Estimated GST</span>
+                    <span class="text-gray-600 dark:text-gray-300">Estimated product GST</span>
                     <span class="text-gray-900 dark:text-gray-50">₹{{ number_format($cartGstTotal, 2) }}</span>
                 </div>
 
+                @php
+                    $cartDeliveryQuote = $deliveryQuote ?? [];
+                    $cartDeliveryFee = (float) ($cartDeliveryQuote['delivery_fee'] ?? 0);
+                    $cartHandlingFee = (float) ($cartDeliveryQuote['handling_fee'] ?? 0);
+                    $cartChargeTax = (float) ($cartDeliveryQuote['tax_total'] ?? 0);
+                @endphp
+
+                @if($cartDeliveryFee > 0 || $cartHandlingFee > 0 || $cartChargeTax > 0 || !empty($cartDeliveryQuote['messages']))
+                    <div class="border-t border-gray-100 dark:border-gray-800 pt-2 space-y-2">
+                        <div class="flex items-center justify-between text-[11px]">
+                            <span class="text-gray-600 dark:text-gray-300">Estimated delivery fee</span>
+                            <span class="text-gray-900 dark:text-gray-50">₹{{ number_format($cartDeliveryFee, 2) }}</span>
+                        </div>
+                        <div class="flex items-center justify-between text-[11px]">
+                            <span class="text-gray-600 dark:text-gray-300">Cold-chain handling & packing</span>
+                            <span class="text-gray-900 dark:text-gray-50">₹{{ number_format($cartHandlingFee, 2) }}</span>
+                        </div>
+                        @if($cartChargeTax > 0)
+                            <div class="flex items-center justify-between text-[11px]">
+                                <span class="text-gray-600 dark:text-gray-300">Delivery / handling GST</span>
+                                <span class="text-gray-900 dark:text-gray-50">₹{{ number_format($cartChargeTax, 2) }}</span>
+                            </div>
+                        @endif
+                        @if(!empty($cartDeliveryQuote['messages']))
+                            <div class="rounded-xl border border-amber-200 bg-amber-50 px-3 py-2 text-[10px] text-amber-800 dark:border-amber-900/50 dark:bg-amber-950/30 dark:text-amber-200">
+                                {{ $cartDeliveryQuote['messages'][0] }}
+                            </div>
+                        @endif
+                    </div>
+                @endif
+
                 <div class="border-t border-gray-200 dark:border-gray-800 pt-3 flex items-center justify-between text-xs font-semibold">
-                    <span class="text-gray-900 dark:text-gray-50">Estimated total <span class="text-[10px] font-normal text-gray-400">(incl GST)</span></span>
+                    <span class="text-gray-900 dark:text-gray-50">Estimated total <span class="text-[10px] font-normal text-gray-400">(incl GST & delivery)</span></span>
                     <span class="text-gray-900 dark:text-gray-50">₹{{ number_format($cartTotalInclGst, 2) }}</span>
                 </div>
 
                 <div class="text-[10px] text-gray-500 dark:text-gray-400">
-                    Item rows show your customer-facing price mode. GST is estimated from product/HSN rates and finalized at checkout after address selection.
+                    Item rows show your customer-facing price mode. GST and delivery/handling fees are finalized at checkout after address selection.
                 </div>
 
                 @auth

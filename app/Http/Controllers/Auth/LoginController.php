@@ -99,6 +99,10 @@ class LoginController extends Controller
             return route('stores.dashboard');
         }
 
+        if ($user->hasRole('DeliveryAgent')) {
+            return route('delivery.index');
+        }
+
         // B2B users use the unified storefront/catalogue with account-aware
         // pricing, MOQ, and Pay Later terms. Send them to Shop by default so
         // they immediately see the full active product catalogue.

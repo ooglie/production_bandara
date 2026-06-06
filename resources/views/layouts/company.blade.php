@@ -17,6 +17,8 @@
         if ($user->hasRole('Manager'))    return route('manager.dashboard');
         if ($user->hasRole('Support'))    return route('support.dashboard');
         if ($user->hasRole('Accountant') || $user->hasRole('CAAccountant')) return route('accountant.dashboard');
+        if ($user->hasRole('Stores'))     return route('stores.dashboard');
+        if ($user->hasRole('DeliveryAgent') && Route::has('delivery.index')) return route('delivery.index');
 
         // default for unknown roles
         return route('home');

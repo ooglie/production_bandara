@@ -308,7 +308,7 @@ class UserController extends Controller
      */
     private function resolveCustomerType(array $roleNames, ?string $requestedType): string
     {
-        $staffRoles = ['Admin', 'Manager', 'Support', 'Accountant', 'CAAccountant', 'Stores'];
+        $staffRoles = ['Admin', 'Manager', 'Support', 'Accountant', 'CAAccountant', 'Stores', 'DeliveryAgent'];
 
         if (count(array_intersect($roleNames, $staffRoles)) > 0) {
             return 'staff';

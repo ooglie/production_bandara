@@ -276,6 +276,18 @@
                         <span>Discount</span>
                         <span>- ₹{{ $adminMoney($invoice->discount_total) }}</span>
                     </div>
+                    @if((float) ($invoice->delivery_fee ?? 0) > 0)
+                        <div class="flex justify-between">
+                            <span>Delivery fee <span class="text-[10px] text-gray-400">excl GST</span></span>
+                            <span>₹{{ $adminMoney($invoice->delivery_fee) }}</span>
+                        </div>
+                    @endif
+                    @if((float) ($invoice->handling_fee ?? 0) > 0)
+                        <div class="flex justify-between">
+                            <span>Cold-chain handling & packing <span class="text-[10px] text-gray-400">excl GST</span></span>
+                            <span>₹{{ $adminMoney($invoice->handling_fee) }}</span>
+                        </div>
+                    @endif
                     {{-- GST breakdown --}}
                     @if(($order?->gst_type ?? null) === 'intra_state')
                         <div class="flex justify-between">

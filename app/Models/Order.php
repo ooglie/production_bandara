@@ -21,6 +21,13 @@ class Order extends Model
         'discount_total'  => 'float',
         'tax_total'       => 'float',
         'shipping_total'  => 'float',
+        'delivery_status' => 'string',
+        'delivery_fee' => 'float',
+        'handling_fee' => 'float',
+        'delivery_tax_amount' => 'float',
+        'handling_tax_amount' => 'float',
+        'delivery_tax_rate' => 'float',
+        'handling_tax_rate' => 'float',
         'bandara_credit_redeemed_points' => 'integer',
         'bandara_credit_redeemed_amount' => 'float',
         'bandara_credit_points_redeemed' => 'integer',
@@ -38,7 +45,9 @@ class Order extends Model
         'printed_at'      => 'datetime',
         'cancelled_at'    => 'datetime',
         'shipped_at'      => 'datetime',
+        'out_for_delivery_at' => 'datetime',
         'delivered_at'    => 'datetime',
+        'delivery_failed_at' => 'datetime',
         'created_at'      => 'datetime',
         'updated_at'      => 'datetime',
         'item_weight'     => 'decimal:3',
@@ -89,6 +98,21 @@ class Order extends Model
     public function cancelledBy()
     {
         return $this->belongsTo(User::class, 'cancelled_by_id');
+    }
+
+    public function deliveryAgent()
+    {
+        return $this->belongsTo(User::class, 'delivery_agent_id');
+    }
+
+    public function deliveredBy()
+    {
+        return $this->belongsTo(User::class, 'delivered_by_id');
+    }
+
+    public function deliveryEvents()
+    {
+        return $this->hasMany(OrderDeliveryEvent::class)->latest();
     }
 
     // // Only if you already created Invoice model + table

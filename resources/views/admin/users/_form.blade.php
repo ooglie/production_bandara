@@ -68,7 +68,7 @@
             <div>
                 <div class="text-[12px] font-semibold text-gray-900 dark:text-gray-50">User type</div>
                 <div class="text-[10px] text-gray-500 dark:text-gray-400">
-                    If you select staff roles below (Admin/Manager/Support/Accountant/Stores), we auto-switch this to <b>Staff</b>.
+                    If you select staff roles below (Admin/Manager/Support/Accountant/Stores/Delivery Agent), we auto-switch this to <b>Staff</b>.
                 </div>
             </div>
         </div>
@@ -80,7 +80,7 @@
                    focus:outline-none focus:ring-2 focus:ring-gray-300 dark:focus:ring-gray-700"
         >
             <option value="staff" @selected($prefCustomerType === 'staff')>
-                Staff (Admin/Manager/Support/Accountant/Stores)
+                Staff (Admin/Manager/Support/Accountant/Stores/Delivery Agent)
             </option>
             <option value="b2c" @selected($prefCustomerType === 'b2c')>
                 Customer (B2C – regular online customer)
@@ -171,7 +171,7 @@
             <div>
                 <div class="text-[12px] font-semibold text-gray-900 dark:text-gray-50">Roles</div>
                 <div class="text-[10px] text-gray-500 dark:text-gray-400">
-                    For customers, select <b>Customer</b>. For staff, select Admin/Manager/Support/Accountant/Stores as needed.
+                    For customers, select <b>Customer</b>. For staff, select Admin/Manager/Support/Accountant/Stores/Delivery Agent as needed.
                 </div>
             </div>
         </div>
@@ -250,7 +250,7 @@
     const customerType = document.getElementById('customer_type');
     const roleCheckboxes = document.querySelectorAll('.role-checkbox');
 
-    const STAFF_ROLES = ['Admin','Manager','Support','Accountant','CAAccountant','Stores'];
+    const STAFF_ROLES = ['Admin','Manager','Support','Accountant','CAAccountant','Stores','DeliveryAgent'];
 
     function hasAnyStaffRoleChecked() {
         for (const cb of roleCheckboxes) {

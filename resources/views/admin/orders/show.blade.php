@@ -197,6 +197,108 @@
                 </div>
             </div>
 
+            {{-- Delivery assignment --}}
+            <div class="rounded-xl border border-gray-200 dark:border-gray-800 bg-white dark:bg-gray-900 px-4 py-3 space-y-3">
+                <div class="flex flex-wrap items-start justify-between gap-3">
+                    <div>
+                        <p class="text-[11px] font-semibold text-gray-900 dark:text-gray-50">Delivery assignment</p>
+                        <p class="text-[10px] text-gray-500 dark:text-gray-400">
+                            Assign this order to a delivery agent. Delivery agents see only orders assigned to them.
+                        </p>
+                    </div>
+                    <span class="inline-flex items-center rounded-full border px-3 py-0.5 text-[10px]
+                        @if(($order->delivery_status ?? 'pending') === 'delivered') border-emerald-200 bg-emerald-50 text-emerald-700 dark:border-emerald-800 dark:bg-emerald-900/30 dark:text-emerald-200
+                        @elseif(($order->delivery_status ?? 'pending') === 'out_for_delivery') border-sky-200 bg-sky-50 text-sky-700 dark:border-sky-800 dark:bg-sky-900/30 dark:text-sky-200
+                        @elseif(($order->delivery_status ?? 'pending') === 'failed') border-rose-200 bg-rose-50 text-rose-700 dark:border-rose-800 dark:bg-rose-900/30 dark:text-rose-200
+                        @elseif(($order->delivery_status ?? 'pending') === 'assigned') border-amber-200 bg-amber-50 text-amber-700 dark:border-amber-800 dark:bg-amber-900/30 dark:text-amber-200
+                        @else border-gray-200 bg-gray-50 text-gray-500 dark:border-gray-700 dark:bg-gray-900/40 dark:text-gray-400
+                        @endif">
+                        {{ str_replace('_', ' ', ucfirst($adminText($order->delivery_status ?? 'pending'))) }}
+                    </span>
+                </div>
+
+                @if($order->deliveryAgent)
+                    <div class="grid gap-2 sm:grid-cols-2 text-[10px] text-gray-600 dark:text-gray-300">
+                        <p>Agent: <span class="font-semibold">{{ $adminText($order->deliveryAgent->name) }}</span></p>
+                        @if($order->deliveryAgent->phone)
+                            <p>Phone: <a href="tel:{{ $adminText($order->deliveryAgent->phone) }}" class="font-semibold text-sky-700 dark:text-sky-300">{{ $adminText($order->deliveryAgent->phone) }}</a></p>
+                        @endif
+                        @if($order->out_for_delivery_at)
+                            <p>Out for delivery: <span class="font-medium">{{ $order->out_for_delivery_at->format('d M Y, H:i') }}</span></p>
+                        @endif
+                        @if($order->delivered_at)
+                            <p>Delivered: <span class="font-medium">{{ $order->delivered_at->format('d M Y, H:i') }}</span></p>
+                        @endif
+                        @if($order->deliveredBy)
+                            <p>Delivered by: <span class="font-medium">{{ $adminText($order->deliveredBy->name) }}</span></p>
+                        @endif
+                        @if($order->delivery_failed_at)
+                            <p>Failed at: <span class="font-medium">{{ $order->delivery_failed_at->format('d M Y, H:i') }}</span></p>
+                        @endif
+                    </div>
+                @else
+                    <p class="text-[10px] text-gray-500 dark:text-gray-400">No delivery agent assigned yet.</p>
+                @endif
+
+                @if($order->delivery_failure_reason)
+                    <div class="rounded-lg border border-rose-200 bg-rose-50 px-3 py-2 text-[10px] text-rose-800 dark:border-rose-900/60 dark:bg-rose-950/40 dark:text-rose-200">
+                        Could not deliver: {{ $adminText($order->delivery_failure_reason) }}
+                    </div>
+                @endif
+
+                @if($order->delivery_note)
+                    <div class="rounded-lg border border-gray-200 bg-gray-50 px-3 py-2 text-[10px] text-gray-700 dark:border-gray-800 dark:bg-gray-950/60 dark:text-gray-300">
+                        {{ $adminText($order->delivery_note) }}
+                    </div>
+                @endif
+
+                @if(Route::has('admin.orders.delivery.assign') && auth()->user()?->hasAnyRole(['Admin', 'Manager', 'Stores']) && ! in_array($order->status, ['delivered', 'cancelled'], true))
+                    <form method="POST" action="{{ route('admin.orders.delivery.assign', $order) }}" class="grid gap-2 sm:grid-cols-[1fr,1.2fr,auto]">
+                        @csrf
+                        @method('PATCH')
+                        <select name="delivery_agent_id"
+                                class="rounded border border-gray-300 dark:border-gray-700 bg-white dark:bg-gray-950 px-2 py-1.5 text-[11px] focus:outline-none focus:ring-1 focus:ring-gray-400 dark:focus:ring-gray-500">
+                            <option value="">Unassigned</option>
+                            @foreach(($deliveryAgents ?? collect()) as $agent)
+                                <option value="{{ $agent->id }}" @selected((int) $order->delivery_agent_id === (int) $agent->id)>
+                                    {{ $agent->name }} @if($agent->phone) · {{ $agent->phone }} @endif
+                                </option>
+                            @endforeach
+                        </select>
+                        <input type="text" name="delivery_note" value="{{ old('delivery_note', $order->delivery_note) }}"
+                               placeholder="Optional delivery note for agent"
+                               class="rounded border border-gray-300 dark:border-gray-700 bg-white dark:bg-gray-950 px-2 py-1.5 text-[11px] focus:outline-none focus:ring-1 focus:ring-gray-400 dark:focus:ring-gray-500">
+                        <button type="submit"
+                                class="inline-flex items-center justify-center rounded-full border border-gray-900 dark:border-gray-100 bg-gray-900 text-white dark:bg-gray-100 dark:text-gray-900 px-3 py-1.5 text-[11px] font-medium hover:bg-gray-800 dark:hover:bg-gray-200">
+                            Save assignment
+                        </button>
+                    </form>
+                @endif
+
+                @if(($order->deliveryEvents ?? collect())->count())
+                    <details class="text-[10px] text-gray-600 dark:text-gray-300">
+                        <summary class="cursor-pointer font-semibold text-gray-700 dark:text-gray-200">Delivery history</summary>
+                        <div class="mt-2 space-y-1">
+                            @foreach($order->deliveryEvents->take(10) as $event)
+                                <div class="rounded-lg border border-gray-100 dark:border-gray-800 px-2 py-1.5">
+                                    <span class="font-semibold">{{ str_replace('_', ' ', ucfirst($adminText($event->event_type))) }}</span>
+                                    @if($event->old_status || $event->new_status)
+                                        · {{ $adminText($event->old_status, '—') }} → {{ $adminText($event->new_status, '—') }}
+                                    @endif
+                                    · {{ optional($event->created_at)->format('d M Y, H:i') }}
+                                    @if($event->user)
+                                        · by {{ $adminText($event->user->name) }}
+                                    @endif
+                                    @if($event->note)
+                                        <div class="mt-1 text-gray-500 dark:text-gray-400">{{ $adminText($event->note) }}</div>
+                                    @endif
+                                </div>
+                            @endforeach
+                        </div>
+                    </details>
+                @endif
+            </div>
+
             {{-- Addresses --}}
             <div class="grid gap-3 sm:grid-cols-2">
                 <div class="rounded-xl border border-gray-200 dark:border-gray-800 bg-white dark:bg-gray-900 px-3 py-2 space-y-1">

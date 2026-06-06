@@ -5,11 +5,13 @@ namespace App\Http\Controllers\Customer;
 use App\Http\Controllers\Controller;
 use App\Models\CartItem;
 use App\Models\Coupon;
+use App\Models\CustomerAddress;
 use App\Models\InventoryPiece;
 use App\Models\Product;
 use App\Models\ProductSellUnit;
 use App\Models\ProductVariant;
 use App\Services\CartService;
+use App\Services\DeliveryChargeService;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Schema;
 use Illuminate\Validation\ValidationException;
@@ -35,6 +37,7 @@ class CartController extends Controller
             'line_subtotals' => [],
         ];
         $cartGrandTotal = 0.0;
+        $deliveryQuote = [];
         $couponNotice = null;
 
         if ($cart) {
@@ -65,7 +68,23 @@ class CartController extends Controller
 
             $totalAfterDiscount = max($subtotal - $discount, 0);
             $cartGst = $this->calculateCartGstFromItems($items, (float) $discount, $request->user());
-            $cartGrandTotal = round($totalAfterDiscount + (float) ($cartGst['tax_total'] ?? 0), 2);
+
+            $defaultAddress = null;
+            if ($request->user()) {
+                $defaultAddress = CustomerAddress::query()
+                    ->where('user_id', $request->user()->id)
+                    ->orderByDesc('is_default_shipping')
+                    ->orderByDesc('id')
+                    ->first();
+            }
+
+            $deliveryQuote = app(DeliveryChargeService::class)->quote($request->user(), $defaultAddress, $totalAfterDiscount);
+            $cartGrandTotal = round(
+                $totalAfterDiscount
+                + (float) ($cartGst['tax_total'] ?? 0)
+                + (float) ($deliveryQuote['grand_total'] ?? 0),
+                2
+            );
         }
 
         return view('customer.cart.index', [
@@ -77,6 +96,7 @@ class CartController extends Controller
             'discount'            => $discount,
             'totalAfterDiscount'  => $totalAfterDiscount,
             'cartGst'             => $cartGst,
+            'deliveryQuote'       => $deliveryQuote,
             'cartGrandTotal'      => $cartGrandTotal,
             'couponNotice'        => $couponNotice,
         ]);

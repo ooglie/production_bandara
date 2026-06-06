@@ -109,6 +109,13 @@
                         Invoices
                     </a>
                 @endif
+
+                @if($has('admin.delivery.index'))
+                    <a href="{{ route('admin.delivery.index') }}"
+                       class="block px-2 py-1.5 rounded-md hover:bg-gray-100 dark:hover:bg-gray-800">
+                        Delivery & handling
+                    </a>
+                @endif
                 @if($has('admin.invoice-payment-submissions.index'))
                     <a href="{{ route('admin.invoice-payment-submissions.index') }}"
                        class="block px-2 py-1.5 rounded-md hover:bg-gray-100 dark:hover:bg-gray-800">

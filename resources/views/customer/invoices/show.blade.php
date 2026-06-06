@@ -303,6 +303,20 @@
                         <span>- ₹{{ number_format($invoice->discount_total, 2) }}</span>
                     </div>
 
+                    @if((float) ($invoice->delivery_fee ?? 0) > 0)
+                        <div class="flex justify-between">
+                            <span>Delivery fee <span class="text-[10px] text-gray-400">excl GST</span></span>
+                            <span>₹{{ number_format($invoice->delivery_fee, 2) }}</span>
+                        </div>
+                    @endif
+
+                    @if((float) ($invoice->handling_fee ?? 0) > 0)
+                        <div class="flex justify-between">
+                            <span>Cold-chain handling & packing <span class="text-[10px] text-gray-400">excl GST</span></span>
+                            <span>₹{{ number_format($invoice->handling_fee, 2) }}</span>
+                        </div>
+                    @endif
+
                     <div class="flex justify-between">
                         <span>GST</span>
                         <span>₹{{ number_format($invoice->tax_total, 2) }}</span>

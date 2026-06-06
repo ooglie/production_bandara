@@ -85,7 +85,7 @@
                 @endif
             @endif
 
-            @if($user->hasAnyRole(['Admin','Manager','Accountant','CAAccountant','Support', 'Stores']))
+            @if($user->hasAnyRole(['Admin','Manager','Accountant','CAAccountant','Support', 'Stores', 'DeliveryAgent']))
                 <div class="mt-1 border-t border-gray-100 dark:border-gray-800"></div>
                 @if($user->hasRole('Admin'))
                     <a href="{{ route('admin.dashboard') }}"
@@ -111,6 +111,11 @@
                     <a href="{{ route('stores.dashboard') }}"
                        class="flex items-center gap-2 px-3 py-1.5 hover:bg-gray-50 dark:hover:bg-gray-800 text-gray-800 dark:text-gray-100">
                         <span>Stores dashboard</span>
+                    </a>
+                @elseif($user->hasRole('DeliveryAgent') && Route::has('delivery.index'))
+                    <a href="{{ route('delivery.index') }}"
+                       class="flex items-center gap-2 px-3 py-1.5 hover:bg-gray-50 dark:hover:bg-gray-800 text-gray-800 dark:text-gray-100">
+                        <span>Delivery dashboard</span>
                     </a>
                 @endif
             @endif

@@ -212,6 +212,19 @@
             </tr>                               
         @endif
 
+        @if((float)($invoice->delivery_fee ?? 0) > 0)
+            <tr>
+                <td class="label">Delivery fee excl GST</td>
+                <td class="value">₹{{ number_format((float)$invoice->delivery_fee, 2) }}</td>
+            </tr>
+        @endif
+        @if((float)($invoice->handling_fee ?? 0) > 0)
+            <tr>
+                <td class="label">Cold-chain handling excl GST</td>
+                <td class="value">₹{{ number_format((float)$invoice->handling_fee, 2) }}</td>
+            </tr>
+        @endif
+
         {{-- ✅ GST display logic --}}
         @if(($gstType ?? '') === 'intra_state')
             <tr>

@@ -48,6 +48,10 @@ return [
             'label' => 'Stores',
             'description' => 'Stores/inventory/production access with vendor invoice support.',
         ],
+        'DeliveryAgent' => [
+            'label' => 'Delivery Agent',
+            'description' => 'Mobile delivery role with access only to assigned deliveries.',
+        ],
         'Customer' => [
             'label' => 'Customer',
             'description' => 'Frontend customer role. No back-office permissions.',
@@ -111,6 +115,8 @@ return [
         'create vendor invoice',
         'manage vendor payments',
         'manage sales',
+        'view assigned deliveries',
+        'update assigned delivery status',
     ],
 
     'role_permissions' => [
@@ -163,6 +169,11 @@ return [
             'view vendors',
             'view stores', 'manage stores',
             'create vendor invoice',
+        ],
+
+        'DeliveryAgent' => [
+            'view assigned deliveries',
+            'update assigned delivery status',
         ],
 
         'Customer' => [],

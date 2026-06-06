@@ -82,11 +82,11 @@
 
                     <span class="hidden sm:flex items-center gap-2 min-w-0">
                         <span class="font-semibold text-gray-900 dark:text-gray-50 text-sm truncate">
-                            <span class="text-gray-500 dark:text-gray-400">Bandara</span>
+                            <span class="text-gray-500 dark:text-gray-400">Bandara </span>
                         </span>
-                        <span class="text-[10px] uppercase tracking-[0.08em] text-gray-400 whitespace-nowrap">
-                            LLP
-                        </span>
+                        {{-- <span class="text-[10px] uppercase tracking-[0.08em] text-gray-400 whitespace-nowrap">
+                            by Bandara
+                        </span> --}}
                     </span>
                 </a>
             </div>

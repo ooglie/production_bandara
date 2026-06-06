@@ -334,6 +334,20 @@
                     </div>
                 @endif
 
+                @if((float) ($order->delivery_fee ?? 0) > 0)
+                    <div class="flex justify-between text-gray-700 dark:text-gray-300">
+                        <span>Delivery fee <span class="text-[10px] text-gray-400">excl GST</span></span>
+                        <span>₹{{ number_format($order->delivery_fee, 2) }}</span>
+                    </div>
+                @endif
+
+                @if((float) ($order->handling_fee ?? 0) > 0)
+                    <div class="flex justify-between text-gray-700 dark:text-gray-300">
+                        <span>Cold-chain handling & packing <span class="text-[10px] text-gray-400">excl GST</span></span>
+                        <span>₹{{ number_format($order->handling_fee, 2) }}</span>
+                    </div>
+                @endif
+
                 @if($order->gst_type === 'intra_state')
                     <div class="flex justify-between text-gray-700 dark:text-gray-300">
                         <span>SGST</span>

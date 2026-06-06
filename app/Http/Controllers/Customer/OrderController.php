@@ -403,12 +403,16 @@ class OrderController extends Controller
             'addresses',
             'invoice',
             'payments',
+            'deliveryAgent',
+            'deliveredBy',
+            'deliveryEvents.user',
         ]);
 
         $shippingAddress = $order->addresses->firstWhere('type', 'shipping');
         $billingAddress  = $order->addresses->firstWhere('type', 'billing');
 
         $availableStatuses = ['processing', 'shipped', 'delivered', 'cancelled'];
+        $deliveryAgents = User::role('DeliveryAgent')->orderBy('name')->get(['id', 'name', 'email', 'phone']);
         $rewardLedgerSummary = null;
         $rewardLedgerRows = collect();
 
@@ -437,6 +441,7 @@ class OrderController extends Controller
             'shippingAddress'   => $shippingAddress,
             'billingAddress'    => $billingAddress,
             'availableStatuses' => $availableStatuses,
+            'deliveryAgents' => $deliveryAgents,
             'rewardLedgerSummary' => $rewardLedgerSummary,
             'rewardLedgerRows' => $rewardLedgerRows,
         ]);

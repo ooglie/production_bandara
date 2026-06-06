@@ -518,14 +518,46 @@
                         </div>
 
                         <div class="flex items-center justify-between text-[11px]">
-                            <span class="text-gray-600 dark:text-gray-300">GST</span>
+                            <span class="text-gray-600 dark:text-gray-300">Product GST</span>
                             <span class="text-gray-900 dark:text-gray-50">₹{{ number_format($gst['tax_total'] ?? 0, 2) }}</span>
                         </div>
 
+                        @php
+                            $deliveryQuote = $deliveryQuote ?? [];
+                            $deliveryFee = (float) ($deliveryQuote['delivery_fee'] ?? 0);
+                            $handlingFee = (float) ($deliveryQuote['handling_fee'] ?? 0);
+                            $chargeTax = (float) ($deliveryChargeTaxTotal ?? ($deliveryQuote['tax_total'] ?? 0));
+                        @endphp
+
                         <div class="flex items-center justify-between text-[11px]">
-                            <span class="text-gray-600 dark:text-gray-300">Shipping</span>
-                            <span class="text-gray-900 dark:text-gray-50">₹{{ number_format($shippingTotal ?? 0, 2) }}</span>
+                            <span class="text-gray-600 dark:text-gray-300">Delivery fee <span class="text-[10px] text-gray-400">(excl GST)</span></span>
+                            <span class="text-gray-900 dark:text-gray-50">₹{{ number_format($deliveryFee, 2) }}</span>
                         </div>
+
+                        <div class="flex items-center justify-between text-[11px]">
+                            <span class="text-gray-600 dark:text-gray-300">Cold-chain handling & packing <span class="text-[10px] text-gray-400">(excl GST)</span></span>
+                            <span class="text-gray-900 dark:text-gray-50">₹{{ number_format($handlingFee, 2) }}</span>
+                        </div>
+
+                        @if($chargeTax > 0)
+                            <div class="flex items-center justify-between text-[11px]">
+                                <span class="text-gray-600 dark:text-gray-300">Delivery / handling GST</span>
+                                <span class="text-gray-900 dark:text-gray-50">₹{{ number_format($chargeTax, 2) }}</span>
+                            </div>
+                        @endif
+
+                        @if(!empty($deliveryQuote['zone_name']))
+                            <div class="rounded-xl border border-gray-200 dark:border-gray-800 bg-gray-50 dark:bg-gray-950/40 px-3 py-2 text-[11px] text-gray-600 dark:text-gray-300">
+                                Delivery zone: {{ $deliveryQuote['zone_name'] }}
+                                @if(!empty($deliveryQuote['pincode']))
+                                    · {{ $deliveryQuote['pincode'] }}
+                                @endif
+                            </div>
+                        @elseif(!empty($deliveryQuote['messages']))
+                            <div class="rounded-xl border border-amber-200 dark:border-amber-900/50 bg-amber-50 dark:bg-amber-950/30 px-3 py-2 text-[11px] text-amber-800 dark:text-amber-200">
+                                {{ $deliveryQuote['messages'][0] }}
+                            </div>
+                        @endif
 
                         @if(!empty($bandaraCredit['applied_points']))
                             <div class="flex items-center justify-between text-[11px] text-emerald-700 dark:text-emerald-300">

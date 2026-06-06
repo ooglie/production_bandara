@@ -69,6 +69,7 @@ use App\Http\Controllers\Admin\{
     DashboardController as AdminDashboardController,
     HsnCodeController,
     OrderPrintController,
+    OrderDeliveryController,
     B2BCustomerProductController,
     ProductVariantLookupController,
     B2BCustomerController,
@@ -79,11 +80,13 @@ use App\Http\Controllers\Admin\{
     RecipeController,
     AnnouncementController,
     HomeSectionController,
+    DeliverySettingsController,
     AdminBandaraCreditPreviewController,
     BandaraCreditController,
 };
 
 use App\Http\Controllers\Stores\DashboardController as StoresDashboardController;
+use App\Http\Controllers\Delivery\DeliveryDashboardController;
 
 /*
 |--------------------------------------------------------------------------
@@ -308,6 +311,23 @@ Route::get('/newsletter/unsubscribe/{subscriber}', [NewsletterController::class,
 
 /*
 |--------------------------------------------------------------------------
+| DELIVERY AGENT ROUTES
+|--------------------------------------------------------------------------
+*/
+
+Route::middleware(['auth', 'role:DeliveryAgent'])
+    ->prefix('delivery')
+    ->name('delivery.')
+    ->group(function () {
+        Route::get('/', [DeliveryDashboardController::class, 'index'])->name('index');
+        Route::get('/orders/{order}', [DeliveryDashboardController::class, 'show'])->name('orders.show');
+        Route::post('/orders/{order}/out-for-delivery', [DeliveryDashboardController::class, 'markOutForDelivery'])->name('orders.out-for-delivery');
+        Route::post('/orders/{order}/delivered', [DeliveryDashboardController::class, 'markDelivered'])->name('orders.delivered');
+        Route::post('/orders/{order}/failed', [DeliveryDashboardController::class, 'markFailed'])->name('orders.failed');
+    });
+
+/*
+|--------------------------------------------------------------------------
 | NON-LOCALIZED BACKOFFICE / STAFF ROUTES
 |--------------------------------------------------------------------------
 */
@@ -329,6 +349,17 @@ Route::middleware(['auth', 'role:Admin|Manager|Accountant|CAAccountant|Stores'])
 
         Route::resource('announcements', AnnouncementController::class)->except('show');
         Route::get('/home-sections', [HomeSectionController::class, 'index'])->name('home-sections.index');
+        Route::get('/delivery-settings', [DeliverySettingsController::class, 'index'])->name('delivery.index');
+        Route::post('/delivery-settings/zones', [DeliverySettingsController::class, 'storeZone'])->name('delivery.zones.store');
+        Route::put('/delivery-settings/zones/{zone}', [DeliverySettingsController::class, 'updateZone'])->name('delivery.zones.update');
+        Route::post('/delivery-settings/zones/{zone}/pincodes', [DeliverySettingsController::class, 'storePincode'])->name('delivery.zones.pincodes.store');
+        Route::delete('/delivery-settings/pincodes/{pincode}', [DeliverySettingsController::class, 'destroyPincode'])->name('delivery.pincodes.destroy');
+        Route::post('/delivery-settings/zones/{zone}/rules', [DeliverySettingsController::class, 'storeDeliveryRule'])->name('delivery.zones.delivery-rules.store');
+        Route::put('/delivery-settings/delivery-rules/{rule}', [DeliverySettingsController::class, 'updateDeliveryRule'])->name('delivery.delivery-rules.update');
+        Route::delete('/delivery-settings/delivery-rules/{rule}', [DeliverySettingsController::class, 'destroyDeliveryRule'])->name('delivery.delivery-rules.destroy');
+        Route::post('/delivery-settings/handling-rules', [DeliverySettingsController::class, 'storeHandlingRule'])->name('delivery.handling-rules.store');
+        Route::put('/delivery-settings/handling-rules/{rule}', [DeliverySettingsController::class, 'updateHandlingRule'])->name('delivery.handling-rules.update');
+        Route::delete('/delivery-settings/handling-rules/{rule}', [DeliverySettingsController::class, 'destroyHandlingRule'])->name('delivery.handling-rules.destroy');
         Route::get('/home-sections/{homeSection}/edit', [HomeSectionController::class, 'edit'])->name('home-sections.edit');
         Route::put('/home-sections/{homeSection}', [HomeSectionController::class, 'update'])->name('home-sections.update');
         Route::post('/home-sections/{homeSection}/toggle', [HomeSectionController::class, 'toggle'])->name('home-sections.toggle');
@@ -528,6 +559,9 @@ Route::middleware(['auth', 'role:Admin|Manager|Accountant|CAAccountant|Stores'])
 
             Route::get('/orders/{order}', [OrderController::class, 'adminShow'])->name('orders.show');
             Route::patch('/orders/{order}/status', [OrderController::class, 'updateStatus'])->name('orders.updateStatus');
+            Route::patch('/orders/{order}/delivery-assignment', [OrderDeliveryController::class, 'assign'])
+                ->middleware('role:Admin|Manager|Stores')
+                ->name('orders.delivery.assign');
 
             Route::get('/orders/{order}/print', [OrderPrintController::class, 'single'])
                 ->name('orders.print');

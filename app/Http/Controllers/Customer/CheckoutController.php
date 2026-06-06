@@ -16,6 +16,7 @@ use App\Models\OrderItem;
 use App\Services\B2BPayLaterService;
 use App\Services\BandaraCreditService;
 use App\Services\CartService;
+use App\Services\DeliveryChargeService;
 use App\Services\InvoicePdfService;
 use App\Services\OrderInventoryService;
 use Illuminate\Http\Request;
@@ -92,9 +93,11 @@ class CheckoutController extends Controller
         $taxable = max($subtotal - $discount, 0);
 
         $gst = $this->calculateGstFromItems($items, (float) $discount, $selectedAddress?->state, $user);
+        $deliveryQuote = app(DeliveryChargeService::class)->quote($user, $selectedAddress, $taxable);
 
-        $shippingTotal = 0.0;
-        $grandTotal = round($taxable + (float) $gst['tax_total'] + $shippingTotal, 2);
+        $shippingTotal = round((float) ($deliveryQuote['fee_total'] ?? 0), 2);
+        $deliveryChargeTaxTotal = round((float) ($deliveryQuote['tax_total'] ?? 0), 2);
+        $grandTotal = round($taxable + (float) $gst['tax_total'] + $shippingTotal + $deliveryChargeTaxTotal, 2);
 
         $payLaterOption = app(B2BPayLaterService::class)->checkoutOptionFor($user, $grandTotal);
 
@@ -134,6 +137,8 @@ class CheckoutController extends Controller
 
             'taxable'             => $taxable,
             'gst'                 => $gst,
+            'deliveryQuote'       => $deliveryQuote,
+            'deliveryChargeTaxTotal' => $deliveryChargeTaxTotal,
             'shippingTotal'       => $shippingTotal,
             'grandTotal'          => $grandTotal,
 
@@ -291,11 +296,21 @@ class CheckoutController extends Controller
 
         $taxable = max($subtotal - $discountTotal, 0);
 
-        // ✅ GST per item using products.gst_rate (not hard-coded)
+        // ✅ GST per item using configured product/HSN/default rates.
         $gst = $this->calculateGstFromItems($items, (float) $discountTotal, $address->state, $user);
+        $deliveryQuote = app(DeliveryChargeService::class)->quote($user, $address, $taxable);
 
-        $shippingTotal = 0.0;
-        $grandTotal = round($taxable + (float) $gst['tax_total'] + $shippingTotal, 2);
+        if (! ($deliveryQuote['serviceable'] ?? true)) {
+            return redirect()
+                ->to($this->appendQueryParameter($this->checkoutIndexUrl($request), 'address_id', (string) $address->id))
+                ->withErrors(['address_id' => ($deliveryQuote['messages'][0] ?? 'This delivery address is not currently serviceable.')])
+                ->withInput();
+        }
+
+        $shippingTotal = round((float) ($deliveryQuote['fee_total'] ?? 0), 2);
+        $deliveryChargeTaxTotal = round((float) ($deliveryQuote['tax_total'] ?? 0), 2);
+        $deliveryChargeGst = app(DeliveryChargeService::class)->splitChargeTaxForState($deliveryQuote, $address->state);
+        $grandTotal = round($taxable + (float) $gst['tax_total'] + $shippingTotal + $deliveryChargeTaxTotal, 2);
 
         $paymentMethod = (string) ($data['payment_method'] ?? 'razorpay');
         $payLaterOption = app(B2BPayLaterService::class)->checkoutOptionFor($user, $grandTotal);
@@ -351,6 +366,8 @@ class CheckoutController extends Controller
             $discountTotal,
             $subtotal,
             $gst,
+            $deliveryQuote,
+            $deliveryChargeGst,
             $shippingTotal,
             $grandTotal,
             $grandTotalBeforeBandaraCredit,
@@ -372,9 +389,28 @@ class CheckoutController extends Controller
 
             $order->subtotal = round($subtotal, 2);
             $order->discount_total = round($discountTotal, 2);
-            $order->tax_total = round((float) $gst['tax_total'], 2);
+            $order->tax_total = round((float) $gst['tax_total'] + (float) ($deliveryChargeGst['tax_total'] ?? 0), 2);
             $order->shipping_total = round($shippingTotal, 2);
             $order->grand_total = round($payableGrandTotal, 2);
+
+            if (Schema::hasColumn('orders', 'delivery_zone_id')) {
+                $order->delivery_zone_id = $deliveryQuote['zone_id'] ?? null;
+            }
+            if (Schema::hasColumn('orders', 'delivery_pincode')) {
+                $order->delivery_pincode = $deliveryQuote['pincode'] ?? $address->pincode;
+            }
+            foreach ([
+                'delivery_fee',
+                'handling_fee',
+                'delivery_tax_amount',
+                'handling_tax_amount',
+                'delivery_tax_rate',
+                'handling_tax_rate',
+            ] as $deliveryColumn) {
+                if (Schema::hasColumn('orders', $deliveryColumn)) {
+                    $order->{$deliveryColumn} = round((float) ($deliveryQuote[$deliveryColumn] ?? 0), 2);
+                }
+            }
 
             if (Schema::hasColumn('orders', 'bandara_credit_redeemed_points')) {
                 $order->bandara_credit_redeemed_points = $bandaraCreditPointsToRedeem;
@@ -395,9 +431,9 @@ class CheckoutController extends Controller
             $order->coupon_id = $coupon?->id;
 
             $order->gst_type = $gst['gst_type'];
-            $order->cgst_amount = $gst['cgst_amount'];
-            $order->sgst_amount = $gst['sgst_amount'];
-            $order->igst_amount = $gst['igst_amount'];
+            $order->cgst_amount = $this->addNullableAmounts($gst['cgst_amount'] ?? null, $deliveryChargeGst['cgst_amount'] ?? null);
+            $order->sgst_amount = $this->addNullableAmounts($gst['sgst_amount'] ?? null, $deliveryChargeGst['sgst_amount'] ?? null);
+            $order->igst_amount = $this->addNullableAmounts($gst['igst_amount'] ?? null, $deliveryChargeGst['igst_amount'] ?? null);
 
             $order->payment_status = 'pending';
 
@@ -558,6 +594,24 @@ class CheckoutController extends Controller
             $invoice->subtotal = round($order->subtotal, 2);
             $invoice->tax_total = round($order->tax_total, 2);
             $invoice->discount_total = round($order->discount_total, 2);
+            if (Schema::hasColumn('invoices', 'delivery_zone_id')) {
+                $invoice->delivery_zone_id = $order->delivery_zone_id ?? null;
+            }
+            if (Schema::hasColumn('invoices', 'delivery_pincode')) {
+                $invoice->delivery_pincode = $order->delivery_pincode ?? $address->pincode;
+            }
+            foreach ([
+                'delivery_fee',
+                'handling_fee',
+                'delivery_tax_amount',
+                'handling_tax_amount',
+                'delivery_tax_rate',
+                'handling_tax_rate',
+            ] as $deliveryColumn) {
+                if (Schema::hasColumn('invoices', $deliveryColumn)) {
+                    $invoice->{$deliveryColumn} = $order->{$deliveryColumn} ?? 0;
+                }
+            }
             $invoice->grand_total = round($order->grand_total, 2);
             if (Schema::hasColumn('invoices', 'bandara_credit_redeemed_points')) {
                 $invoice->bandara_credit_redeemed_points = $bandaraCreditPointsToRedeem;
@@ -927,6 +981,18 @@ class CheckoutController extends Controller
         $fragment = isset($parts['fragment']) ? '#' . $parts['fragment'] : '';
 
         return $path . ($queryString !== '' ? '?' . $queryString : '') . $fragment;
+    }
+
+    private function addNullableAmounts(mixed $left, mixed $right): ?float
+    {
+        $hasLeft = $left !== null;
+        $hasRight = $right !== null;
+
+        if (! $hasLeft && ! $hasRight) {
+            return null;
+        }
+
+        return round((float) ($left ?? 0) + (float) ($right ?? 0), 2);
     }
 
     protected function calculateLineTotalForCartItem(Product $product, ?ProductVariant $variant, float $qty, float $unitPrice, ?float $lineWeight = null): float
