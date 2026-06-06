@@ -110,8 +110,14 @@
                             {{-- User menu (avatar + dropdown) --}}
                             @include('partials.user-menu')
 
-                            {{-- Mobile menu placeholder (if you add one later) --}}
-                            <button class="md:hidden inline-flex h-8 w-8 items-center justify-center rounded-full border border-gray-200 dark:border-gray-700 ml-1">
+                            {{-- Mobile staff menu --}}
+                            <button
+                                type="button"
+                                id="company-mobile-menu-toggle"
+                                class="md:hidden inline-flex h-8 w-8 items-center justify-center rounded-full border border-gray-200 dark:border-gray-700 ml-1 hover:bg-gray-100 dark:hover:bg-gray-800"
+                                aria-controls="company-sidebar"
+                                aria-expanded="false"
+                            >
                                 <span class="sr-only">Open menu</span>
                                 <svg xmlns="http://www.w3.org/2000/svg" class="h-3.5 w-3.5 text-gray-700 dark:text-gray-200" viewBox="0 0 24 24" fill="none" stroke="currentColor">
                                     <path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.5"
@@ -132,4 +138,60 @@
             @include('partials.footer.company')
         </div>
     </div>
+
+    <div
+        id="company-mobile-sidebar-backdrop"
+        class="hidden fixed inset-0 z-40 bg-black/40 backdrop-blur-[1px] md:hidden"
+        aria-hidden="true"
+    ></div>
+
+    <script>
+        document.addEventListener('DOMContentLoaded', function () {
+            const sidebar = document.getElementById('company-sidebar');
+            const backdrop = document.getElementById('company-mobile-sidebar-backdrop');
+            const openButton = document.getElementById('company-mobile-menu-toggle');
+            const closeButton = document.getElementById('company-mobile-menu-close');
+
+            if (!sidebar || !backdrop || !openButton) {
+                return;
+            }
+
+            const mobileClasses = ['fixed', 'inset-y-0', 'left-0', 'z-50', 'flex', 'flex-col', 'shadow-2xl'];
+
+            function openCompanyMenu() {
+                sidebar.classList.add(...mobileClasses);
+                sidebar.style.display = 'flex';
+                backdrop.classList.remove('hidden');
+                openButton.setAttribute('aria-expanded', 'true');
+                document.body.classList.add('overflow-hidden');
+            }
+
+            function closeCompanyMenu() {
+                sidebar.classList.remove(...mobileClasses);
+                sidebar.style.display = '';
+                backdrop.classList.add('hidden');
+                openButton.setAttribute('aria-expanded', 'false');
+                document.body.classList.remove('overflow-hidden');
+            }
+
+            openButton.addEventListener('click', openCompanyMenu);
+            backdrop.addEventListener('click', closeCompanyMenu);
+
+            if (closeButton) {
+                closeButton.addEventListener('click', closeCompanyMenu);
+            }
+
+            document.addEventListener('keydown', function (event) {
+                if (event.key === 'Escape') {
+                    closeCompanyMenu();
+                }
+            });
+
+            window.addEventListener('resize', function () {
+                if (window.matchMedia('(min-width: 768px)').matches) {
+                    closeCompanyMenu();
+                }
+            });
+        });
+    </script>
 @endsection

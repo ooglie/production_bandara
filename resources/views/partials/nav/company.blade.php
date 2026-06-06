@@ -36,9 +36,12 @@
     $isAccount  = $user && method_exists($user, 'hasAnyRole') && $user->hasAnyRole(['Accountant', 'CAAccountant']);
 @endphp
 
-<aside class="hidden md:flex md:flex-col w-60 border-r border-gray-200 dark:border-gray-800 bg-white dark:bg-gray-900">
-    <div class="h-14 flex items-center px-4 border-b border-gray-200 dark:border-gray-800">
-        <span class="inline-flex items-center gap-2">
+<aside
+    id="company-sidebar"
+    class="hidden md:flex md:flex-col w-60 max-w-[82vw] border-r border-gray-200 dark:border-gray-800 bg-white dark:bg-gray-900"
+>
+    <div class="h-14 flex items-center justify-between gap-3 px-4 border-b border-gray-200 dark:border-gray-800">
+        <span class="inline-flex min-w-0 items-center gap-2">
             <span class="inline-block h-16 w-16 rounded-full dark:border-gray-700">
                 <a href="{{ fb_dashboard_route($user) }}">
                     <img src="{{ asset('storage/images/logo-bandara.png') }}"
@@ -47,10 +50,21 @@
                 </a>
             </span>
 
-            <span class="text-sm font-semibold text-gray-900 dark:text-gray-50">
-                Bandara LLP
+            <span class="truncate text-sm font-semibold text-gray-900 dark:text-gray-50">
+                Bandara by Maytira
             </span>
         </span>
+
+        <button
+            type="button"
+            id="company-mobile-menu-close"
+            class="md:hidden inline-flex h-8 w-8 shrink-0 items-center justify-center rounded-full border border-gray-200 dark:border-gray-700 text-gray-600 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-800"
+            aria-label="Close menu"
+        >
+            <svg xmlns="http://www.w3.org/2000/svg" class="h-3.5 w-3.5" viewBox="0 0 24 24" fill="none" stroke="currentColor">
+                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.5" d="M6 18 18 6M6 6l12 12" />
+            </svg>
+        </button>
     </div>
 
     <nav class="flex-1 overflow-y-auto px-3 py-4 text-sm text-gray-600 dark:text-gray-300">
