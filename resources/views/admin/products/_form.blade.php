@@ -218,6 +218,37 @@
                     <div class="{{ $hint }}">Use this for the full product page description.</div>
                     @error('description') <p class="mt-1 text-[11px] text-red-600">{{ $message }}</p> @enderror
                 </div>
+
+                <div class="md:col-span-3 grid gap-4 md:grid-cols-2">
+                    <div>
+                        <label class="block text-[12px] font-medium text-gray-700 dark:text-gray-300">
+                            Storage guidance
+                        </label>
+                        <textarea
+                            name="storage_guidance"
+                            rows="5"
+                            class="{{ $input }}"
+                            placeholder="One guidance point per line"
+                        >{{ old('storage_guidance', $product->storage_guidance ?? implode("\n", \App\Models\Product::DEFAULT_STORAGE_GUIDANCE)) }}</textarea>
+                        <div class="{{ $hint }}">Shown in the product page Storage &amp; Delivery tab. Add one bullet point per line.</div>
+                        @error('storage_guidance') <p class="mt-1 text-[11px] text-red-600">{{ $message }}</p> @enderror
+                    </div>
+
+                    <div>
+                        <label class="block text-[12px] font-medium text-gray-700 dark:text-gray-300">
+                            Delivery &amp; support
+                        </label>
+                        <textarea
+                            name="delivery_support"
+                            rows="5"
+                            class="{{ $input }}"
+                            placeholder="One delivery/support point per line"
+                        >{{ old('delivery_support', $product->delivery_support ?? implode("\n", \App\Models\Product::DEFAULT_DELIVERY_SUPPORT)) }}</textarea>
+                        <div class="{{ $hint }}">Shown in the product page Storage &amp; Delivery tab. Add one bullet point per line.</div>
+                        @error('delivery_support') <p class="mt-1 text-[11px] text-red-600">{{ $message }}</p> @enderror
+                    </div>
+                </div>
+
             </div>
 
             {{-- Type + HSN + Country --}}

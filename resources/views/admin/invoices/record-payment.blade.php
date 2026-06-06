@@ -10,7 +10,7 @@
                 Record payment for selected invoices
             </h1>
             <p class="text-[11px] text-gray-500 dark:text-gray-400">
-                Review the invoices below and enter payment details. The payment will be allocated automatically.
+                Review the invoices below and enter the actual amount received. The payment will be allocated automatically and invoice status will become part payment or paid based on the amount.
             </p>
         </div>
     </div>
@@ -44,6 +44,8 @@
                 <tbody class="divide-y divide-gray-100 dark:divide-gray-800">
                     @php
                         $totalOutstanding = $totalOutstanding ?? 0;
+                        $requestedStatus = $requestedStatus ?? 'part_payment';
+                        $defaultAmount = $requestedStatus === 'paid' ? $totalOutstanding : null;
                     @endphp
                     @foreach($invoices as $invoice)
                         @php
@@ -111,7 +113,8 @@
                         Payment method
                     </label>
                     <select name="payment_method" id="payment_method"
-                            class="w-full rounded border border-gray-300 dark:border-gray-700 bg-white dark:bg-gray-950 px-2 py-1 text-[11px] text-gray-700 dark:text-gray-200 focus:outline-none focus:ring-1 focus:ring-gray-400 dark:focus:ring-gray-500">
+                            class="w-full rounded border border-gray-300 dark:border-gray-700 bg-white dark:bg-gray-950 px-2 py-1 text-[11px] text-gray-700 dark:text-gray-200 focus:outline-none focus:ring-1 focus:ring-gray-400 dark:focus:ring-gray-500"
+                           required>
                         <option value="cash">Cash</option>
                         <option value="cheque">Cheque</option>
                         <option value="bank_transfer">Bank transfer</option>
@@ -124,11 +127,17 @@
                 <div class="space-y-1">
                     <label class="block text-[10px] text-gray-500 dark:text-gray-400">
                         Amount received
+                        <span class="text-red-500">*</span>
                     </label>
-                    <input type="number" step="0.01" min="0"
+                    <input type="number" step="0.01" min="0.01"
+                           max="{{ number_format($totalOutstanding, 2, '.', '') }}"
                            name="amount_received"
-                           value="{{ old('amount_received', $totalOutstanding) }}"
+                           value="{{ old('amount_received', $defaultAmount) }}"
+                           required
                            class="w-full rounded border border-gray-300 dark:border-gray-700 bg-white dark:bg-gray-950 px-2 py-1 text-[11px] text-gray-700 dark:text-gray-200 focus:outline-none focus:ring-1 focus:ring-gray-400 dark:focus:ring-gray-500">
+                    <p class="text-[10px] text-gray-400 dark:text-gray-500">
+                        Enter the actual amount received. Less than the balance will mark the invoice as part payment; full balance will mark it paid.
+                    </p>
                 </div>
 
                 <div class="space-y-1">

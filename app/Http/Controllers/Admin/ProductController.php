@@ -239,6 +239,8 @@ class ProductController extends Controller
             'name' => $name,
             'short_description' => $validated['short_description'],
             'description' => $validated['description'],
+            'storage_guidance' => $this->nullableTrim($validated['storage_guidance'] ?? null) ?? Product::defaultStorageGuidanceText(),
+            'delivery_support' => $this->nullableTrim($validated['delivery_support'] ?? null) ?? Product::defaultDeliverySupportText(),
             'slug' => $slug,
             'sku' => $validated['sku'],
             'type' => $validated['type'],

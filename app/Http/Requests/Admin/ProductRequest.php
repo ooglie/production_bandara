@@ -33,6 +33,14 @@ class ProductRequest extends FormRequest
                 ->all();
         };
 
+        $normalizeMultiline = function ($value) {
+            if ($value === null || $value === '') {
+                return null;
+            }
+
+            return trim(preg_replace('/\r\n?|\n/', "\n", (string) $value));
+        };
+
         $this->merge([
             'name' => trim((string) $this->input('name', '')),
             'sku' => trim((string) $this->input('sku', '')),
@@ -40,6 +48,8 @@ class ProductRequest extends FormRequest
             'barcode' => trim((string) $this->input('barcode', '')),
             'short_description' => trim((string) $this->input('short_description', '')),
             'description' => trim((string) $this->input('description', '')),
+            'storage_guidance' => $normalizeMultiline($this->input('storage_guidance')),
+            'delivery_support' => $normalizeMultiline($this->input('delivery_support')),
 
             'type' => $this->input('type', 'simple'),
             'country_of_origin' => $this->filled('country_of_origin')
@@ -79,6 +89,8 @@ class ProductRequest extends FormRequest
             'name' => ['required', 'string', 'max:255'],
             'short_description' => ['required', 'string', 'max:255'],
             'description' => ['required', 'string'],
+            'storage_guidance' => ['nullable', 'string', 'max:5000'],
+            'delivery_support' => ['nullable', 'string', 'max:5000'],
 
             'slug' => [
                 'nullable',

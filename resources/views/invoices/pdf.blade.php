@@ -57,8 +57,16 @@
 
     $unitLabel = function (?string $u) {
         $u = strtolower((string)$u);
-        return $u === 'kg' ? 'kg' : 'pc';
+        return match ($u) {
+            'kg' => 'kg',
+            'pack' => 'pack',
+            'box' => 'box',
+            default => 'pc',
+        };
     };
+
+    $paidAmount = (float)($invoice->amount_paid ?? 0);
+    $balanceAmount = (float)($invoice->balance_amount ?? max(0, ($invoice->grand_total ?? 0) - $paidAmount));
 @endphp
 
 <div class="header clearfix" style="width:100%; margin-bottom:20px;">
@@ -149,7 +157,8 @@
                 @if($invoice->due_date)
                     <div><span style="font-weight:700;">Due:</span> {{ $invoice->due_date->format('d M Y') }}</div>
                 @endif
-                <div style="color:#555;"><span style="font-weight:700;">Status:</span> {{ ucfirst(str_replace('_', ' ', $invoice->status)) }}</div>
+                <div><span style="font-weight:700;">Payment:</span> {{ $invoice->payment_method_label }}</div>
+                <div style="color:#555;"><span style="font-weight:700;">Status:</span> {{ $invoice->payment_status_label }}</div>
             </td>
         </tr>
     </table>
@@ -163,8 +172,8 @@
             <th style="width: 45%; font-size:10px;">Description</th>
             <th style="width: 10%; font-size:10px;" class="text-right">Qty</th>
             <th style="width: 10%; font-size:10px;" class="text-right">Wt</th>
-            <th style="width: 15%; font-size:10px;" class="text-right">Price</th>
-            <th style="width: 15%; font-size:10px;" class="text-right">Total</th>
+            <th style="width: 15%; font-size:10px;" class="text-right">Price excl GST</th>
+            <th style="width: 15%; font-size:10px;" class="text-right">Total excl GST</th>
         </tr>
     </thead>
     <tbody>
@@ -193,7 +202,7 @@
 <table class="totals">
     <tbody>
         <tr>
-            <td class="label">Subtotal</td>
+            <td class="label">Subtotal excl GST</td>
             <td class="value">₹{{ number_format((float)$invoice->subtotal, 2) }}</td>
         </tr>
         @if(number_format((float)($invoice->discount_total ?? 0), 2) > 0)
@@ -221,7 +230,7 @@
         @endif
 
         <tr>
-            <td class="label">Total GST</td>
+            <td class="label">GST total</td>
             <td class="value">₹{{ number_format($taxTotal, 2) }}</td>
         </tr>
 
@@ -233,8 +242,16 @@
         @endif
 
         <tr>
-            <td class="label" style="font-size:10px;"><strong>Grand total</strong></td>
+            <td class="label" style="font-size:10px;"><strong>Grand total incl GST</strong></td>
             <td class="value" style="font-size:10px;"><strong>₹{{ number_format((float)$invoice->grand_total, 2) }}</strong></td>
+        </tr>
+        <tr>
+            <td class="label">Paid</td>
+            <td class="value">₹{{ number_format($paidAmount, 2) }}</td>
+        </tr>
+        <tr>
+            <td class="label"><strong>Balance due</strong></td>
+            <td class="value"><strong>₹{{ number_format($balanceAmount, 2) }}</strong></td>
         </tr>
     </tbody>
 </table>

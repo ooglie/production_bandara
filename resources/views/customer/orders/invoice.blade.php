@@ -32,6 +32,7 @@
                 <div>Order: {{ $order->order_number ?? ('#'.$order->id) }}</div>
                 <div>Date: {{ $order->created_at->format('d M Y') }}</div>
                 <div>Status: {{ ucfirst($order->status ?? 'pending') }}</div>
+                <div>Payment: {{ ($order->payment_method ?? 'razorpay') === 'pay_later' ? 'Pay Later on invoice' : 'Pay Now / Razorpay' }}</div>
             </div>
         </div>
 
@@ -42,8 +43,8 @@
                         <th class="py-1 text-left">Sr. No.</th>
                         <th class="py-1 text-left">Item</th>
                         <th class="py-1 text-right">Qty</th>
-                        <th class="py-1 text-right">Price (₹)</th>
-                        <th class="py-1 text-right">Total (₹)</th>
+                        <th class="py-1 text-right">Price excl GST (₹)</th>
+                        <th class="py-1 text-right">Total excl GST (₹)</th>
                     </tr>
                 </thead>
                 <tbody>
@@ -76,7 +77,7 @@
 
         <div class="border-t border-gray-200 dark:border-gray-800 pt-3 space-y-1 text-[11px] text-gray-700 dark:text-gray-300">
             <div class="flex justify-between">
-                <span>Subtotal</span>
+                <span>Subtotal <span class="text-[10px] text-gray-400">excl GST</span></span>
                 <span>₹{{ number_format($order->subtotal ?? 0, 2) }}</span>
             </div>
             <div class="flex justify-between">
@@ -90,7 +91,7 @@
                 </div>
             @endif
             <div class="flex justify-between font-semibold text-gray-900 dark:text-gray-50">
-                <span>Grand total</span>
+                <span>Grand total <span class="text-[10px] font-normal text-gray-400">incl GST</span></span>
                 <span>₹{{ number_format($order->grand_total ?? 0, 2) }}</span>
             </div>
         </div>

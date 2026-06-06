@@ -49,7 +49,7 @@
             </span>
 
             <span class="text-sm font-semibold text-gray-900 dark:text-gray-50">
-                Bandara by Maytira
+                Bandara LLP
             </span>
         </span>
     </div>

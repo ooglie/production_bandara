@@ -48,7 +48,7 @@
             </span>
 
             <span class="text-sm font-semibold text-gray-900 dark:text-gray-50">
-                Bandara by Maytira
+                Bandara LLP
             </span>
         </span>
     </div>
@@ -107,6 +107,12 @@
                     <a href="{{ route('admin.invoices.index') }}"
                        class="block px-2 py-1.5 rounded-md hover:bg-gray-100 dark:hover:bg-gray-800">
                         Invoices
+                    </a>
+                @endif
+                @if($has('admin.invoice-payment-submissions.index'))
+                    <a href="{{ route('admin.invoice-payment-submissions.index') }}"
+                       class="block px-2 py-1.5 rounded-md hover:bg-gray-100 dark:hover:bg-gray-800">
+                        Payment approvals
                     </a>
                 @endif
             @endcan
@@ -268,6 +274,15 @@
         @canany(['view content', 'manage content'])
             <div class="mb-4">
                 <p class="text-[11px] uppercase tracking-wide text-gray-400 dark:text-gray-500 mb-1">Content</p>
+
+                @if($has('admin.home-sections.index'))
+                    <a
+                        href="{{ route('admin.home-sections.index') }}"
+                        class="block px-2 py-1.5 rounded-md hover:bg-gray-100 dark:hover:bg-gray-800"
+                    >
+                        Homepage
+                    </a>
+                @endif
 
                 <a
                     href="{{ route('admin.announcements.index') }}"

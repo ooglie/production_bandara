@@ -14,7 +14,7 @@ class Invoice extends Model
     protected $fillable = [
         'order_id',
         'invoice_number',
-        'status',            // pending, due, past_due, paid
+        'status',            // pending, due, part_payment, past_due, paid
         'invoice_date',
         'due_date',
         'subtotal',
@@ -88,6 +88,18 @@ class Invoice extends Model
             ->withTimestamps();
     }
 
+    public function paymentSubmissions()
+    {
+        return $this->hasMany(InvoicePaymentSubmission::class);
+    }
+
+    public function getPendingSubmittedPaymentAmountAttribute(): float
+    {
+        return (float) $this->paymentSubmissions()
+            ->where('status', 'pending')
+            ->sum('amount');
+    }
+
     public function getAmountPaidAttribute()
     {
         return (float) $this->payments()->sum('invoice_payments.amount_applied');
@@ -104,15 +116,59 @@ class Invoice extends Model
         $total = (float) $this->grand_total;
 
         if ($paid <= 0) {
-            // You can decide pending vs due based on due_date; keeping simple.
-            $this->status = 'pending';
-        } elseif ($paid < $total) {
+            $this->status = $this->defaultOpenStatus();
+        } elseif ($paid + 0.00001 < $total) {
             $this->status = 'part_payment';
         } else {
             $this->status = 'paid';
         }
 
         $this->save();
+    }
+
+    public function defaultOpenStatus(): string
+    {
+        $order = $this->relationLoaded('order') ? $this->order : $this->order()->first();
+
+        if (($order?->payment_method ?? null) === 'pay_later') {
+            if ($this->due_date && $this->due_date->isPast() && ! $this->due_date->isToday()) {
+                return 'past_due';
+            }
+
+            return 'due';
+        }
+
+        return 'pending';
+    }
+
+    public function getIsPayLaterAttribute(): bool
+    {
+        $order = $this->relationLoaded('order') ? $this->order : $this->order()->first();
+
+        return ($order?->payment_method ?? null) === 'pay_later';
+    }
+
+    public function getPaymentMethodLabelAttribute(): string
+    {
+        $order = $this->relationLoaded('order') ? $this->order : $this->order()->first();
+
+        return ($order?->payment_method ?? 'razorpay') === 'pay_later'
+            ? 'Pay Later on invoice'
+            : 'Pay Now / Razorpay';
+    }
+
+    public function getPaymentStatusLabelAttribute(): string
+    {
+        $status = strtolower((string) ($this->status ?? 'pending'));
+
+        return match ($status) {
+            'paid' => 'Paid',
+            'part_payment' => 'Part payment',
+            'past_due' => 'Past due',
+            'due' => 'Due',
+            'pending' => 'Pending',
+            default => str($status)->replace('_', ' ')->headline()->toString(),
+        };
     }
 
 }

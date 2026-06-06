@@ -13,7 +13,7 @@ class InvoiceController extends Controller
         $userId = $request->user()->id;
 
         $invoices = Invoice::forUser($userId)
-            ->with('order')
+            ->with(['order', 'payments', 'paymentSubmissions'])
             ->latest()
             ->paginate(20);
 
@@ -32,6 +32,8 @@ class InvoiceController extends Controller
             'order.addresses',
             'order.user',
             'items',
+            'payments',
+            'paymentSubmissions' => fn ($q) => $q->latest(),
         ]);
 
         return view('customer.invoices.show', compact('invoice'));

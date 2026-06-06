@@ -97,6 +97,8 @@
 
     $orderStatus = $orderStatusMeta($order->status ?? null);
     $invoiceStatus = $invoiceStatusMeta($invoice);
+    $paidAmount = $invoice ? (float) ($invoice->amount_paid ?? 0) : 0.0;
+    $balanceAmount = $invoice ? (float) ($invoice->balance_amount ?? max(0, ($invoice->grand_total ?? 0) - $paidAmount)) : 0.0;
 
     $items = collect($order->items ?? []);
     $itemsCount = $items->sum(fn ($item) => (float) ($item->quantity ?? 0));
@@ -124,6 +126,18 @@
 @endphp
 
 <div class="max-w-6xl mx-auto px-4 py-6 space-y-5">
+    @if(session('status'))
+        <div class="rounded border border-emerald-300 bg-emerald-50 px-3 py-2 text-[11px] text-emerald-800">{{ session('status') }}</div>
+    @endif
+    @if($errors->any())
+        <div class="rounded border border-red-300 bg-red-50 px-3 py-2 text-[11px] text-red-800">
+            <ul class="list-disc list-inside space-y-0.5">
+                @foreach($errors->all() as $error)
+                    <li>{{ $error }}</li>
+                @endforeach
+            </ul>
+        </div>
+    @endif
 
     {{-- Header --}}
     <div class="flex flex-col sm:flex-row sm:items-start sm:justify-between gap-3">
@@ -309,7 +323,7 @@
             {{-- Totals --}}
             <div class="rounded-sm border border-gray-100 dark:border-gray-800 bg-gray-100 dark:bg-black px-4 py-4 space-y-2 text-sm">
                 <div class="flex justify-between text-gray-700 dark:text-gray-300">
-                    <span>Subtotal</span>
+                    <span>Subtotal <span class="text-[10px] text-gray-400">excl GST</span></span>
                     <span>₹{{ number_format($order->subtotal ?? 0, 2) }}</span>
                 </div>
 
@@ -344,7 +358,7 @@
                 @endif
 
                 <div class="border-t border-gray-100 dark:border-gray-800 pt-2 flex justify-between font-semibold text-gray-900 dark:text-gray-50">
-                    <span>Grand total</span>
+                    <span>Grand total <span class="text-[10px] font-normal text-gray-400">incl GST</span></span>
                     <span>₹{{ number_format($order->grand_total ?? 0, 2) }}</span>
                 </div>
             </div>
@@ -372,15 +386,26 @@
 
                     <div class="mt-3 text-[10px] uppercase tracking-wide text-gray-400">Invoice total</div>
                     <div class="mt-1 text-base font-semibold text-gray-900 dark:text-gray-50">
-                        ₹{{ number_format($invoice->total_amount ?? $order->grand_total ?? 0, 2) }}
+                        ₹{{ number_format($invoice->grand_total ?? $order->grand_total ?? 0, 2) }}
                     </div>
 
                     <div class="mt-3 text-[10px] uppercase tracking-wide text-gray-400">Payment method</div>
                     <div class="mt-1 text-sm text-gray-700 dark:text-gray-300">
-                        {{ ($order->payment_method ?? 'razorpay') === 'pay_later' ? 'Pay Later on invoice' : 'Pay Now / Razorpay' }}
+                        {{ $invoice->payment_method_label ?? (($order->payment_method ?? 'razorpay') === 'pay_later' ? 'Pay Later on invoice' : 'Pay Now / Razorpay') }}
                         @if(($order->payment_method ?? 'razorpay') === 'pay_later' && !empty($order->payment_due_at))
                             · Due {{ $order->payment_due_at->format('d M Y') }}
                         @endif
+                    </div>
+
+                    <div class="mt-3 grid grid-cols-2 gap-3 text-[11px]">
+                        <div>
+                            <div class="text-[10px] uppercase tracking-wide text-gray-400">Paid</div>
+                            <div class="mt-1 text-sm text-gray-700 dark:text-gray-300">₹{{ number_format($paidAmount, 2) }}</div>
+                        </div>
+                        <div>
+                            <div class="text-[10px] uppercase tracking-wide text-gray-400">Balance due</div>
+                            <div class="mt-1 text-sm font-medium text-gray-900 dark:text-gray-50">₹{{ number_format($balanceAmount, 2) }}</div>
+                        </div>
                     </div>
 
                     <span class="absolute right-3 top-3 inline-flex items-center rounded-sm border px-2 py-0.5 text-[10px] font-medium {{ $invoiceStatus['class'] }}">
@@ -388,28 +413,14 @@
                     </span>
                 </div>
 
-                @if($razorpayEnabled)
-                    <div class="rounded-sm border border-amber-100 dark:border-amber-900/40 bg-gray-50 dark:bg-amber-950/20 px-4 py-4">
-                        <div class="text-sm font-medium text-amber-800 dark:text-amber-200">
-                            Payment pending
-                        </div>
-                        <p class="mt-1 text-[11px] text-amber-700 dark:text-amber-300">
-                            @if(($order->payment_method ?? 'razorpay') === 'pay_later')
-                                This order was placed on Pay Later terms. You can still pay this invoice online when ready.
-                                @if(!empty($order->payment_due_at)) Due date: {{ $order->payment_due_at->format('d M Y') }}. @endif
-                            @else
-                                Your invoice is still pending. Complete the payment securely through Razorpay.
-                            @endif
-                        </p>
-
-                        <div class="mt-3">
-                            <a href="{{ route('orders.pay.razorpay', $order) }}"
-                               class="inline-flex items-center justify-center rounded-sm border border-gray-900 dark:border-gray-100 bg-gray-900 text-white dark:bg-gray-100 dark:text-gray-900 px-4 py-2 text-[11px] font-medium hover:bg-gray-800 dark:hover:bg-gray-200">
-                                Pay now with Razorpay
-                            </a>
-                        </div>
-                    </div>
-                @endif
+                @include('customer.invoices.partials.payment-widget', [
+                    'invoice' => $invoice,
+                    'balanceAmount' => $balanceAmount,
+                    'paymentTitle' => 'Pay this invoice',
+                    'paymentDescription' => (($order->payment_method ?? 'razorpay') === 'pay_later')
+                        ? 'This order was placed on Pay Later terms. Pay online by Razorpay or submit offline payment details for approval.'
+                        : 'Complete the pending invoice payment online or submit offline payment details for approval.',
+                ])
 
                 <div class="flex flex-wrap gap-2">
                     <a href="{{ route('orders.invoice', $order) }}"

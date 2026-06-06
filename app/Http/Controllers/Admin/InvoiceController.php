@@ -16,7 +16,7 @@ class InvoiceController extends Controller
      */
     public function index(Request $request)
     {
-        $query = Invoice::with(['order.user'])
+        $query = Invoice::with(['order.user', 'payments', 'paymentSubmissions'])
             ->orderByDesc('created_at');
 
         // Status filter
@@ -71,7 +71,7 @@ class InvoiceController extends Controller
      */
     public function show(Invoice $invoice)
     {
-        $invoice->load(['order.user', 'payments']);
+        $invoice->load(['order.user', 'order.addresses', 'items', 'payments', 'paymentSubmissions.user', 'paymentSubmissions.approvedBy', 'paymentSubmissions.rejectedBy']);
 
         return view('admin.invoices.show', compact('invoice'));
     }
@@ -87,7 +87,14 @@ class InvoiceController extends Controller
             'status'        => ['required', 'in:pending,due,part_payment,past_due,paid'],
         ]);
 
-        // Never allow changing status of invoices that are already PAID
+        // A partial/paid state must be backed by an actual payment row.
+        // Send the user to the payment-entry screen instead of allowing a
+        // status-only update that would not record any amount.
+        if (in_array($data['status'], ['part_payment', 'paid'], true)) {
+            return $this->showPaymentFormForInvoices($request);
+        }
+
+        // Never allow changing status of invoices that are already PAID.
         $query = Invoice::whereIn('id', $data['invoice_ids'])
             ->where('status', '!=', 'paid');
 
@@ -226,9 +233,12 @@ class InvoiceController extends Controller
         $data = $request->validate([
             'invoice_ids'   => ['required', 'array', 'min:1'],
             'invoice_ids.*' => ['integer', 'exists:invoices,id'],
+            'status'        => ['nullable', 'in:part_payment,paid'],
         ]);
 
-        $invoices = Invoice::with('order.user')
+        $requestedStatus = $data['status'] ?? 'part_payment';
+
+        $invoices = Invoice::with(['order.user', 'payments'])
             ->whereIn('id', $data['invoice_ids'])
             ->get();
 
@@ -243,6 +253,12 @@ class InvoiceController extends Controller
             return $invoice->balance_amount ?? (float) $invoice->grand_total;
         });
 
+        if ($totalOutstanding <= 0.00001) {
+            return redirect()
+                ->route('admin.invoices.index')
+                ->withErrors(['invoice_ids' => 'Selected invoice(s) do not have an outstanding balance.']);
+        }
+
         // Optional: check if all invoices belong to one customer
         $customerIds = $invoices->pluck('order.user_id')->filter()->unique();
         $customerId = $customerIds->count() === 1 ? $customerIds->first() : null;
@@ -251,8 +267,40 @@ class InvoiceController extends Controller
             'invoices'         => $invoices,
             'totalOutstanding' => $totalOutstanding,
             'customerId'       => $customerId,
+            'requestedStatus'  => $requestedStatus,
+        ]);
+    }
+
+    /**
+     * Single-invoice status update endpoint. Payment statuses must go through
+     * the payment-entry screen so a paid/part-payment amount is recorded.
+     */
+    public function updateStatus(Request $request, Invoice $invoice)
+    {
+        $data = $request->validate([
+            'status' => ['required', 'in:pending,due,part_payment,past_due,paid'],
         ]);
 
-        
+        if (in_array($data['status'], ['part_payment', 'paid'], true)) {
+            $request->merge([
+                'invoice_ids' => [$invoice->id],
+                'status' => $data['status'],
+            ]);
+
+            return $this->showPaymentFormForInvoices($request);
+        }
+
+        if ($invoice->status === 'paid') {
+            return redirect()
+                ->back()
+                ->withErrors(['status' => 'Paid invoices cannot be reopened from this screen.']);
+        }
+
+        $invoice->status = $data['status'];
+        $invoice->save();
+
+        return redirect()
+            ->back()
+            ->with('status', 'Invoice status updated.');
     }
 }

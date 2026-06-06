@@ -495,8 +495,8 @@
                         data-tab-target="recipes">
                     Recipes
                     @if($recipes->isNotEmpty())
-                        <span class="ml-2 inline-flex min-w-5 items-center justify-center rounded-sm bg-gray-100 dark:bg-gray-800 px-1.5 py-0.5 text-[10px]">
-                            {{ $recipes->count() }}
+                        <span class="ml-2 inline-flex min-w-5 items-center justify-center rounded-sm bg-gray-100 text-gray-700 dark:bg-gray-300 dark:text-gray700 px-1.5 py-0.5 text-[10px]">
+                            {{ $recipes->count()}}
                         </span>
                     @endif
                 </button>
@@ -676,44 +676,24 @@
                     <div class="rounded-sm border border-gray-200 dark:border-gray-800 bg-gray-50 dark:bg-gray-950/40 p-4 space-y-3">
                         <h3 class="text-sm font-semibold text-gray-900 dark:text-gray-50">Storage guidance</h3>
                         <ul class="space-y-2 text-sm text-gray-600 dark:text-gray-300">
-                            <li class="flex items-start gap-2">
-                                <span class="mt-[6px] h-1.5 w-1.5 rounded-sm bg-gray-400"></span>
-                                <span>Keep frozen at or below <strong>-18°C</strong>.</span>
-                            </li>
-                            <li class="flex items-start gap-2">
-                                <span class="mt-[6px] h-1.5 w-1.5 rounded-sm bg-gray-400"></span>
-                                <span>Once thawed, keep refrigerated and consume promptly.</span>
-                            </li>
-                            <li class="flex items-start gap-2">
-                                <span class="mt-[6px] h-1.5 w-1.5 rounded-sm bg-gray-400"></span>
-                                <span>Do not refreeze after complete thawing.</span>
-                            </li>
-                            <li class="flex items-start gap-2">
-                                <span class="mt-[6px] h-1.5 w-1.5 rounded-sm bg-gray-400"></span>
-                                <span>Cook thoroughly before serving where applicable.</span>
-                            </li>
+                            @foreach($product->storageGuidanceLines() as $line)
+                                <li class="flex items-start gap-2">
+                                    <span class="mt-[6px] h-1.5 w-1.5 rounded-sm bg-gray-400"></span>
+                                    <span>{{ $line }}</span>
+                                </li>
+                            @endforeach
                         </ul>
                     </div>
 
                     <div class="rounded-sm border border-gray-200 dark:border-gray-800 bg-gray-50 dark:bg-gray-950/40 p-4 space-y-3">
                         <h3 class="text-sm font-semibold text-gray-900 dark:text-gray-50">Delivery & support</h3>
                         <ul class="space-y-2 text-sm text-gray-600 dark:text-gray-300">
-                            <li class="flex items-start gap-2">
-                                <span class="mt-[6px] h-1.5 w-1.5 rounded-sm bg-gray-400"></span>
-                                <span>Delivered in cold-chain conditions where available.</span>
-                            </li>
-                            <li class="flex items-start gap-2">
-                                <span class="mt-[6px] h-1.5 w-1.5 rounded-sm bg-gray-400"></span>
-                                <span>Please inspect the package promptly on delivery.</span>
-                            </li>
-                            <li class="flex items-start gap-2">
-                                <span class="mt-[6px] h-1.5 w-1.5 rounded-sm bg-gray-400"></span>
-                                <span>Perishable and frozen items may have limited return eligibility.</span>
-                            </li>
-                            <li class="flex items-start gap-2">
-                                <span class="mt-[6px] h-1.5 w-1.5 rounded-sm bg-gray-400"></span>
-                                <span>Contact support quickly if you receive a damaged or incorrect item.</span>
-                            </li>
+                            @foreach($product->deliverySupportLines() as $line)
+                                <li class="flex items-start gap-2">
+                                    <span class="mt-[6px] h-1.5 w-1.5 rounded-sm bg-gray-400"></span>
+                                    <span>{{ $line }}</span>
+                                </li>
+                            @endforeach
                         </ul>
 
                         @if(Route::has('tickets.create'))

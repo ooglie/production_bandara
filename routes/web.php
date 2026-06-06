@@ -31,6 +31,7 @@ use App\Http\Controllers\Customer\{
     CheckoutController,
     AddressController,
     InvoiceController as CustomerInvoiceController,
+    InvoicePaymentSubmissionController as CustomerInvoicePaymentSubmissionController,
     PaymentController,
     CustomerDashboardController,
     TicketController as CustomerTicketController,
@@ -55,6 +56,7 @@ use App\Http\Controllers\Admin\{
     ProductImageController,
     CouponController,
     InvoiceController as AdminInvoiceController,
+    InvoicePaymentSubmissionController as AdminInvoicePaymentSubmissionController,
     PaymentController as AdminPaymentController,
     UserController as AdminUserController,
     NewsletterSubscriberController as AdminNewsletterSubscriberController,
@@ -76,6 +78,7 @@ use App\Http\Controllers\Admin\{
     RolePermissionController,
     RecipeController,
     AnnouncementController,
+    HomeSectionController,
     AdminBandaraCreditPreviewController,
     BandaraCreditController,
 };
@@ -249,13 +252,22 @@ Route::middleware(['auth', 'role:Customer'])->group(function () {
     Route::get('/invoices/{invoice}', [CustomerInvoiceController::class, 'show'])
         ->name('invoices.show');
 
+    Route::post('/invoices/{invoice}/offline-payment', [CustomerInvoicePaymentSubmissionController::class, 'store'])
+        ->name('invoices.offline-payment.store');
+
     // Payment routes
     Route::middleware('verified')->group(function () {
         Route::get('/orders/{order}/pay', [PaymentController::class, 'showRazorpayForm'])
             ->name('orders.pay.razorpay');
 
+        Route::get('/invoices/{invoice}/pay', [PaymentController::class, 'showInvoiceRazorpayForm'])
+            ->name('invoices.pay.razorpay');
+
         Route::post('/payment/razorpay/callback', [PaymentController::class, 'handleRazorpayCallback'])
             ->name('payment.razorpay.callback');
+
+        Route::post('/payment/razorpay/invoice-callback', [PaymentController::class, 'handleInvoiceRazorpayCallback'])
+            ->name('payment.razorpay.invoice-callback');
     });
 
     // Customer Ticket Routes
@@ -316,6 +328,19 @@ Route::middleware(['auth', 'role:Admin|Manager|Accountant|CAAccountant|Stores'])
     ->group(function () {
 
         Route::resource('announcements', AnnouncementController::class)->except('show');
+        Route::get('/home-sections', [HomeSectionController::class, 'index'])->name('home-sections.index');
+        Route::get('/home-sections/{homeSection}/edit', [HomeSectionController::class, 'edit'])->name('home-sections.edit');
+        Route::put('/home-sections/{homeSection}', [HomeSectionController::class, 'update'])->name('home-sections.update');
+        Route::post('/home-sections/{homeSection}/toggle', [HomeSectionController::class, 'toggle'])->name('home-sections.toggle');
+        Route::post('/home-sections/{homeSection}/move-up', [HomeSectionController::class, 'moveUp'])->name('home-sections.move-up');
+        Route::post('/home-sections/{homeSection}/move-down', [HomeSectionController::class, 'moveDown'])->name('home-sections.move-down');
+        Route::post('/home-sections/{homeSection}/items', [HomeSectionController::class, 'storeItem'])->name('home-sections.items.store');
+        Route::put('/home-sections/{homeSection}/items/{item}', [HomeSectionController::class, 'updateItem'])->name('home-sections.items.update');
+        Route::post('/home-sections/{homeSection}/items/{item}/toggle', [HomeSectionController::class, 'toggleItem'])->name('home-sections.items.toggle');
+        Route::post('/home-sections/{homeSection}/items/{item}/duplicate', [HomeSectionController::class, 'duplicateItem'])->name('home-sections.items.duplicate');
+        Route::post('/home-sections/{homeSection}/items/{item}/move-up', [HomeSectionController::class, 'moveItemUp'])->name('home-sections.items.move-up');
+        Route::post('/home-sections/{homeSection}/items/{item}/move-down', [HomeSectionController::class, 'moveItemDown'])->name('home-sections.items.move-down');
+        Route::delete('/home-sections/{homeSection}/items/{item}', [HomeSectionController::class, 'destroyItem'])->name('home-sections.items.destroy');
 
         Route::get('/dashboard', [AdminDashboardController::class, 'index'])
             ->name('dashboard');
@@ -375,6 +400,17 @@ Route::middleware(['auth', 'role:Admin|Manager|Accountant|CAAccountant|Stores'])
         Route::resource('coupons', CouponController::class)->except(['show']);
 
         Route::get('invoices', [AdminInvoiceController::class, 'index'])->name('invoices.index');
+        Route::middleware('role:Admin|Manager|Accountant|CAAccountant')->group(function () {
+            Route::get('invoice-payment-submissions', [AdminInvoicePaymentSubmissionController::class, 'index'])
+                ->name('invoice-payment-submissions.index');
+            Route::post('invoice-payment-submissions/{submission}/approve', [AdminInvoicePaymentSubmissionController::class, 'approve'])
+                ->name('invoice-payment-submissions.approve');
+            Route::post('invoice-payment-submissions/{submission}/reject', [AdminInvoicePaymentSubmissionController::class, 'reject'])
+                ->name('invoice-payment-submissions.reject');
+            Route::get('invoice-payment-submissions/{submission}/proof', [AdminInvoicePaymentSubmissionController::class, 'downloadProof'])
+                ->name('invoice-payment-submissions.proof');
+        });
+
         Route::get('invoices/{invoice}', [AdminInvoiceController::class, 'show'])->name('invoices.show');
         Route::post('invoices/{invoice}/status', [AdminInvoiceController::class, 'updateStatus'])->name('invoices.status');
 

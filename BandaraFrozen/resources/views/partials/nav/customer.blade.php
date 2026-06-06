@@ -91,7 +91,7 @@
                             <span class="text-gray-500 dark:text-gray-400">Bandara</span>
                         </span>
                         <span class="text-[10px] uppercase tracking-[0.08em] text-gray-400 whitespace-nowrap">
-                            by Maytira
+                            LLP
                         </span>
                     </span>
                 </a>

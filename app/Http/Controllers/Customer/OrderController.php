@@ -50,7 +50,7 @@ class OrderController extends Controller
             throw new NotFoundHttpException();
         }
 
-        $order->load(['items', 'invoice']);
+        $order->load(['items', 'invoice.payments', 'invoice.paymentSubmissions']);
 
         $productIds = collect($order->items)->pluck('product_id')->unique()->all();
         $products   = Product::whereIn('id', $productIds)->get()->keyBy('id');

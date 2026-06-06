@@ -68,6 +68,8 @@
 
     $invoiceStatus = $invoiceStatusMeta($invoice->status ?? null);
     $orderStatus = $order ? $orderStatusMeta($order->status ?? null) : null;
+    $paidAmount = (float) ($invoice->amount_paid ?? 0);
+    $balanceAmount = (float) ($invoice->balance_amount ?? max(0, ($invoice->grand_total ?? 0) - $paidAmount));
 
     $pdfUrl = null;
     if (!empty($invoice->pdf_path)) {
@@ -88,6 +90,19 @@
 @endphp
 
 <div class="max-w-6xl mx-auto px-4 py-6 space-y-4 text-xs">
+    @if(session('status'))
+        <div class="rounded border border-emerald-300 bg-emerald-50 px-3 py-2 text-[11px] text-emerald-800">{{ session('status') }}</div>
+    @endif
+    @if($errors->any())
+        <div class="rounded border border-red-300 bg-red-50 px-3 py-2 text-[11px] text-red-800">
+            <ul class="list-disc list-inside space-y-0.5">
+                @foreach($errors->all() as $error)
+                    <li>{{ $error }}</li>
+                @endforeach
+            </ul>
+        </div>
+    @endif
+
     <div class="flex flex-col sm:flex-row sm:items-start sm:justify-between gap-3">
         <div>
             <div class="flex flex-wrap items-center gap-2">
@@ -201,11 +216,15 @@
                                     {{ $item->description }}
                                 </div>
                                 <div class="text-[10px] text-gray-500 dark:text-gray-400">
-                                    Qty: {{ $item->quantity }} × ₹{{ number_format($item->unit_price, 2) }}
+                                    Qty: {{ $item->quantity }} × ₹{{ number_format($item->unit_price, 2) }} <span class="text-[10px] text-gray-400">excl GST</span>
+                                    @if((float) ($item->tax_amount ?? 0) > 0)
+                                        · GST ₹{{ number_format($item->tax_amount, 2) }}
+                                    @endif
                                 </div>
                             </div>
                             <div class="text-right text-[11px] text-gray-900 dark:text-gray-50 font-medium">
                                 ₹{{ number_format($item->total, 2) }}
+                                <div class="text-[10px] font-normal text-gray-400">incl GST</div>
                             </div>
                         </div>
                     @empty
@@ -247,6 +266,16 @@
                     </div>
 
                     <div class="flex justify-between gap-3">
+                        <dt>Payment method</dt>
+                        <dd class="text-right">{{ $invoice->payment_method_label }}</dd>
+                    </div>
+
+                    <div class="flex justify-between gap-3">
+                        <dt>Payment status</dt>
+                        <dd class="text-right">{{ $invoice->payment_status_label }}</dd>
+                    </div>
+
+                    <div class="flex justify-between gap-3">
                         <dt>Order #</dt>
                         <dd class="text-right text-gray-900 dark:text-gray-50 font-medium">{{ $order->order_number ?? '—' }}</dd>
                     </div>
@@ -265,7 +294,7 @@
 
                 <div class="border-t border-gray-200 dark:border-gray-800 pt-3 space-y-1 text-[11px] text-gray-700 dark:text-gray-300">
                     <div class="flex justify-between">
-                        <span>Subtotal</span>
+                        <span>Subtotal <span class="text-[10px] text-gray-400">excl GST</span></span>
                         <span>₹{{ number_format($invoice->subtotal, 2) }}</span>
                     </div>
 
@@ -275,7 +304,7 @@
                     </div>
 
                     <div class="flex justify-between">
-                        <span>Tax total</span>
+                        <span>GST</span>
                         <span>₹{{ number_format($invoice->tax_total, 2) }}</span>
                     </div>
 
@@ -287,10 +316,26 @@
                     @endif
 
                     <div class="flex justify-between font-semibold text-gray-900 dark:text-gray-50 pt-1">
-                        <span>Grand total</span>
+                        <span>Grand total <span class="text-[10px] font-normal text-gray-400">incl GST</span></span>
                         <span>₹{{ number_format($invoice->grand_total, 2) }}</span>
                     </div>
+
+                    <div class="border-t border-gray-200 dark:border-gray-800 mt-2 pt-2 space-y-1">
+                        <div class="flex justify-between">
+                            <span>Paid</span>
+                            <span>₹{{ number_format($paidAmount, 2) }}</span>
+                        </div>
+                        <div class="flex justify-between font-medium text-gray-900 dark:text-gray-50">
+                            <span>Balance due</span>
+                            <span>₹{{ number_format($balanceAmount, 2) }}</span>
+                        </div>
+                    </div>
                 </div>
+
+                @include('customer.invoices.partials.payment-widget', [
+                    'invoice' => $invoice,
+                    'balanceAmount' => $balanceAmount,
+                ])
 
                 @if($pdfUrl)
                     <div class="pt-3">

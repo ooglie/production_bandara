@@ -11,11 +11,11 @@
                             <img src="{{ asset('storage/images/logo-bandara.png') }}" alt="Bandara Logo" class="h-full w-full invert-0 dark:invert">
                         </span>
                         <span class="font-semibold tracking-tight text-gray-900 dark:text-gray-50 text-sm">
-                            Bandara by Maytira
+                            Bandara LLP
                         </span>
                     </div>
                     <p class="text-[11px] text-gray-500 dark:text-gray-400">
-                        Quality frozen products, GST‑ready invoicing, and a mobile‑first shopping experience powered by Frozen – Bandara by Maytira.
+                        Quality frozen products, GST‑ready invoicing, and a mobile‑first shopping experience powered by Frozen by Bandara.
                     </p>
                     <br>
                     <span class="space-y-2 text-[11px] text-gray-600 dark:text-gray-300">
@@ -85,7 +85,7 @@
 
             <div class="border-t border-gray-200 dark:border-gray-800 pt-3 flex flex-col sm:flex-row items-center justify-between gap-2 text-[11px] text-gray-500 dark:text-gray-400">
                 <span>
-                    &copy; {{ date('Y') }} Frozen - Bandara by Maytira. All rights reserved.
+                    &copy; {{ date('Y') }} Frozen - Bandara. All rights reserved.
                 </span>
                 <span class="flex flex-wrap gap-3">
                     <span>Made with care by 

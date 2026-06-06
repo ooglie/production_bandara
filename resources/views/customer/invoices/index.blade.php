@@ -3,6 +3,9 @@
 @section('title', 'My invoices')
 
 @section('content')
+@php
+    use Illuminate\Support\Facades\Route;
+@endphp
 <div class="max-w-6xl mx-auto px-4 py-6 space-y-4">
     <div class="flex items-center justify-between gap-3">
         <div>
@@ -26,13 +29,19 @@
                     <th class="px-3 py-2.5">Invoice #</th>
                     <th class="px-3 py-2.5">Order #</th>
                     <th class="px-3 py-2.5">Date</th>
+                    <th class="px-3 py-2.5">Payment</th>
                     <th class="px-3 py-2.5">Status</th>
                     <th class="px-3 py-2.5 text-right">Total</th>
+                    <th class="px-3 py-2.5 text-right">Balance</th>
                     <th class="px-3 py-2.5 text-right">Actions</th>
                 </tr>
             </thead>
             <tbody>
                 @forelse($invoices as $invoice)
+                    @php
+                        $invoicePaidAmount = (float) ($invoice->amount_paid ?? 0);
+                        $invoiceBalanceAmount = (float) ($invoice->balance_amount ?? max(0, ($invoice->grand_total ?? 0) - $invoicePaidAmount));
+                    @endphp
                     <tr class="border-t border-gray-100 dark:border-gray-800">
                         <td class="px-3 py-2 align-top">
                             {{ $invoice->invoice_number }}
@@ -42,6 +51,12 @@
                         </td>
                         <td class="px-3 py-2 align-top">
                             {{ optional($invoice->invoice_date)->format('d M Y') ?? '—' }}
+                        </td>
+                        <td class="px-3 py-2 align-top text-[11px] text-gray-600 dark:text-gray-300">
+                            <div>{{ $invoice->payment_method_label }}</div>
+                            @if($invoice->due_date && $invoice->is_pay_later)
+                                <div class="text-[10px] text-gray-400">Due {{ $invoice->due_date->format('d M Y') }}</div>
+                            @endif
                         </td>
                         <td class="px-3 py-2 align-top">
                             <span class="inline-flex items-center rounded-full px-2 py-0.5 text-[10px]
@@ -60,17 +75,29 @@
                         </td>
                         <td class="px-3 py-2 align-top text-right">
                             ₹{{ number_format($invoice->grand_total, 2) }}
+                            <div class="text-[10px] text-gray-400">incl GST</div>
                         </td>
                         <td class="px-3 py-2 align-top text-right">
-                            <a href="{{ route('invoices.show', $invoice) }}"
-                               class="text-[11px] text-gray-700 dark:text-gray-200 underline">
-                                View
-                            </a>
+                            ₹{{ number_format($invoiceBalanceAmount ?? 0, 2) }}
+                        </td>
+                        <td class="px-3 py-2 align-top text-right">
+                            <div class="flex items-center justify-end gap-2">
+                                <a href="{{ route('invoices.show', $invoice) }}"
+                                   class="text-[11px] text-gray-700 dark:text-gray-200 underline">
+                                    View
+                                </a>
+                                @if(($invoiceBalanceAmount ?? 0) > 0.00001 && Route::has('invoices.pay.razorpay'))
+                                    <a href="{{ route('invoices.show', $invoice) }}"
+                                       class="inline-flex items-center rounded-sm border border-gray-900 dark:border-gray-100 bg-gray-900 text-white dark:bg-gray-100 dark:text-gray-900 px-2 py-0.5 text-[10px] font-medium hover:bg-gray-800 dark:hover:bg-gray-200">
+                                        Pay / part pay
+                                    </a>
+                                @endif
+                            </div>
                         </td>
                     </tr>
                 @empty
                     <tr>
-                        <td colspan="6" class="px-3 py-4 text-center text-[11px] text-gray-500 dark:text-gray-400">
+                        <td colspan="8" class="px-3 py-4 text-center text-[11px] text-gray-500 dark:text-gray-400">
                             You have no invoices yet.
                         </td>
                     </tr>

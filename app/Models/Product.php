@@ -9,6 +9,30 @@ class Product extends Model
 {
     use SoftDeletes;
 
+    public const DEFAULT_STORAGE_GUIDANCE = [
+        'Keep frozen at or below -18°C.',
+        'Once thawed, keep refrigerated and consume promptly.',
+        'Do not refreeze after complete thawing.',
+        'Cook thoroughly before serving where applicable.',
+    ];
+
+    public const DEFAULT_DELIVERY_SUPPORT = [
+        'Delivered in cold-chain conditions where available.',
+        'Please inspect the package promptly on delivery.',
+        'Perishable and frozen items may have limited return eligibility.',
+        'Contact support quickly if you receive a damaged or incorrect item.',
+    ];
+
+    public static function defaultStorageGuidanceText(): string
+    {
+        return implode(PHP_EOL, self::DEFAULT_STORAGE_GUIDANCE);
+    }
+
+    public static function defaultDeliverySupportText(): string
+    {
+        return implode(PHP_EOL, self::DEFAULT_DELIVERY_SUPPORT);
+    }
+
     protected $fillable = [
         'name',
         'slug',
@@ -17,6 +41,8 @@ class Product extends Model
         'type',
         'short_description',
         'description',
+        'storage_guidance',
+        'delivery_support',
         'primary_image',
         'manage_stock',
         'stock_quantity',
@@ -82,6 +108,41 @@ class Product extends Model
         'inventory_is_saleable'    => 'bool',
         'inventory_can_repack'     => 'bool',
     ];
+
+
+    public function storageGuidanceLines(): array
+    {
+        return $this->multilineListFromAttribute('storage_guidance', self::DEFAULT_STORAGE_GUIDANCE);
+    }
+
+    public function deliverySupportLines(): array
+    {
+        return $this->multilineListFromAttribute('delivery_support', self::DEFAULT_DELIVERY_SUPPORT);
+    }
+
+    protected function multilineListFromAttribute(string $attribute, array $fallback): array
+    {
+        $raw = trim((string) ($this->{$attribute} ?? ''));
+
+        if ($raw === '') {
+            return $fallback;
+        }
+
+        $lines = preg_split('/\r\n|\r|\n/', $raw) ?: [];
+
+        $items = collect($lines)
+            ->map(function ($line) {
+                $line = trim((string) $line);
+                $line = preg_replace('/^\s*(?:[-*•]|\d+[.)])\s*/u', '', $line) ?? $line;
+
+                return trim($line);
+            })
+            ->filter()
+            ->values()
+            ->all();
+
+        return $items ?: $fallback;
+    }
 
 
     public function categories()

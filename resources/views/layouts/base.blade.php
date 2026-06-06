@@ -6,7 +6,7 @@
     <meta name="google" content="notranslate">
     <meta name="robots" content="notranslate">
 
-    <title>@yield('title', config('app.name', 'Bandara by Maytira'))</title>
+    <title>@yield('title', config('app.name', 'Bandara LLP'))</title>
 
     @vite(['resources/css/app.css', 'resources/js/app.js'])
 

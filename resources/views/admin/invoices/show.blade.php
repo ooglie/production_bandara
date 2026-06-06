@@ -74,6 +74,8 @@
 
     $adminMoney = fn ($value): string => number_format($adminNumber($value), 2);
     $adminInt = fn ($value): string => number_format((int) round($adminNumber($value)));
+    $paidAmount = (float) ($invoice->amount_paid ?? 0);
+    $balanceAmount = (float) ($invoice->balance_amount ?? max(0, ($invoice->grand_total ?? 0) - $paidAmount));
 @endphp
 
 <div class="max-w-6xl mx-auto px-4 py-6 space-y-4 text-xs">
@@ -84,6 +86,8 @@
                 <span class="inline-flex items-center rounded-full px-2 py-0.5 text-[12px]
                     @if($invoice->status === 'paid')
                         bg-emerald-100 text-emerald-700 dark:bg-emerald-900/40 dark:text-emerald-300
+                    @elseif($invoice->status === 'part_payment')
+                        bg-sky-100 text-sky-700 dark:bg-sky-900/40 dark:text-sky-300
                     @elseif($invoice->status === 'past_due')
                         bg-red-100 text-red-700 dark:bg-red-900/40 dark:text-red-300
                     @elseif($invoice->status === 'due')
@@ -100,10 +104,25 @@
                 Customer: {{ $adminText($order?->user?->name ?? null) }}
             </p>
         </div>
-        <a href="{{ route('admin.invoices.index') }}"
-           class="text-[11px] text-gray-500 dark:text-gray-400 underline">
-            Back to invoices
-        </a>
+        <div class="flex items-center gap-2">
+            @can('manage sales')
+                @if($balanceAmount > 0.00001)
+                    <form method="POST" action="{{ route('admin.invoices.payment-form') }}">
+                        @csrf
+                        <input type="hidden" name="invoice_ids[]" value="{{ $invoice->id }}">
+                        <input type="hidden" name="status" value="part_payment">
+                        <button type="submit"
+                                class="inline-flex items-center rounded-full border border-gray-900 dark:border-gray-100 bg-gray-900 text-white dark:bg-gray-100 dark:text-gray-900 px-3 py-1.5 text-[11px] font-medium hover:bg-gray-800 dark:hover:bg-gray-200">
+                            Record payment
+                        </button>
+                    </form>
+                @endif
+            @endcan
+            <a href="{{ route('admin.invoices.index') }}"
+               class="text-[11px] text-gray-500 dark:text-gray-400 underline">
+                Back to invoices
+            </a>
+        </div>
     </div>
 
     @if(session('status'))
@@ -176,11 +195,15 @@
                                     {{ $adminText($item->description) }}
                                 </div>
                                 <div class="text-[10px] text-gray-500 dark:text-gray-400">
-                                    Qty: {{ $adminText($item->quantity) }} × ₹{{ $adminMoney($item->unit_price) }}
+                                    Qty: {{ $adminText($item->quantity) }} × ₹{{ $adminMoney($item->unit_price) }} <span class="text-[10px] text-gray-400">excl GST</span>
+                                    @if((float) ($item->tax_amount ?? 0) > 0)
+                                        · GST ₹{{ $adminMoney($item->tax_amount) }}
+                                    @endif
                                 </div>
                             </div>
                             <div class="text-right text-[11px] text-gray-900 dark:text-gray-50">
                                 ₹{{ $adminMoney($item->total) }}
+                                <div class="text-[10px] font-normal text-gray-400">incl GST</div>
                             </div>
                         </div>
                     @empty
@@ -216,6 +239,14 @@
                         <dt>Due date</dt>
                         <dd>{{ optional($invoice->due_date)->format('d M Y') ?? '—' }}</dd>
                     </div>
+                    <div class="flex justify-between">
+                        <dt>Payment method</dt>
+                        <dd>{{ $invoice->payment_method_label }}</dd>
+                    </div>
+                    <div class="flex justify-between">
+                        <dt>Payment status</dt>
+                        <dd>{{ $invoice->payment_status_label }}</dd>
+                    </div>
                     {{-- <div class="flex justify-between">
                         <dt>Status</dt>
                         <dd>
@@ -238,7 +269,7 @@
 
                 <div class="border-t border-gray-200 dark:border-gray-800 pt-3 space-y-1 text-[11px] text-gray-700 dark:text-gray-300">
                     <div class="flex justify-between">
-                        <span>Subtotal</span>
+                        <span>Subtotal <span class="text-[10px] text-gray-400">excl GST</span></span>
                         <span>₹{{ $adminMoney($invoice->subtotal) }}</span>
                     </div>
                     <div class="flex justify-between">
@@ -246,17 +277,23 @@
                         <span>- ₹{{ $adminMoney($invoice->discount_total) }}</span>
                     </div>
                     {{-- GST breakdown --}}
-                    <div class="flex justify-between">
-                        <span>SGST (2.5%)</span>
-                        <span>₹{{ $adminMoney($order?->sgst_amount ?? 0) }}</span>
-                    </div>
-                    <div class="flex justify-between">
-                            <span>CGST (2.5%)</span>
+                    @if(($order?->gst_type ?? null) === 'intra_state')
+                        <div class="flex justify-between">
+                            <span>SGST</span>
+                            <span>₹{{ $adminMoney($order?->sgst_amount ?? 0) }}</span>
+                        </div>
+                        <div class="flex justify-between">
+                            <span>CGST</span>
                             <span>₹{{ $adminMoney($order?->cgst_amount ?? 0) }}</span>
-                        
-                    </div>
+                        </div>
+                    @elseif(($order?->gst_type ?? null) === 'inter_state')
+                        <div class="flex justify-between">
+                            <span>IGST</span>
+                            <span>₹{{ $adminMoney($order?->igst_amount ?? 0) }}</span>
+                        </div>
+                    @endif
                     <div class="flex justify-between">
-                        <span>Tax total</span>
+                        <span>GST total</span>
                         <span>₹{{ $adminMoney($invoice->tax_total) }}</span>
                     </div>
 
@@ -274,8 +311,18 @@
                     @endif
 
                     <div class="flex justify-between font-semibold text-gray-900 dark:text-gray-50 pt-1">
-                        <span>Grand total</span>
+                        <span>Grand total <span class="text-[10px] font-normal text-gray-400">incl GST</span></span>
                         <span>₹{{ $adminMoney($invoice->grand_total) }}</span>
+                    </div>
+                    <div class="border-t border-gray-200 dark:border-gray-800 mt-2 pt-2 space-y-1">
+                        <div class="flex justify-between">
+                            <span>Paid</span>
+                            <span>₹{{ $adminMoney($paidAmount) }}</span>
+                        </div>
+                        <div class="flex justify-between font-medium text-gray-900 dark:text-gray-50">
+                            <span>Balance due</span>
+                            <span>₹{{ $adminMoney($balanceAmount) }}</span>
+                        </div>
                     </div>
                 </div>
             </div>
@@ -369,6 +416,43 @@
                 </div>
             @endif
         </div>
+
+        @if(($invoice->paymentSubmissions ?? collect())->isNotEmpty())
+            <div class="rounded-xl border border-gray-200 dark:border-gray-800 bg-white dark:bg-gray-900 px-3 py-3">
+                <div class="flex items-center justify-between mb-2">
+                    <p class="text-[11px] font-semibold text-gray-900 dark:text-gray-50">
+                        Customer-submitted payment details
+                    </p>
+                    @if(\Illuminate\Support\Facades\Route::has('admin.invoice-payment-submissions.index'))
+                        <a href="{{ route('admin.invoice-payment-submissions.index', ['status' => 'pending']) }}" class="text-[10px] underline text-gray-500">Review all pending</a>
+                    @endif
+                </div>
+                <div class="overflow-x-auto">
+                    <table class="min-w-full text-[11px]">
+                        <thead class="bg-gray-50 dark:bg-gray-950/40">
+                            <tr>
+                                <th class="px-3 py-1.5 text-left font-medium text-gray-500 dark:text-gray-400">Submitted</th>
+                                <th class="px-3 py-1.5 text-left font-medium text-gray-500 dark:text-gray-400">Method</th>
+                                <th class="px-3 py-1.5 text-left font-medium text-gray-500 dark:text-gray-400">Reference</th>
+                                <th class="px-3 py-1.5 text-right font-medium text-gray-500 dark:text-gray-400">Amount</th>
+                                <th class="px-3 py-1.5 text-left font-medium text-gray-500 dark:text-gray-400">Status</th>
+                            </tr>
+                        </thead>
+                        <tbody class="divide-y divide-gray-100 dark:divide-gray-800">
+                            @foreach($invoice->paymentSubmissions as $submission)
+                                <tr>
+                                    <td class="px-3 py-1.5 text-gray-700 dark:text-gray-200">{{ optional($submission->created_at)->format('d M Y, H:i') }}</td>
+                                    <td class="px-3 py-1.5 text-gray-700 dark:text-gray-200">{{ $submission->method_label }}</td>
+                                    <td class="px-3 py-1.5 text-gray-600 dark:text-gray-300">{{ $adminText($submission->reference ?? $submission->cheque_number ?? null) }}</td>
+                                    <td class="px-3 py-1.5 text-right text-gray-900 dark:text-gray-50">₹{{ $adminMoney($submission->amount) }}</td>
+                                    <td class="px-3 py-1.5 text-gray-600 dark:text-gray-300">{{ $submission->status_label }}</td>
+                                </tr>
+                            @endforeach
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+        @endif
         </div>
     </div>
 </div>

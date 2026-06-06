@@ -20,6 +20,7 @@ class Payment extends Model
         'method',
         'status',
         'transaction_id',
+        'razorpay_order_id',
         'payment_data',
         'reference',
         'received_date',
@@ -71,6 +72,11 @@ class Payment extends Model
     public function recordedBy()
     {
         return $this->belongsTo(User::class, 'recorded_by_id');
+    }
+
+    public function customerSubmission()
+    {
+        return $this->hasOne(InvoicePaymentSubmission::class);
     }
 }
 

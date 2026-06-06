@@ -14,9 +14,15 @@
                 Invoices
             </h1>
             <p class="text-[11px] text-gray-500 dark:text-gray-400">
-                Filter by customer, month and status. Use bulk status to override, or choose "Paid" to record a payment.
+                Filter by customer, month and status. Choose “Record part payment” or “Record full payment” to enter the received amount.
             </p>
         </div>
+        @if(\Illuminate\Support\Facades\Route::has('admin.invoice-payment-submissions.index'))
+            <a href="{{ route('admin.invoice-payment-submissions.index') }}"
+               class="inline-flex items-center justify-center rounded-sm border border-amber-700 bg-amber-700 px-3 py-1.5 text-[11px] font-medium text-white hover:bg-amber-800">
+                Review payment approvals
+            </a>
+        @endif
     </div>
 
     @if(session('status'))
@@ -107,17 +113,17 @@
         <div class="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3 mb-2">
             <div class="flex flex-wrap items-center gap-2 text-[11px]">
                 <span class="text-gray-600 dark:text-gray-300">
-                    Bulk status:
+                    Bulk action:
                 </span>
 
                 <select name="status"
                         id="bulk-status"
                         class="rounded border border-gray-300 dark:border-gray-700 bg-white dark:bg-gray-950 px-2 py-1 text-[11px] focus:outline-none focus:ring-1 focus:ring-gray-400 dark:focus:ring-gray-500">
-                    <option value="pending">Pending</option>
-                    <option value="due">Due</option>
-                    <option value="part_payment">Part payment</option>
-                    <option value="past_due">Past due</option>
-                    <option value="paid">Paid (will open payment form)</option>
+                    <option value="pending">Mark pending</option>
+                    <option value="due">Mark due</option>
+                    <option value="past_due">Mark past due</option>
+                    <option value="part_payment">Record part payment</option>
+                    <option value="paid">Record full payment</option>
                 </select>
 
                 <button type="submit"
@@ -128,7 +134,7 @@
             </div>
 
             <p class="text-[10px] text-gray-400">
-                To record a payment (cash / POS / cheque / etc.), select invoices, choose <strong>Paid</strong> and click "Update selected".
+                To enter an amount, select invoice(s), choose <strong>Record part payment</strong> or <strong>Record full payment</strong>, and click “Update selected”.
             </p>
         </div>
         @endcan
@@ -144,6 +150,7 @@
                         <th class="px-3 py-2 text-left font-medium text-gray-500 dark:text-gray-400">Invoice</th>
                         <th class="px-3 py-2 text-left font-medium text-gray-500 dark:text-gray-400">Customer</th>
                         <th class="px-3 py-2 text-left font-medium text-gray-500 dark:text-gray-400">Status</th>
+                        <th class="px-3 py-2 text-left font-medium text-gray-500 dark:text-gray-400">Method</th>
                         <th class="px-3 py-2 text-right font-medium text-gray-500 dark:text-gray-400">Total</th>
                         <th class="px-3 py-2 text-right font-medium text-gray-500 dark:text-gray-400">Paid</th>
                         <th class="px-3 py-2 text-right font-medium text-gray-500 dark:text-gray-400">Balance</th>
@@ -191,8 +198,15 @@
                                     {{ ucfirst(str_replace('_', ' ', $invoice->status)) }}
                                 </span>
                             </td>
+                            <td class="px-3 py-2 text-gray-600 dark:text-gray-300">
+                                {{ $invoice->payment_method_label }}
+                                @if($invoice->due_date && $invoice->is_pay_later)
+                                    <div class="text-[10px] text-gray-400">Due {{ $invoice->due_date->format('d M Y') }}</div>
+                                @endif
+                            </td>
                             <td class="px-3 py-2 text-right text-gray-900 dark:text-gray-50">
                                 ₹{{ number_format($invoice->grand_total, 2) }}
+                                <div class="text-[10px] text-gray-400">incl GST</div>
                             </td>
                             <td class="px-3 py-2 text-right text-gray-700 dark:text-gray-200">
                                 ₹{{ number_format($paid, 2) }}
@@ -213,7 +227,7 @@
                         </tr>
                     @empty
                         <tr>
-                            <td colspan="8" class="px-3 py-4 text-center text-gray-500 dark:text-gray-400">
+                            <td colspan="9" class="px-3 py-4 text-center text-gray-500 dark:text-gray-400">
                                 No invoices found.
                             </td>
                         </tr>
@@ -254,8 +268,8 @@
 
                 const status = bulkStatus.value;
 
-                // If status is paid, go to payment form route instead
-                if (status === 'paid') {
+                // Payment-backed statuses go to the payment-entry form instead of changing status only
+                if (status === 'paid' || status === 'part_payment') {
                     bulkForm.action = "{{ route('admin.invoices.payment-form') }}";
                 } else {
                     bulkForm.action = "{{ route('admin.invoices.bulk-status') }}";
