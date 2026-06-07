@@ -6,7 +6,7 @@
     <meta name="google" content="notranslate">
     <meta name="robots" content="notranslate">
 
-    <title>@yield('title', config('app.name', 'Bandara LLP'))</title>
+    <title>@yield('title', config('app.name', 'Bandara by Maytira'))</title>
 
     @vite(['resources/css/app.css', 'resources/js/app.js'])
 
@@ -116,17 +116,23 @@
                 const clickedOnToggle = toggle.contains(event.target);
 
                 if (clickedOnToggle) {
+                    const isOpening = panel.classList.contains('hidden');
                     panel.classList.toggle('hidden');
+                    toggle.setAttribute('aria-expanded', isOpening ? 'true' : 'false');
                 } else if (!clickedInsideRoot) {
                     panel.classList.add('hidden');
+                    toggle.setAttribute('aria-expanded', 'false');
                 }
             });
         });
 
         document.addEventListener('keydown', function (event) {
             if (event.key === 'Escape') {
-                document.querySelectorAll('[data-user-menu-panel]').forEach(function (panel) {
-                    panel.classList.add('hidden');
+                document.querySelectorAll('[data-user-menu]').forEach(function (root) {
+                    const toggle = root.querySelector('[data-user-menu-toggle]');
+                    const panel = root.querySelector('[data-user-menu-panel]');
+                    if (panel) panel.classList.add('hidden');
+                    if (toggle) toggle.setAttribute('aria-expanded', 'false');
                 });
             }
         });

@@ -203,12 +203,31 @@
                     class="inline-flex items-center justify-center h-8 w-8 rounded-sm border border-gray-300 dark:border-gray-700 bg-white dark:bg-gray-900 hover:bg-gray-100 dark:hover:bg-gray-800"
                     aria-label="Toggle dark mode"
                 >
-                    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"
-                         class="h-4 w-4 text-gray-700 dark:text-gray-200" fill="none" stroke="currentColor" stroke-width="1.5">
-                        <path stroke-linecap="round" stroke-linejoin="round"
-                              d="M12 3.75V5.25M12 18.75v1.5M5.47 5.47l1.06 1.06M17.47 17.47l1.06 1.06M3.75 12h1.5M18.75 12h1.5M6.22 17.78l1.06-1.06M16.72 7.28l1.06-1.06" />
-                        <circle cx="12" cy="12" r="3.5" />
-                    </svg>
+                    <span id="theme-icon-light" class="hidden dark:inline">
+                        <svg xmlns="http://www.w3.org/2000/svg"
+                            class="h-4 w-4 text-gray-700 dark:text-gray-200"
+                            viewBox="0 0 24 24"
+                            fill="none"
+                            stroke="currentColor">
+                            <path stroke-linecap="round"
+                                stroke-linejoin="round"
+                                stroke-width="1.5"
+                                d="M21.752 15.002A9 9 0 0 1 9 2.248a9 9 0 1 0 12.752 12.754Z"/>
+                        </svg>
+                    </span>
+
+                    <span id="theme-icon-dark" class="inline dark:hidden">
+                        <svg xmlns="http://www.w3.org/2000/svg"
+                            class="h-4 w-4 text-gray-700 dark:text-gray-200"
+                            viewBox="0 0 24 24"
+                            fill="none"
+                            stroke="currentColor">
+                            <path stroke-linecap="round"
+                                stroke-linejoin="round"
+                                stroke-width="1.5"
+                                d="M12 3v2.25M18.364 5.636l-1.59 1.59M21 12h-2.25M18.364 18.364l-1.59-1.59M12 18.75V21M7.226 16.774l-1.59 1.59M5.25 12H3M7.226 7.226l-1.59-1.59M16 12a4 4 0 1 1-8 0 4 4 0 0 1 8 0Z"/>
+                        </svg>
+                    </span>
                 </button>
 
                 <div class="relative hidden md:flex items-center" data-user-menu>

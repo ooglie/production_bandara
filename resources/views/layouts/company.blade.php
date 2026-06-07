@@ -100,11 +100,31 @@
                                 onclick="toggleTheme()"
                                 class="inline-flex h-8 w-8 items-center justify-center rounded-full border border-gray-200 dark:border-gray-700 hover:bg-gray-100 dark:hover:bg-gray-800"
                             >
-                                <span class="sr-only">Toggle theme</span>
-                                <svg xmlns="http://www.w3.org/2000/svg" class="h-3.5 w-3.5 text-gray-700 dark:text-gray-200" viewBox="0 0 24 24" fill="none" stroke="currentColor">
-                                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.5"
-                                        d="M12 3v2.25M18.364 5.636l-1.59 1.59M21 12h-2.25M18.364 18.364l-1.59-1.59M12 18.75V21M7.226 16.774l-1.59 1.59M5.25 12H3M7.226 7.226l-1.59-1.59M16 12a4 4 0 1 1-8 0 4 4 0 0 1 8 0Z" />
-                                </svg>
+                                <span id="theme-icon-light" class="hidden dark:inline">
+    <svg xmlns="http://www.w3.org/2000/svg"
+         class="h-4 w-4 text-gray-700 dark:text-gray-200"
+         viewBox="0 0 24 24"
+         fill="none"
+         stroke="currentColor">
+        <path stroke-linecap="round"
+              stroke-linejoin="round"
+              stroke-width="1.5"
+              d="M21.752 15.002A9 9 0 0 1 9 2.248a9 9 0 1 0 12.752 12.754Z"/>
+    </svg>
+</span>
+
+<span id="theme-icon-dark" class="inline dark:hidden">
+    <svg xmlns="http://www.w3.org/2000/svg"
+         class="h-4 w-4 text-gray-700 dark:text-gray-200"
+         viewBox="0 0 24 24"
+         fill="none"
+         stroke="currentColor">
+        <path stroke-linecap="round"
+              stroke-linejoin="round"
+              stroke-width="1.5"
+              d="M12 3v2.25M18.364 5.636l-1.59 1.59M21 12h-2.25M18.364 18.364l-1.59-1.59M12 18.75V21M7.226 16.774l-1.59 1.59M5.25 12H3M7.226 7.226l-1.59-1.59M16 12a4 4 0 1 1-8 0 4 4 0 0 1 8 0Z"/>
+    </svg>
+</span>
                             </button>
 
                             {{-- User menu (avatar + dropdown) --}}
