@@ -85,6 +85,9 @@
     }
 
     $weight = old('product_weight', $product->product_weight ?? '');
+    $piecesPerPack = old('pieces_per_pack', $product->pieces_per_pack ?? '');
+    $inventoryRole = old('inventory_role', $product->inventory_role ?? (($product->is_active ?? true) ? 'saleable' : 'internal'));
+    $packType = old('pack_type', $product->pack_type ?? 'quantity');
 
     $hsnManageUrl = \Illuminate\Support\Facades\Route::has('admin.hsn-codes.index')
         ? route('admin.hsn-codes.index')
@@ -259,9 +262,9 @@
                     </label>
                     <select name="type" class="{{ $select }}" required>
                         <option value="simple" @selected(old('type', $product->type ?? 'simple') === 'simple')>Simple</option>
-                        <option value="variable" @selected(old('type', $product->type ?? 'simple') === 'variable')>Variant-based</option>
+                        <option value="variable" @selected(old('type', $product->type ?? 'simple') === 'variable')>Variable pack product</option>
                     </select>
-                    <p class="{{ $hint }}">Default is simple.</p>
+                    <p class="{{ $hint }}">Use variable pack product for Dimsum 10 pcs / 20 pcs style options. Use simple for slabs, single packs, and normal products.</p>
                     @error('type') <p class="mt-1 text-[11px] text-red-600">{{ $message }}</p> @enderror
                 </div>
 
@@ -366,7 +369,7 @@
 
                 <div>
                     <label class="block text-[12px] font-medium text-gray-700 dark:text-gray-300">
-                        Product weight (kg) <span class="text-red-500">*</span> <span class="text-[10px] font-normal text-gray-400">when active</span>
+                        Product / pack weight (kg) <span class="text-red-500">*</span> <span class="text-[10px] font-normal text-gray-400">when needed</span>
                     </label>
                     <input
                         type="number"
@@ -375,10 +378,37 @@
                         min="0"
                         value="{{ $weight }}"
                         class="{{ $input }}"
-                        placeholder="e.g. 2.500"
+                        placeholder="e.g. 0.500 for 500g pack"
                     >
-                    <div class="{{ $hint }}">Leave blank only while the product is an inactive draft.</div>
+                    <div class="{{ $hint }}">For fixed-weight packs, enter the pack weight. For by-kg products, this can be the target/average pack weight.</div>
                     @error('product_weight') <p class="mt-1 text-[11px] text-red-600">{{ $message }}</p> @enderror
+                </div>
+            </div>
+
+            <div class="grid gap-4 md:grid-cols-3">
+                <div>
+                    <label class="block text-[12px] font-medium text-gray-700 dark:text-gray-300">Pack / sale type</label>
+                    <select name="pack_type" class="{{ $select }}">
+                        <option value="quantity" @selected($packType === 'quantity')>Quantity item</option>
+                        <option value="bulk" @selected($packType === 'bulk')>Bulk/internal stock</option>
+                        <option value="fixed_weight_pack" @selected($packType === 'fixed_weight_pack')>Fixed weight pack</option>
+                        <option value="fixed_piece_pack" @selected($packType === 'fixed_piece_pack')>Fixed piece pack</option>
+                        <option value="variable_weight" @selected($packType === 'variable_weight')>Variable-weight prepacked / by kg</option>
+                    </select>
+                    <div class="{{ $hint }}">This is used by vendor inward and create pack stock; the frontend remains product-based.</div>
+                    @error('pack_type') <p class="mt-1 text-[11px] text-red-600">{{ $message }}</p> @enderror
+                </div>
+
+                <div>
+                    <label class="block text-[12px] font-medium text-gray-700 dark:text-gray-300">Pieces per pack</label>
+                    <input type="number" name="pieces_per_pack" step="0.001" min="0" value="{{ $piecesPerPack }}" class="{{ $input }}" placeholder="e.g. 10 for dimsum">
+                    <div class="{{ $hint }}">Use for dimsum, kebabs, rolls and other fixed piece packs.</div>
+                    @error('pieces_per_pack') <p class="mt-1 text-[11px] text-red-600">{{ $message }}</p> @enderror
+                </div>
+
+                <div class="rounded-sm border border-gray-200 dark:border-gray-800 bg-gray-50 dark:bg-gray-950/40 px-4 py-3 text-[12px] text-gray-600 dark:text-gray-300">
+                    <div class="font-semibold text-gray-900 dark:text-gray-50">Simple rule</div>
+                    <div class="mt-1 text-[11px] text-gray-500 dark:text-gray-400">If the customer buys it, create it as a product. Use inactive products only for raw/inward stock.</div>
                 </div>
             </div>
 
@@ -515,6 +545,17 @@
                         placeholder="Auto-generated if empty"
                     >
                     @error('slug') <p class="mt-1 text-[11px] text-red-600">{{ $message }}</p> @enderror
+                </div>
+
+                <div>
+                    <label class="block text-[12px] font-medium text-gray-700 dark:text-gray-300">Product role</label>
+                    <select name="inventory_role" class="{{ $select }}">
+                        <option value="saleable" @selected($inventoryRole === 'saleable')>Saleable frontend product</option>
+                        <option value="internal" @selected($inventoryRole === 'internal')>Internal / inward stock only</option>
+                        <option value="both" @selected($inventoryRole === 'both')>Both inward and saleable</option>
+                    </select>
+                    <div class="{{ $hint }}">Use inactive/internal products for raw stock such as Full Pork Belly. Customer-facing packs remain normal saleable products.</div>
+                    @error('inventory_role') <p class="mt-1 text-[11px] text-red-600">{{ $message }}</p> @enderror
                 </div>
 
                 <div>

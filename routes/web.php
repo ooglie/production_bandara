@@ -357,6 +357,9 @@ Route::middleware(['auth', 'role:Admin|Manager|Accountant|CAAccountant|Stores'])
         Route::post('/delivery-settings/zones/{zone}/rules', [DeliverySettingsController::class, 'storeDeliveryRule'])->name('delivery.zones.delivery-rules.store');
         Route::put('/delivery-settings/delivery-rules/{rule}', [DeliverySettingsController::class, 'updateDeliveryRule'])->name('delivery.delivery-rules.update');
         Route::delete('/delivery-settings/delivery-rules/{rule}', [DeliverySettingsController::class, 'destroyDeliveryRule'])->name('delivery.delivery-rules.destroy');
+        Route::post('/delivery-settings/distance-rules', [DeliverySettingsController::class, 'storeDistanceRule'])->name('delivery.distance-rules.store');
+        Route::put('/delivery-settings/distance-rules/{rule}', [DeliverySettingsController::class, 'updateDistanceRule'])->name('delivery.distance-rules.update');
+        Route::delete('/delivery-settings/distance-rules/{rule}', [DeliverySettingsController::class, 'destroyDistanceRule'])->name('delivery.distance-rules.destroy');
         Route::post('/delivery-settings/handling-rules', [DeliverySettingsController::class, 'storeHandlingRule'])->name('delivery.handling-rules.store');
         Route::put('/delivery-settings/handling-rules/{rule}', [DeliverySettingsController::class, 'updateHandlingRule'])->name('delivery.handling-rules.update');
         Route::delete('/delivery-settings/handling-rules/{rule}', [DeliverySettingsController::class, 'destroyHandlingRule'])->name('delivery.handling-rules.destroy');

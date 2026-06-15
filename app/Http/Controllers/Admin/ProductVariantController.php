@@ -44,6 +44,7 @@ class ProductVariantController extends Controller
         $variant = DB::transaction(function () use ($data, $product) {
             $variant = ProductVariant::create($this->buildPayload($data, $product));
             $this->syncVariantAttributes($variant, $product, $data['variant_attributes'] ?? []);
+            $this->syncParentProductForPackVariants($product);
 
             return $variant;
         });
@@ -84,6 +85,7 @@ class ProductVariantController extends Controller
         DB::transaction(function () use ($variant, $data, $product) {
             $variant->update($this->buildPayload($data, $product));
             $this->syncVariantAttributes($variant, $product, $data['variant_attributes'] ?? []);
+            $this->syncParentProductForPackVariants($product);
         });
 
         return redirect()
@@ -99,7 +101,7 @@ class ProductVariantController extends Controller
             throw new NotFoundHttpException();
         }
 
-        DB::transaction(function () use ($variant) {
+        DB::transaction(function () use ($variant, $product) {
             if (ProductVariant::hasVariantAttributePivotTable()) {
                 DB::table('product_variant_attribute_values')
                     ->where('product_variant_id', $variant->id)
@@ -107,6 +109,7 @@ class ProductVariantController extends Controller
             }
 
             $variant->delete();
+            $this->syncParentProductForPackVariants($product);
         });
 
         return redirect()
@@ -116,6 +119,17 @@ class ProductVariantController extends Controller
 
     protected function validatedData(Request $request, Product $product, ?ProductVariant $variant = null): array
     {
+        $packType = (string) $request->input('pack_type', $variant->pack_type ?? 'quantity');
+        $isFixedPiecePack = $packType === 'fixed_piece_pack';
+
+        $productWeightRules = $isFixedPiecePack
+            ? ['nullable', 'numeric', 'min:0']
+            : ['required', 'numeric', 'gt:0'];
+
+        $piecesPerPackRules = $isFixedPiecePack
+            ? ['required', 'numeric', 'gt:0']
+            : ['nullable', 'numeric', 'min:0'];
+
         return $request->validate([
             'barcode' => [
                 'nullable',
@@ -136,7 +150,9 @@ class ProductVariantController extends Controller
             ],
 
             'name' => ['nullable', 'string', 'max:255'],
+            'pack_type' => ['required', Rule::in(['quantity', 'fixed_weight_pack', 'fixed_piece_pack'])],
 
+            'mrp_price' => ['nullable', 'numeric', 'min:0'],
             'price' => ['required', 'numeric', 'min:0'],
             'stock_quantity' => ['nullable', 'numeric', 'min:0'],
             'low_stock_threshold' => ['nullable', 'numeric', 'min:0'],
@@ -144,7 +160,8 @@ class ProductVariantController extends Controller
             'standard_b2b_price' => ['nullable', 'numeric', 'min:0'],
             'standard_b2b_min_order_quantity' => ['nullable', 'numeric', 'min:0.001'],
 
-            'product_weight' => ['required', 'numeric', 'min:0'],
+            'product_weight' => $productWeightRules,
+            'pieces_per_pack' => $piecesPerPackRules,
             'pricing_unit' => ['nullable', Rule::in(['pack', 'kg'])],
 
             'manage_stock' => ['nullable', 'boolean'],
@@ -157,7 +174,17 @@ class ProductVariantController extends Controller
 
     protected function buildPayload(array $data, Product $product): array
     {
-        return [
+        $packType = (string) ($data['pack_type'] ?? 'quantity');
+        $pricingUnit = $this->nullableString($data['pricing_unit'] ?? null) ?: 'pack';
+        $productWeight = $this->nullableNumber($data['product_weight'] ?? null);
+
+        if ($packType === 'fixed_piece_pack' && $productWeight === null) {
+            // Existing DBs have product_variants.product_weight as NOT NULL.
+            // Piece-pack variants such as Dimsum 10 pcs do not need a kg weight.
+            $productWeight = 0.0;
+        }
+
+        $payload = [
             'product_id' => $product->id,
             'barcode' => $this->nullableString($data['barcode'] ?? null),
             'sku' => trim((string) $data['sku']),
@@ -170,12 +197,52 @@ class ProductVariantController extends Controller
             'standard_b2b_price' => $this->normalizeStoredPrice($this->nullableNumber($data['standard_b2b_price'] ?? null), (bool) ($product->b2b_price_includes_gst ?? false), $product),
             'standard_b2b_min_order_quantity' => $this->nullableNumber($data['standard_b2b_min_order_quantity'] ?? null),
 
-            'product_weight' => $this->nullableNumber($data['product_weight'] ?? null),
+            'product_weight' => $productWeight ?? 0.0,
             'price' => $this->normalizeStoredPrice(round((float) $data['price'], 2), (bool) ($product->b2c_price_includes_gst ?? true), $product) ?? 0.0,
-            'pricing_unit' => $this->nullableString($data['pricing_unit'] ?? null),
+            'pricing_unit' => $pricingUnit,
 
             'is_active' => (bool) ($data['is_active'] ?? false),
         ];
+
+        if ($this->tableHasColumn('product_variants', 'pack_type')) {
+            $payload['pack_type'] = $packType;
+        }
+
+        if ($this->tableHasColumn('product_variants', 'pieces_per_pack')) {
+            $payload['pieces_per_pack'] = $packType === 'fixed_piece_pack'
+                ? $this->nullableNumber($data['pieces_per_pack'] ?? null)
+                : null;
+        }
+
+        if ($this->tableHasColumn('product_variants', 'mrp_price')) {
+            $payload['mrp_price'] = $this->normalizeStoredPrice($this->nullableNumber($data['mrp_price'] ?? null), (bool) ($product->b2c_price_includes_gst ?? true), $product);
+        }
+
+        return $payload;
+    }
+
+
+    protected function syncParentProductForPackVariants(Product $product): void
+    {
+        $activeVariants = ProductVariant::query()
+            ->where('product_id', $product->id)
+            ->whereNull('deleted_at')
+            ->where('is_active', true)
+            ->get();
+
+        if ($activeVariants->isEmpty()) {
+            if ((string) ($product->type ?? 'simple') === 'variable') {
+                $product->type = 'simple';
+                $product->save();
+            }
+
+            return;
+        }
+
+        $product->type = 'variable';
+        $product->manage_stock = true;
+        $product->stock_quantity = round((float) $activeVariants->sum(fn (ProductVariant $variant) => (float) ($variant->stock_quantity ?? 0)), 3);
+        $product->save();
     }
 
     protected function syncVariantAttributes(ProductVariant $variant, Product $product, array $submittedAttributes): void

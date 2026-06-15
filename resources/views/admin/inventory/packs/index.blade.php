@@ -12,7 +12,7 @@
         <div>
             <h1 class="text-xl font-semibold text-gray-900 dark:text-gray-50">Inventory Packs</h1>
             <p class="mt-1 text-[12px] text-gray-500 dark:text-gray-400">
-                Convert repackable source stock such as boxes or loose pieces into sellable units like 10pc packs, 20pc packs, or boxes linked to product variants.
+                Convert repackable source stock such as bulk belly, fillets, boxes, or loose pieces into saleable finished packs/cuts. Output stock can belong to a different finished product when you make slices/slabs from a raw source lot.
             </p>
         </div>
         <div class="flex flex-wrap gap-2">
@@ -28,7 +28,7 @@
     @endif
 
     <div class="rounded-xl border border-amber-200 bg-amber-50 px-4 py-3 text-xs text-amber-800 dark:border-amber-900/60 dark:bg-amber-950/30 dark:text-amber-200">
-        This screen updates internal pack stock and linked variant stock only. B2C checkout, B2B checkout, payments, rewards, and vendor invoice inward remain unchanged.
+        This screen updates backend pack stock and the output product stock. Frontend product display remains unchanged.
     </div>
 
     <div class="overflow-x-auto rounded-xl border border-gray-200 bg-white dark:border-gray-800 dark:bg-gray-950">
@@ -46,6 +46,9 @@
             </thead>
             <tbody class="divide-y divide-gray-200 dark:divide-gray-800">
                 @forelse($packs as $pack)
+                    @php
+                        $displaySourceLot = $pack->sourceLot?->parentLot ?: $pack->sourceLot;
+                    @endphp
                     <tr>
                         <td class="px-3 py-2 align-top">
                             <div class="font-medium text-gray-900 dark:text-gray-50">{{ $pack->pack_code ?: ('Pack #' . $pack->id) }}</div>
@@ -55,17 +58,29 @@
                         </td>
                         <td class="px-3 py-2 align-top">
                             <div class="font-medium text-gray-900 dark:text-gray-50">{{ $pack->product?->name ?? ('Product #' . $pack->product_id) }}</div>
+                            @if($pack->productVariant)
+                                <div class="text-[10px] text-gray-500 dark:text-gray-400">Variant: {{ $pack->productVariant->name ?: $pack->productVariant->sku ?: ('#' . $pack->productVariant->id) }}</div>
+                            @endif
                             <div class="text-[10px] text-gray-500 dark:text-gray-400">
-                                {{ $pack->sellUnit?->name ?? '—' }}
-                                @if($pack->productVariant)
-                                    · Variant: {{ $pack->productVariant->sku ?: ($pack->productVariant->name ?: ('#' . $pack->productVariant->id)) }}
+                                {{ str_replace('_', ' ', (string) ($pack->productVariant?->pack_type ?? $pack->product?->pack_type ?? 'finished stock')) }}
+                                @if($pack->productVariant?->product_weight || $pack->product?->product_weight)
+                                    · {{ $fmt($pack->productVariant?->product_weight ?? $pack->product->product_weight, 3) }} kg
+                                @endif
+                                @if($pack->productVariant?->pieces_per_pack || $pack->product?->pieces_per_pack)
+                                    · {{ $fmt($pack->productVariant?->pieces_per_pack ?? $pack->product->pieces_per_pack, 0) }} pcs/pack
                                 @endif
                             </div>
                         </td>
                         <td class="px-3 py-2 align-top text-gray-700 dark:text-gray-300">
-                            <div>{{ $pack->sourceLot?->lot_code ?: ('Lot #' . ($pack->source_inventory_lot_id ?? '—')) }}</div>
+                            <div>{{ $displaySourceLot?->lot_code ?: ('Lot #' . ($displaySourceLot?->id ?? $pack->source_inventory_lot_id ?? '—')) }}</div>
                             <div class="text-[10px] text-gray-500 dark:text-gray-400">
-                                {{ $pack->sourceLot?->product?->name ?? '—' }}
+                                {{ $displaySourceLot?->product?->name ?? '—' }}
+                                @if($pack->sourceLot && $displaySourceLot && (int) $pack->sourceLot->id !== (int) $displaySourceLot->id)
+                                    · Output lot {{ $pack->sourceLot->lot_code ?: ('#' . $pack->sourceLot->id) }}
+                                @endif
+                                @if($pack->sourcePiece)
+                                    <div>Piece: {{ $pack->sourcePiece->label ?: ('Piece ' . $pack->sourcePiece->piece_no) }}</div>
+                                @endif
                             </div>
                         </td>
                         <td class="px-3 py-2 align-top text-right text-gray-900 dark:text-gray-50">{{ $fmt($pack->available_pack_quantity ?? $pack->pack_quantity) }}</td>

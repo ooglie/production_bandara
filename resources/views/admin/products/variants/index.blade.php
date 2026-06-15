@@ -48,7 +48,8 @@
                     <tr class="text-[11px] uppercase text-gray-500 dark:text-gray-400">
                         <th class="px-3 py-2 text-left">SKU</th>
                         <th class="px-3 py-2 text-left">Name</th>
-                        <th class="px-3 py-2 text-right">Price (₹)</th>
+                        <th class="px-3 py-2 text-left">Pack setup</th>
+                        <th class="px-3 py-2 text-right">MRP / Price (₹)</th>
                         <th class="px-3 py-2 text-right">Stock</th>
                         <th class="px-3 py-2 text-center">Status</th>
                         <th class="px-3 py-2 text-right">Actions</th>
@@ -63,7 +64,22 @@
                             <td class="px-3 py-2 align-top text-gray-700 dark:text-gray-300">
                                 {{ $variant->name ?: '—' }}
                             </td>
+                            <td class="px-3 py-2 align-top text-gray-700 dark:text-gray-300">
+                                @php
+                                    $packType = $variant->pack_type ?? 'quantity';
+                                @endphp
+                                @if($packType === 'fixed_piece_pack')
+                                    {{ rtrim(rtrim(number_format((float)($variant->pieces_per_pack ?? 0), 3), '0'), '.') }} pcs / pack
+                                @elseif($packType === 'fixed_weight_pack')
+                                    {{ rtrim(rtrim(number_format((float)($variant->product_weight ?? 0), 3), '0'), '.') }} kg / pack
+                                @else
+                                    Quantity pack
+                                @endif
+                            </td>
                             <td class="px-3 py-2 align-top text-right text-gray-800 dark:text-gray-100">
+                                @if(!empty($variant->mrp_price))
+                                    <span class="block text-[10px] text-gray-500 dark:text-gray-400">MRP ₹{{ number_format($variant->mrp_price, 2) }}</span>
+                                @endif
                                 ₹{{ number_format($variant->price, 2) }}
                             </td>
                             <td class="px-3 py-2 align-top text-right text-gray-700 dark:text-gray-300">
@@ -101,7 +117,7 @@
                         </tr>
                     @empty
                         <tr>
-                            <td colspan="6" class="px-3 py-6 text-center text-xs text-gray-500 dark:text-gray-400">
+                            <td colspan="7" class="px-3 py-6 text-center text-xs text-gray-500 dark:text-gray-400">
                                 No variants for this product yet.
                             </td>
                         </tr>

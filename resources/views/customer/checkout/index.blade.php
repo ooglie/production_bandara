@@ -227,8 +227,23 @@
                             $displayLineTotal = (float) ($it->total ?? 0);
                             $displayPriceNote = null;
 
+                            $variantLabel = null;
+
                             if ($p) {
                                 $variant = $it->productVariant ?? null;
+                                if ($variant) {
+                                    $variantName = trim((string) ($variant->name ?? ''));
+                                    $packType = (string) ($variant->pack_type ?? '');
+                                    if ($variantName !== '') {
+                                        $variantLabel = $variantName;
+                                    } elseif ($packType === 'fixed_piece_pack' && (float) ($variant->pieces_per_pack ?? 0) > 0) {
+                                        $variantLabel = rtrim(rtrim(number_format((float) $variant->pieces_per_pack, 3), '0'), '.') . ' pcs pack';
+                                    } elseif ($packType === 'fixed_weight_pack' && (float) ($variant->product_weight ?? 0) > 0) {
+                                        $variantLabel = rtrim(rtrim(number_format((float) $variant->product_weight, 3), '0'), '.') . ' kg pack';
+                                    } else {
+                                        $variantLabel = $variant->sku ?? ('Variant #' . $variant->id);
+                                    }
+                                }
                                 $quote = app(\App\Services\PricingService::class)->quote(auth()->user(), $p, $variant);
                                 $displayUnitPrice = (float) ($quote['price'] ?? $displayUnitPrice);
                                 $pricingUnit = strtolower((string) ($variant?->pricing_unit ?? ($p?->pricing_unit ?? ($isKg ? 'kg' : 'pack'))));
@@ -246,6 +261,9 @@
                                 <div class="font-medium text-gray-900 dark:text-gray-50">
                                     {{ $p?->name ?? 'Product' }}
                                 </div>
+                                @if($variantLabel)
+                                    <div class="mt-1 text-[10px] text-gray-500 dark:text-gray-400">{{ $variantLabel }}</div>
+                                @endif
 
                                 <div class="text-[10px] text-gray-500 dark:text-gray-400">
                                     @if(!$isB2BCheckoutUser && !empty($p?->product_weight))
@@ -526,6 +544,8 @@
                             $deliveryQuote = $deliveryQuote ?? [];
                             $deliveryFee = (float) ($deliveryQuote['delivery_fee'] ?? 0);
                             $handlingFee = (float) ($deliveryQuote['handling_fee'] ?? 0);
+                            $hasHandlingRule = !empty($deliveryQuote['handling_rule_id']) || $handlingFee > 0;
+                            $handlingWasWaived = (bool) ($deliveryQuote['handling_free_handling_applied'] ?? false);
                             $chargeTax = (float) ($deliveryChargeTaxTotal ?? ($deliveryQuote['tax_total'] ?? 0));
                         @endphp
 
@@ -534,10 +554,23 @@
                             <span class="text-gray-900 dark:text-gray-50">₹{{ number_format($deliveryFee, 2) }}</span>
                         </div>
 
-                        <div class="flex items-center justify-between text-[11px]">
-                            <span class="text-gray-600 dark:text-gray-300">Cold-chain handling & packing <span class="text-[10px] text-gray-400">(excl GST)</span></span>
-                            <span class="text-gray-900 dark:text-gray-50">₹{{ number_format($handlingFee, 2) }}</span>
-                        </div>
+                        @if($hasHandlingRule)
+                            <div class="flex items-center justify-between text-[11px]">
+                                <span class="text-gray-600 dark:text-gray-300">Cold-chain handling & packing <span class="text-[10px] text-gray-400">(excl GST)</span></span>
+                                <span class="text-gray-900 dark:text-gray-50">
+                                    @if($handlingFee > 0)
+                                        ₹{{ number_format($handlingFee, 2) }}
+                                    @else
+                                        Free
+                                    @endif
+                                </span>
+                            </div>
+                            @if($handlingWasWaived && (float) ($deliveryQuote['handling_fee_before_waiver'] ?? 0) > 0)
+                                <div class="-mt-1 text-[10px] text-emerald-600 dark:text-emerald-300">
+                                    Cold-chain handling waived for this order.
+                                </div>
+                            @endif
+                        @endif
 
                         @if($chargeTax > 0)
                             <div class="flex items-center justify-between text-[11px]">
@@ -546,7 +579,26 @@
                             </div>
                         @endif
 
-                        @if(!empty($deliveryQuote['zone_name']))
+                        @if(($deliveryQuote['delivery_fee_source'] ?? null) === 'distance' && !empty($deliveryQuote['delivery_distance_km']))
+                            <div class="rounded-xl border border-gray-200 dark:border-gray-800 bg-gray-50 dark:bg-gray-950/40 px-3 py-2 text-[11px] text-gray-600 dark:text-gray-300">
+                                Delivery distance: {{ number_format((float) $deliveryQuote['delivery_distance_km'], 2) }} km from store
+                                @if(!empty($deliveryQuote['delivery_duration_minutes']))
+                                    · approx. {{ (int) $deliveryQuote['delivery_duration_minutes'] }} min
+                                @endif
+                                @if(!empty($deliveryQuote['pincode']))
+                                    · {{ $deliveryQuote['pincode'] }}
+                                @endif
+                                @if(($deliveryQuote['delivery_fee_formula'] ?? null) === 'base_plus_per_km')
+                                    <div class="mt-1 text-[10px] text-gray-500 dark:text-gray-400">
+                                        Fee: ₹{{ number_format((float) ($deliveryQuote['delivery_base_fee'] ?? 0), 2) }} base
+                                        @if((float) ($deliveryQuote['delivery_included_distance_km'] ?? 0) > 0)
+                                            covers first {{ number_format((float) $deliveryQuote['delivery_included_distance_km'], 2) }} km
+                                        @endif
+                                        + ₹{{ number_format((float) ($deliveryQuote['delivery_per_km_fee'] ?? 0), 2) }} × {{ (int) ($deliveryQuote['delivery_chargeable_km_units'] ?? 0) }} started km after base.
+                                    </div>
+                                @endif
+                            </div>
+                        @elseif(!empty($deliveryQuote['zone_name']))
                             <div class="rounded-xl border border-gray-200 dark:border-gray-800 bg-gray-50 dark:bg-gray-950/40 px-3 py-2 text-[11px] text-gray-600 dark:text-gray-300">
                                 Delivery zone: {{ $deliveryQuote['zone_name'] }}
                                 @if(!empty($deliveryQuote['pincode']))

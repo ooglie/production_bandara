@@ -75,14 +75,18 @@ class OrderInventoryService
         $variantId = (int) ($item->product_variant_id ?? 0);
         $sellUnitId = $this->sellUnitIdForOrderItem($item);
 
-        if ($variantId <= 0 || ! $sellUnitId || ! Schema::hasTable('inventory_packs')) {
+        if (! Schema::hasTable('inventory_packs')) {
+            return false;
+        }
+
+        if ($variantId <= 0 && ! $sellUnitId) {
             return false;
         }
 
         return InventoryPack::query()
             ->where('product_id', $item->product_id)
-            ->where('product_variant_id', $variantId)
-            ->where('product_sell_unit_id', $sellUnitId)
+            ->when($variantId > 0, fn ($q) => $q->where('product_variant_id', $variantId), fn ($q) => $q->whereNull('product_variant_id'))
+            ->when($sellUnitId, fn ($q) => $q->where('product_sell_unit_id', $sellUnitId), fn ($q) => $q->whereNull('product_sell_unit_id'))
             ->exists();
     }
 
@@ -146,7 +150,11 @@ class OrderInventoryService
             $item->save();
         }
 
-        $movementQty = max(1.0, round((float) ($item->quantity ?? 1), 3));
+        $pieceWeight = round((float) ($piece->weight_kg ?? $item->item_weight ?? 0), 3);
+        $sellUnit = strtolower((string) ($item->product?->sell_unit ?? 'piece'));
+        $movementQty = $sellUnit === 'kg' && $pieceWeight > 0
+            ? $pieceWeight
+            : max(1.0, round((float) ($item->quantity ?? 1), 3));
 
         $this->deductStockTarget($item, $movementQty);
         $this->markPieceSold($piece, $item);
@@ -227,14 +235,18 @@ class OrderInventoryService
         $variantId = (int) ($item->product_variant_id ?? 0);
         $sellUnitId = $this->sellUnitIdForOrderItem($item);
 
-        if ($variantId <= 0 || ! $sellUnitId || ! Schema::hasTable('inventory_packs')) {
+        if (! Schema::hasTable('inventory_packs')) {
+            return ['consumed' => 0, 'pack_ids' => []];
+        }
+
+        if ($variantId <= 0 && ! $sellUnitId) {
             return ['consumed' => 0, 'pack_ids' => []];
         }
 
         $baseQuery = InventoryPack::query()
             ->where('product_id', $item->product_id)
-            ->where('product_variant_id', $variantId)
-            ->where('product_sell_unit_id', $sellUnitId);
+            ->when($variantId > 0, fn ($q) => $q->where('product_variant_id', $variantId), fn ($q) => $q->whereNull('product_variant_id'))
+            ->when($sellUnitId, fn ($q) => $q->where('product_sell_unit_id', $sellUnitId), fn ($q) => $q->whereNull('product_sell_unit_id'));
 
         // Do not block legacy stock that predates the repack layer. Once pack
         // rows exist for this product/variant/unit, sales must consume them too.
@@ -484,8 +496,13 @@ class OrderInventoryService
             }
 
             if ($this->hasColumn($lot->getTable(), 'available_quantity')) {
+                $lotInwardMode = strtolower((string) ($lot->inward_mode ?? ''));
+                $quantityDeduction = in_array($lotInwardMode, ['pieces_weight', 'bulk_weight'], true)
+                    ? $pieceWeight
+                    : 1.0;
+
                 $lot->available_quantity = round(
-                    max(0, (float) ($lot->available_quantity ?? 0) - 1),
+                    max(0, (float) ($lot->available_quantity ?? 0) - $quantityDeduction),
                     3
                 );
             }

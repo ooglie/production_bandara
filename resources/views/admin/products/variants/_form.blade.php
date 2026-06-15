@@ -18,6 +18,16 @@
         $variantPriceInput = $b2cIncludesGst && $factor > 0 ? round($stored * $factor, 2) : round($stored, 2);
     }
 
+    $variantMrpInput = old('mrp_price');
+    if ($variantMrpInput === null) {
+        $storedMrp = $variant->mrp_price ?? null;
+        $variantMrpInput = $storedMrp === null || $storedMrp === ''
+            ? ''
+            : ($b2cIncludesGst && $factor > 0 ? round((float) $storedMrp * $factor, 2) : round((float) $storedMrp, 2));
+    }
+
+    $defaultPackType = old('pack_type', $variant->pack_type ?? 'quantity');
+
     $variantB2BPriceInput = old('standard_b2b_price');
     if ($variantB2BPriceInput === null) {
         $storedB2B = $variant->standard_b2b_price ?? null;
@@ -59,25 +69,86 @@
 
             <div>
                 <label class="block text-xs font-medium text-gray-700 dark:text-gray-300">
-                    Name / Label (optional)
+                    Pack option label
                 </label>
                 <input
                     type="text"
                     name="name"
                     value="{{ old('name', $variant->name ?? '') }}"
-                    placeholder="e.g. 125 gms"
+                    placeholder="e.g. 10 pcs pack or 20 pcs pack"
                     class="mt-1 w-full rounded-sm border border-gray-300 dark:border-gray-700 bg-white dark:bg-gray-900 px-2 py-1.5 text-sm focus:outline-none focus:ring-1 focus:ring-gray-400 dark:focus:ring-gray-500"
                 >
+                <p class="mt-1 text-[10px] text-gray-500 dark:text-gray-400">
+                    This is the customer-facing option shown in the variant dropdown.
+                </p>
                 @error('name')
                     <p class="mt-1 text-[11px] text-red-600">{{ $message }}</p>
                 @enderror
             </div>
         </div>
 
+        <div class="rounded-sm border border-amber-200 dark:border-amber-900/60 bg-amber-50 dark:bg-amber-950/20 px-3 py-2 text-[11px] text-amber-800 dark:text-amber-200">
+            Use variants only for true customer choices such as Dimsum 10 pcs / 20 pcs. Do not create variants for vendor lots, pork belly pieces, or slab weights.
+        </div>
+
         <div class="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
             <div>
                 <label class="block text-xs font-medium text-gray-700 dark:text-gray-300">
-                    B2C variant price (₹)
+                    Pack variant type
+                </label>
+                <select
+                    name="pack_type"
+                    data-pack-type
+                    class="mt-1 w-full rounded-sm border border-gray-300 dark:border-gray-700 bg-white dark:bg-gray-900 px-2 py-1.5 text-sm focus:outline-none focus:ring-1 focus:ring-gray-400 dark:focus:ring-gray-500"
+                >
+                    <option value="quantity" @selected($defaultPackType === 'quantity')>Quantity / normal pack</option>
+                    <option value="fixed_piece_pack" @selected($defaultPackType === 'fixed_piece_pack')>Fixed piece pack</option>
+                    <option value="fixed_weight_pack" @selected($defaultPackType === 'fixed_weight_pack')>Fixed weight pack</option>
+                </select>
+                @error('pack_type')
+                    <p class="mt-1 text-[11px] text-red-600">{{ $message }}</p>
+                @enderror
+            </div>
+
+            <div data-pieces-per-pack-wrap>
+                <label class="block text-xs font-medium text-gray-700 dark:text-gray-300">
+                    Pieces per pack
+                </label>
+                <input
+                    type="number"
+                    step="0.001"
+                    min="0"
+                    name="pieces_per_pack"
+                    value="{{ old('pieces_per_pack', $variant->pieces_per_pack ?? '') }}"
+                    placeholder="e.g. 10 or 20"
+                    class="mt-1 w-full rounded-sm border border-gray-300 dark:border-gray-700 bg-white dark:bg-gray-900 px-2 py-1.5 text-sm focus:outline-none focus:ring-1 focus:ring-gray-400 dark:focus:ring-gray-500"
+                >
+                @error('pieces_per_pack')
+                    <p class="mt-1 text-[11px] text-red-600">{{ $message }}</p>
+                @enderror
+            </div>
+
+            <div>
+                <label class="block text-xs font-medium text-gray-700 dark:text-gray-300">
+                    MRP (₹{{ $b2cIncludesGst ? ', incl GST' : ', excl GST' }})
+                </label>
+                <input
+                    type="number"
+                    step="0.01"
+                    min="0"
+                    name="mrp_price"
+                    value="{{ $variantMrpInput }}"
+                    placeholder="Optional MRP for this pack"
+                    class="mt-1 w-full rounded-sm border border-gray-300 dark:border-gray-700 bg-white dark:bg-gray-900 px-2 py-1.5 text-sm focus:outline-none focus:ring-1 focus:ring-gray-400 dark:focus:ring-gray-500"
+                >
+                @error('mrp_price')
+                    <p class="mt-1 text-[11px] text-red-600">{{ $message }}</p>
+                @enderror
+            </div>
+
+            <div>
+                <label class="block text-xs font-medium text-gray-700 dark:text-gray-300">
+                    B2C variant price (₹{{ $b2cIncludesGst ? ', incl GST' : ', excl GST' }})
                 </label>
                 <input
                     type="number"
@@ -128,9 +199,9 @@
                 @enderror
             </div>
 
-            <div>
+            <div data-product-weight-wrap>
                 <label class="block text-xs font-medium text-gray-700 dark:text-gray-300">
-                    Variant weight (kg)
+                    Pack weight (kg)
                 </label>
                 <input
                     type="number"
@@ -138,12 +209,11 @@
                     min="0"
                     name="product_weight"
                     value="{{ old('product_weight', $variant->product_weight ?? '') }}"
-                    required
-                    placeholder="e.g. 0.125"
+                    placeholder="e.g. 0.500 for 500 g"
                     class="mt-1 w-full rounded-sm border border-gray-300 dark:border-gray-700 bg-white dark:bg-gray-900 px-2 py-1.5 text-sm focus:outline-none focus:ring-1 focus:ring-gray-400 dark:focus:ring-gray-500"
                 >
                 <p class="mt-1 text-[10px] text-gray-500 dark:text-gray-400">
-                    Enter in kg. Example: 0.125 = 125 gms, 0.250 = 250 gms, 1.000 = 1 kg.
+                    Required for fixed-weight packs. Leave blank for piece packs such as Dimsum 10 pcs.
                 </p>
                 @error('product_weight')
                     <p class="mt-1 text-[11px] text-red-600">{{ $message }}</p>
@@ -301,3 +371,28 @@
         </div>
     </div>
 </form>
+
+@push('scripts')
+<script>
+    document.addEventListener('DOMContentLoaded', function () {
+        const packType = document.querySelector('[data-pack-type]');
+        const piecesWrap = document.querySelector('[data-pieces-per-pack-wrap]');
+        const weightWrap = document.querySelector('[data-product-weight-wrap]');
+
+        function refreshPackFields() {
+            const type = packType ? packType.value : 'quantity';
+            if (piecesWrap) {
+                piecesWrap.classList.toggle('hidden', type !== 'fixed_piece_pack');
+            }
+            if (weightWrap) {
+                weightWrap.classList.toggle('hidden', type === 'fixed_piece_pack');
+            }
+        }
+
+        if (packType) {
+            packType.addEventListener('change', refreshPackFields);
+        }
+        refreshPackFields();
+    });
+</script>
+@endpush

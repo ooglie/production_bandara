@@ -22,6 +22,11 @@ class CustomerAddress extends Model
         'state_code',
         'country',
         'pincode',
+        'latitude',
+        'longitude',
+        'geocoded_at',
+        'geocoding_provider',
+        'geocoding_quality',
         'gstin',
         'is_default_shipping',
         'is_default_billing',
@@ -30,6 +35,9 @@ class CustomerAddress extends Model
     protected $casts = [
         'is_default_shipping' => 'bool',
         'is_default_billing'  => 'bool',
+        'latitude' => 'float',
+        'longitude' => 'float',
+        'geocoded_at' => 'datetime',
     ];
 
     public function user()

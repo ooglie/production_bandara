@@ -59,6 +59,8 @@
         'wishlistUrl' => $wishlistUrl,
         'loginUrl' => $loginUrl,
         'isVariable' => $isVariable,
+        'hasVariants' => $hasVariants,
+        'variantOptionsUrl' => $variantOptionsUrl,
         'inStock' => $inStock,
     ], $actionsViewData);
 
@@ -130,29 +132,26 @@
                     @if($priceView)
                         @include($priceView, $priceData)
                     @elseif($hasPieceSelector && count($pieceBands))
-                        <div class="flex items-center gap-2">
-                            <select
-                                class="h-9 max-w-[180px] truncate rounded-sm border border-gray-200 dark:border-gray-700 bg-white/90 dark:bg-gray-950/60 backdrop-blur px-3 text-[12px] text-gray-800 dark:text-gray-100 hover:bg-white dark:hover:bg-gray-900 focus:outline-none focus:ring-2 focus:ring-gray-300 dark:focus:ring-gray-700"
-                                onchange="if(this.value){ window.location = this.value; }"
-                                title="Choose slab range"
-                            >
-                                <option value="">Choose slab</option>
-                                @foreach($pieceBands as $band)
-                                    <option value="{{ $productUrl }}?band={{ urlencode($band['key']) }}#piece-selector-root">
-                                        {{ $band['label'] }}
-                                    </option>
-                                @endforeach
-                            </select>
+                        @php
+                            $pieceMin = (float) collect($pieceBands)->min('price_min');
+                            $pieceMax = (float) collect($pieceBands)->max('price_max');
+                        @endphp
+                        <div class="space-y-0.5 leading-tight">
+                            <div class="text-[12px] font-semibold text-gray-900 dark:text-gray-50">Choose slab</div>
+                            <div class="text-[10px] text-gray-500 dark:text-gray-400">
+                                {{ count($pieceBands) }} size {{ count($pieceBands) === 1 ? 'range' : 'ranges' }}
+                                @if($pieceMin > 0)
+                                    · ₹{{ number_format($pieceMin, 2) }}
+                                    @if($pieceMax > $pieceMin)
+                                        – ₹{{ number_format($pieceMax, 2) }}
+                                    @endif
+                                @endif
+                            </div>
                         </div>
                     @elseif($hasVariants && $variantOptionsUrl)
-                        <div class="flex items-center gap-2">
-                            <select
-                                class="js-variant-select h-9 max-w-[170px] truncate rounded-sm border border-gray-200 dark:border-gray-700 bg-white/90 dark:bg-gray-950/60 backdrop-blur px-3 text-[12px] text-gray-800 dark:text-gray-100 hover:bg-white dark:hover:bg-gray-900 focus:outline-none focus:ring-2 focus:ring-gray-300 dark:focus:ring-gray-700"
-                                data-url="{{ $variantOptionsUrl }}"
-                                title="Select product"
-                            >
-                                <option value="">Loading…</option>
-                            </select>
+                        <div class="space-y-0.5 leading-tight">
+                            <div class="js-variant-price-summary text-[12px] font-semibold text-gray-900 dark:text-gray-50">Choose pack</div>
+                            <div class="js-variant-count-summary text-[10px] text-gray-500 dark:text-gray-400">Options loading…</div>
                         </div>
                     @else
                         <div class="flex flex-col items-start leading-tight">

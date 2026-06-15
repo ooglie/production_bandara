@@ -4,6 +4,7 @@ namespace App\Http\Controllers\Admin;
 
 use App\Http\Controllers\Controller;
 use App\Models\DeliveryChargeRule;
+use App\Models\DeliveryDistanceRule;
 use App\Models\DeliveryZone;
 use App\Models\DeliveryZonePincode;
 use App\Models\HandlingChargeRule;
@@ -18,6 +19,11 @@ class DeliverySettingsController extends Controller
                 ->with(['pincodes' => fn ($query) => $query->orderBy('pincode'), 'deliveryChargeRules' => fn ($query) => $query->orderBy('customer_type')->orderBy('min_order_value')])
                 ->orderBy('sort_order')
                 ->orderBy('id')
+                ->get(),
+            'distanceRules' => DeliveryDistanceRule::query()
+                ->orderBy('customer_type')
+                ->orderBy('min_distance_km')
+                ->orderBy('min_order_value')
                 ->get(),
             'handlingRules' => HandlingChargeRule::query()
                 ->orderBy('customer_type')
@@ -114,6 +120,7 @@ class DeliverySettingsController extends Controller
             'customer_type' => ['required', 'in:all,guest,b2c,b2b'],
             'min_order_value' => ['nullable', 'numeric', 'min:0'],
             'delivery_fee' => ['nullable', 'numeric', 'min:0'],
+            'included_distance_km' => ['nullable', 'numeric', 'min:0'],
             'free_delivery_above' => ['nullable', 'numeric', 'min:0'],
             'tax_rate' => ['nullable', 'numeric', 'min:0', 'max:100'],
             'is_active' => ['nullable', 'boolean'],
@@ -132,6 +139,60 @@ class DeliverySettingsController extends Controller
         $rule->delete();
 
         return back()->with('success', 'Delivery fee rule removed.');
+    }
+
+
+    public function storeDistanceRule(Request $request)
+    {
+        $data = $request->validate([
+            'customer_type' => ['required', 'in:all,guest,b2c,b2b'],
+            'min_order_value' => ['nullable', 'numeric', 'min:0'],
+            'min_distance_km' => ['nullable', 'numeric', 'min:0'],
+            'max_distance_km' => ['nullable', 'numeric', 'min:0'],
+            'delivery_fee' => ['nullable', 'numeric', 'min:0'],
+            'included_distance_km' => ['nullable', 'numeric', 'min:0'],
+            'per_km_fee' => ['nullable', 'numeric', 'min:0'],
+            'free_delivery_above' => ['nullable', 'numeric', 'min:0'],
+            'tax_rate' => ['nullable', 'numeric', 'min:0', 'max:100'],
+            'is_active' => ['nullable', 'boolean'],
+            'starts_at' => ['nullable', 'date'],
+            'ends_at' => ['nullable', 'date', 'after_or_equal:starts_at'],
+        ]);
+
+        $data = $this->normalizeDistanceRule($request, $data);
+        DeliveryDistanceRule::create($data);
+
+        return back()->with('success', 'Distance-based delivery fee rule added.');
+    }
+
+    public function updateDistanceRule(Request $request, DeliveryDistanceRule $rule)
+    {
+        $data = $request->validate([
+            'customer_type' => ['required', 'in:all,guest,b2c,b2b'],
+            'min_order_value' => ['nullable', 'numeric', 'min:0'],
+            'min_distance_km' => ['nullable', 'numeric', 'min:0'],
+            'max_distance_km' => ['nullable', 'numeric', 'min:0'],
+            'delivery_fee' => ['nullable', 'numeric', 'min:0'],
+            'included_distance_km' => ['nullable', 'numeric', 'min:0'],
+            'per_km_fee' => ['nullable', 'numeric', 'min:0'],
+            'free_delivery_above' => ['nullable', 'numeric', 'min:0'],
+            'tax_rate' => ['nullable', 'numeric', 'min:0', 'max:100'],
+            'is_active' => ['nullable', 'boolean'],
+            'starts_at' => ['nullable', 'date'],
+            'ends_at' => ['nullable', 'date', 'after_or_equal:starts_at'],
+        ]);
+
+        $data = $this->normalizeDistanceRule($request, $data);
+        $rule->update($data);
+
+        return back()->with('success', 'Distance-based delivery fee rule updated.');
+    }
+
+    public function destroyDistanceRule(DeliveryDistanceRule $rule)
+    {
+        $rule->delete();
+
+        return back()->with('success', 'Distance-based delivery fee rule removed.');
     }
 
     public function storeHandlingRule(Request $request)
@@ -179,6 +240,36 @@ class DeliverySettingsController extends Controller
         $rule->delete();
 
         return back()->with('success', 'Handling fee rule removed.');
+    }
+
+
+    private function normalizeDistanceRule(Request $request, array $data): array
+    {
+        $data['min_order_value'] = round((float) ($data['min_order_value'] ?? 0), 2);
+        $data['min_distance_km'] = round((float) ($data['min_distance_km'] ?? 0), 2);
+        $data['max_distance_km'] = $request->filled('max_distance_km') ? round((float) $data['max_distance_km'], 2) : null;
+        $data['delivery_fee'] = round((float) ($data['delivery_fee'] ?? 0), 2);
+
+        // Keep these dynamic-fee fields tied to the raw request values. The inline
+        // distance-rule editor is rendered as a table, and some browsers are strict
+        // about nested form/table markup. Using the request directly, together with
+        // explicit form attributes in the Blade, ensures "Base covers km" is saved
+        // reliably from both create and edit rows.
+        $includedDistance = $request->input('included_distance_km');
+        $data['included_distance_km'] = $includedDistance === null || $includedDistance === ''
+            ? 0.0
+            : round((float) $includedDistance, 2);
+
+        $perKmFee = $request->input('per_km_fee');
+        $data['per_km_fee'] = $perKmFee === null || $perKmFee === ''
+            ? null
+            : round((float) $perKmFee, 2);
+
+        $data['free_delivery_above'] = $request->filled('free_delivery_above') ? round((float) $data['free_delivery_above'], 2) : null;
+        $data['tax_rate'] = round((float) ($data['tax_rate'] ?? 0), 2);
+        $data['is_active'] = $request->boolean('is_active');
+
+        return $data;
     }
 
     private function normalizeMoneyRule(Request $request, array $data, string $feeField, string $freeAboveField): array

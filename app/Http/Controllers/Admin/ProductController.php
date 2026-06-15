@@ -13,6 +13,7 @@ use App\Models\ProductVariant;
 use App\Models\Vendor;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Schema;
 use Illuminate\Support\Str;
 use Illuminate\View\View;
 
@@ -233,9 +234,10 @@ class ProductController extends Controller
         $enteredSpecial = $this->toDecimal($validated['special_price'] ?? null);
         $enteredStandardB2B = $this->toDecimal($validated['standard_b2b_price'] ?? null);
         $specialAudience = $validated['special_audience'] ?? 'b2c';
+        $inventoryRole = $validated['inventory_role'] ?? 'saleable';
         $specialPriceIncludesGst = $specialAudience === 'b2b' ? $b2bPriceIncludesGst : $b2cPriceIncludesGst;
 
-        return [
+        $payload = [
             'name' => $name,
             'short_description' => $validated['short_description'],
             'description' => $validated['description'],
@@ -244,6 +246,7 @@ class ProductController extends Controller
             'slug' => $slug,
             'sku' => $validated['sku'],
             'type' => $validated['type'],
+            'inventory_role' => $inventoryRole,
 
             'vendor_id' => $validated['vendor_id'] ?? null,
             'barcode' => $this->nullableTrim($validated['barcode'] ?? null),
@@ -262,7 +265,9 @@ class ProductController extends Controller
             'gst_rate' => round($gstRate, 2),
 
             'sell_unit' => $validated['sell_unit'] ?? 'piece',
+            'pack_type' => $validated['pack_type'] ?? $this->inferPackTypeFromProductInput($validated),
             'product_weight' => $this->toDecimal($validated['product_weight'] ?? null),
+            'pieces_per_pack' => $this->toDecimal($validated['pieces_per_pack'] ?? null),
 
             // inventory / order control
             'stock_quantity' => $this->toDecimal($validated['stock_quantity'] ?? null) ?? 0.0,
@@ -284,12 +289,48 @@ class ProductController extends Controller
             'is_new' => $isDraft ? false : $request->boolean('is_new'),
             'is_special' => $isDraft ? false : $request->boolean('is_special'),
             'special_audience' => $specialAudience,
-            'is_active' => $isDraft ? false : $request->boolean('is_active'),
+            'is_active' => $inventoryRole === 'internal' ? false : ($isDraft ? false : $request->boolean('is_active')),
 
             // special pricing window
             'special_starts_at' => $validated['special_starts_at'] ?? null,
             'special_ends_at' => $validated['special_ends_at'] ?? null,
         ];
+
+        return $this->filterProductPayloadForSchema($payload);
+    }
+
+    protected function inferPackTypeFromProductInput(array $validated): string
+    {
+        $sellUnit = (string) ($validated['sell_unit'] ?? 'piece');
+        $piecesPerPack = $this->toDecimal($validated['pieces_per_pack'] ?? null);
+        $weight = $this->toDecimal($validated['product_weight'] ?? null);
+
+        if ($piecesPerPack !== null && $piecesPerPack > 0) {
+            return 'fixed_piece_pack';
+        }
+
+        if ($sellUnit === 'kg') {
+            return 'variable_weight';
+        }
+
+        if ($sellUnit === 'pack' && $weight !== null && $weight > 0) {
+            return 'fixed_weight_pack';
+        }
+
+        return $sellUnit === 'kg' ? 'bulk' : 'quantity';
+    }
+
+    protected function filterProductPayloadForSchema(array $payload): array
+    {
+        if (! Schema::hasTable('products')) {
+            return $payload;
+        }
+
+        return array_filter(
+            $payload,
+            fn ($value, string $column): bool => Schema::hasColumn('products', $column),
+            ARRAY_FILTER_USE_BOTH
+        );
     }
 
 

@@ -406,10 +406,23 @@ class CheckoutController extends Controller
                 'handling_tax_amount',
                 'delivery_tax_rate',
                 'handling_tax_rate',
+                'delivery_distance_km',
             ] as $deliveryColumn) {
                 if (Schema::hasColumn('orders', $deliveryColumn)) {
                     $order->{$deliveryColumn} = round((float) ($deliveryQuote[$deliveryColumn] ?? 0), 2);
                 }
+            }
+
+            if (Schema::hasColumn('orders', 'delivery_duration_minutes')) {
+                $order->delivery_duration_minutes = $deliveryQuote['delivery_duration_minutes'] ?? null;
+            }
+            foreach (['delivery_distance_provider', 'delivery_fee_source'] as $deliveryTextColumn) {
+                if (Schema::hasColumn('orders', $deliveryTextColumn)) {
+                    $order->{$deliveryTextColumn} = $deliveryQuote[$deliveryTextColumn] ?? null;
+                }
+            }
+            if (Schema::hasColumn('orders', 'delivery_distance_calculated_at')) {
+                $order->delivery_distance_calculated_at = $deliveryQuote['delivery_distance_calculated_at'] ?? null;
             }
 
             if (Schema::hasColumn('orders', 'bandara_credit_redeemed_points')) {
@@ -544,7 +557,7 @@ class CheckoutController extends Controller
                 if ($variant) {
                     $snapshot['variant_id'] = $variant->id;
                     $snapshot['variant_sku'] = $variant->sku;
-                    $snapshot['variant_name'] = $variant->name;
+                    $snapshot['variant_name'] = $this->variantDisplayLabel($variant);
                 }
 
                 if (! empty($selectedPieceSnapshot)) {
@@ -607,9 +620,15 @@ class CheckoutController extends Controller
                 'handling_tax_amount',
                 'delivery_tax_rate',
                 'handling_tax_rate',
+                'delivery_distance_km',
             ] as $deliveryColumn) {
                 if (Schema::hasColumn('invoices', $deliveryColumn)) {
                     $invoice->{$deliveryColumn} = $order->{$deliveryColumn} ?? 0;
+                }
+            }
+            foreach (['delivery_duration_minutes', 'delivery_distance_provider', 'delivery_distance_calculated_at', 'delivery_fee_source'] as $deliveryMetaColumn) {
+                if (Schema::hasColumn('invoices', $deliveryMetaColumn)) {
+                    $invoice->{$deliveryMetaColumn} = $order->{$deliveryMetaColumn} ?? null;
                 }
             }
             $invoice->grand_total = round($order->grand_total, 2);
@@ -792,6 +811,12 @@ class CheckoutController extends Controller
             $isKg = ($sellUnit === 'kg');
 
             $qty = (float) ($it->quantity ?? 0);
+            if ($isKg && ! empty($selectedPieceSnapshot['piece_id'])) {
+                $selectedPieceWeight = round((float) ($selectedPieceSnapshot['weight_kg'] ?? $it->item_weight ?? 0), 3);
+                if ($selectedPieceWeight > 0) {
+                    $qty = $selectedPieceWeight;
+                }
+            }
 
             if ($variant && (bool) ($variant->manage_stock ?? false)) {
                 $available = (float) ($variant->stock_quantity ?? 0);
@@ -1212,6 +1237,26 @@ class CheckoutController extends Controller
      * ✅ Allocate discount + tax across cart lines so item totals match order totals.
      * Uses per-item gst_rate. Keeps existing output keys unchanged.
      */
+
+    private function variantDisplayLabel(ProductVariant $variant): string
+    {
+        $name = trim((string) ($variant->name ?? ''));
+        if ($name !== '') {
+            return $name;
+        }
+
+        $packType = (string) ($variant->pack_type ?? '');
+        if ($packType === 'fixed_piece_pack' && (float) ($variant->pieces_per_pack ?? 0) > 0) {
+            return rtrim(rtrim(number_format((float) $variant->pieces_per_pack, 3), '0'), '.') . ' pcs pack';
+        }
+
+        if ($packType === 'fixed_weight_pack' && (float) ($variant->product_weight ?? 0) > 0) {
+            return rtrim(rtrim(number_format((float) $variant->product_weight, 3), '0'), '.') . ' kg pack';
+        }
+
+        return trim((string) ($variant->sku ?? '')) ?: ('Variant #' . $variant->id);
+    }
+
     private function allocateLineDiscountAndTaxUsingRates($items, float $discountTotal, array $gst): array
     {
         $rows = [];

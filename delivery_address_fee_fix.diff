@@ -1,0 +1,187 @@
+--- /mnt/data/original_file/index.blade.php	2026-06-09 06:58:28.206080002 +0000
++++ /mnt/data/bandara_work/BandaraFrozen/resources/views/customer/checkout/index.blade.php	2026-06-09 06:59:32.715415375 +0000
+@@ -41,7 +41,8 @@
+ 
+     $payLaterOption = $payLater ?? ($payLaterOption ?? []);
+     $payLaterEligible = (bool) ($payLaterOption['eligible'] ?? false);
+-    $selectedPaymentMethod = old('payment_method', 'razorpay');
++    $requestedPaymentMethod = old('payment_method', request('payment_method', 'razorpay'));
++    $selectedPaymentMethod = ($requestedPaymentMethod === 'pay_later' && $payLaterEligible) ? 'pay_later' : 'razorpay';
+ 
+     // BANDARA_CREDIT_RUNTIME_NORMALIZER_V1
+     // Normalize Bandara Credit state across older/newer checkout controllers.
+@@ -292,7 +293,7 @@
+             </div> --}}
+ 
+             @if($placeUrl)
+-                <form method="POST" action="{{ $placeUrl }}" class="space-y-3">
++                <form method="POST" action="{{ $placeUrl }}" class="space-y-3" data-checkout-form>
+                     @csrf
+ 
+                     <input type="hidden" name="return_to" value="{{ request()->fullUrl() }}">
+@@ -331,6 +332,7 @@
+                             value="{{ $address->id }}"
+                             class="mt-1 rounded border-gray-300 dark:border-gray-700"
+                             @checked((int) old('address_id', $selectedAddressId) === (int) $address->id)
++                            data-checkout-address-radio
+                         >
+ 
+                         <div class="min-w-0 flex-1">
+@@ -393,7 +395,7 @@
+                               class="w-full rounded-sm border border-gray-300 dark:border-gray-700 bg-white dark:bg-gray-950 px-2 py-2 text-[11px]">{{ old('customer_note') }}</textarea>
+ 
+                     @if($isB2BCheckoutUser)
+-                        <div class="rounded-2xl border border-gray-200 dark:border-gray-800 bg-white dark:bg-gray-900 p-4 space-y-3">
++                        <div data-checkout-payment-methods class="rounded-2xl border border-gray-200 dark:border-gray-800 bg-white dark:bg-gray-900 p-4 space-y-3">
+                             <div>
+                                 <h2 class="text-sm font-semibold text-gray-900 dark:text-gray-50">Payment method</h2>
+                                 <p class="mt-1 text-[11px] text-gray-500 dark:text-gray-400">
+@@ -435,7 +437,7 @@
+                     @endif
+ 
+                     @if(!$isB2BCheckoutUser)
+-                    <div class="rounded-2xl border border-gray-200 dark:border-gray-800 bg-white dark:bg-gray-900 p-4 space-y-3">
++                    <div data-bandara-credit-section class="rounded-2xl border border-gray-200 dark:border-gray-800 bg-white dark:bg-gray-900 p-4 space-y-3">
+                         <div class="flex items-start justify-between gap-3">
+                             <div>
+                                 <h2 class="text-sm font-semibold text-gray-900 dark:text-gray-50">Bandara Credit</h2>
+@@ -501,7 +503,7 @@
+                     </div>
+                     @endif
+ 
+-                    <div class="border-t border-gray-200 dark:border-gray-800 pt-3 space-y-2">
++                    <div data-checkout-totals class="border-t border-gray-200 dark:border-gray-800 pt-3 space-y-2">
+                         <div class="flex items-center justify-between text-[11px]">
+                             <span class="text-gray-600 dark:text-gray-300">Subtotal <span class="text-[10px] text-gray-400">(excl GST)</span></span>
+                             <span class="text-gray-900 dark:text-gray-50">₹{{ number_format($subtotal, 2) }}</span>
+@@ -643,4 +645,130 @@
+ 
+     </div>
+ </div>
++
++<script>
++(function () {
++    const form = document.querySelector('[data-checkout-form]');
++    if (!form || !window.fetch || !window.DOMParser || !window.URL || !window.AbortController) {
++        return;
++    }
++
++    let activeRequest = null;
++
++    const selectedPaymentValue = function () {
++        const radioOptions = form.querySelectorAll('input[type="radio"][name="payment_method"]');
++        if (!radioOptions.length) {
++            return null;
++        }
++
++        const checked = form.querySelector('input[name="payment_method"]:checked');
++        return checked && checked.value ? checked.value : null;
++    };
++
++    const buildCheckoutUrl = function (addressId) {
++        const url = new URL(window.location.href);
++
++        if (addressId) {
++            url.searchParams.set('address_id', addressId);
++        }
++
++        const creditInput = form.querySelector('input[name="bandara_credit_points"]');
++        const creditPoints = creditInput ? parseInt(creditInput.value || '0', 10) : 0;
++        if (creditInput && creditPoints > 0) {
++            url.searchParams.set('bandara_credit_points', String(creditPoints));
++        } else {
++            url.searchParams.delete('bandara_credit_points');
++        }
++
++        const paymentMethod = selectedPaymentValue();
++        if (paymentMethod) {
++            url.searchParams.set('payment_method', paymentMethod);
++        } else {
++            url.searchParams.delete('payment_method');
++        }
++
++        return url;
++    };
++
++    const replaceSection = function (selector, nextDocument) {
++        const current = document.querySelector(selector);
++        const next = nextDocument.querySelector(selector);
++
++        if (current && next) {
++            current.replaceWith(next);
++        }
++    };
++
++    const setRefreshing = function (isRefreshing) {
++        form.toggleAttribute('aria-busy', isRefreshing);
++
++        const totals = document.querySelector('[data-checkout-totals]');
++        if (totals) {
++            totals.classList.toggle('opacity-60', isRefreshing);
++            totals.classList.toggle('pointer-events-none', isRefreshing);
++        }
++    };
++
++    const refreshCheckoutTotals = async function (addressId) {
++        const url = buildCheckoutUrl(addressId);
++        const returnInput = form.querySelector('input[name="return_to"]');
++        if (returnInput) {
++            returnInput.value = url.toString();
++        }
++
++        if (activeRequest) {
++            activeRequest.abort();
++        }
++
++        const requestController = new AbortController();
++        activeRequest = requestController;
++        setRefreshing(true);
++
++        try {
++            const response = await fetch(url.toString(), {
++                method: 'GET',
++                credentials: 'same-origin',
++                headers: {
++                    'Accept': 'text/html',
++                    'X-Requested-With': 'XMLHttpRequest'
++                },
++                signal: requestController.signal
++            });
++
++            if (!response.ok) {
++                throw new Error('Checkout refresh failed.');
++            }
++
++            const html = await response.text();
++            const nextDocument = new DOMParser().parseFromString(html, 'text/html');
++
++            replaceSection('[data-checkout-payment-methods]', nextDocument);
++            replaceSection('[data-bandara-credit-section]', nextDocument);
++            replaceSection('[data-checkout-totals]', nextDocument);
++
++            window.history.replaceState({}, '', url.toString());
++        } catch (error) {
++            if (error.name === 'AbortError') {
++                return;
++            }
++
++            window.location.assign(url.toString());
++        } finally {
++            if (activeRequest === requestController) {
++                setRefreshing(false);
++                activeRequest = null;
++            }
++        }
++    };
++
++    document.addEventListener('change', function (event) {
++        const addressRadio = event.target.closest('[data-checkout-address-radio]');
++        if (!addressRadio || !form.contains(addressRadio) || !addressRadio.checked) {
++            return;
++        }
++
++        refreshCheckoutTotals(addressRadio.value);
++    });
++})();
++</script>
+ @endsection

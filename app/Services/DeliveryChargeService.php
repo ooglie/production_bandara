@@ -4,6 +4,7 @@ namespace App\Services;
 
 use App\Models\CustomerAddress;
 use App\Models\DeliveryChargeRule;
+use App\Models\DeliveryDistanceRule;
 use App\Models\DeliveryZone;
 use App\Models\DeliveryZonePincode;
 use App\Models\HandlingChargeRule;
@@ -15,29 +16,107 @@ class DeliveryChargeService
     public function quote(?User $user, ?CustomerAddress $address, float $orderValue, string $temperatureMode = 'all'): array
     {
         $orderValue = round(max(0, $orderValue), 2);
+
+        if ($temperatureMode === 'all') {
+            $configuredTemperatureMode = (string) config('delivery.default_handling_temperature_mode', 'frozen');
+            $temperatureMode = in_array($configuredTemperatureMode, ['all', 'frozen', 'chilled', 'ambient'], true)
+                ? $configuredTemperatureMode
+                : 'frozen';
+        }
         $customerType = $this->customerType($user);
         $pincode = $this->normalizePincode($address?->pincode);
         $zone = $pincode !== null ? $this->zoneForPincode($pincode) : null;
         $requireServiceable = (bool) config('delivery.require_serviceable_pincode', false);
+        $distanceEnabled = (bool) config('delivery.distance_enabled', false);
+        $distanceRequired = (bool) config('delivery.distance_required', false);
+        $fallbackToZone = (bool) config('delivery.distance_fallback_to_zone', true);
 
-        $deliveryRule = $zone ? $this->deliveryRuleFor($zone, $customerType, $orderValue) : null;
-        $handlingRule = $this->handlingRuleFor($customerType, $temperatureMode, $orderValue);
-
-        $serviceable = $zone !== null || ! $requireServiceable;
         $messages = [];
+        $distanceQuote = null;
+        $distanceRule = null;
+        $deliveryRule = null;
+        $deliveryFeeSource = 'none';
+        $deliveryFee = 0.0;
+        $deliveryTaxRate = (float) config('delivery.default_delivery_tax_rate', 0);
+        $distanceFeeDetails = [];
+
+        // B2B accounts do not pay delivery fees. Keep handling rules independent,
+        // but never apply zone/distance delivery charges to B2B checkout.
+        $b2bDeliveryWaived = $customerType === 'b2b';
 
         if (! $pincode) {
             $messages[] = 'Select a delivery address to calculate delivery fees.';
-        } elseif (! $zone) {
-            $messages[] = $requireServiceable
-                ? 'This pincode is not mapped to a serviceable delivery zone yet.'
-                : 'Delivery zone is not mapped for this pincode yet; delivery fee is currently treated as ₹0.';
         }
 
-        $deliveryFee = $deliveryRule ? $this->feeForRule($deliveryRule, $orderValue, 'delivery_fee', 'free_delivery_above') : 0.0;
-        $handlingFee = $handlingRule ? $this->feeForRule($handlingRule, $orderValue, 'handling_fee', 'free_handling_above') : 0.0;
+        if (! $b2bDeliveryWaived && $distanceEnabled && $address) {
+            $distanceQuote = app(DeliveryDistanceService::class)->routeForAddress($address);
 
-        $deliveryTaxRate = (float) ($deliveryRule?->tax_rate ?? config('delivery.default_delivery_tax_rate', 0));
+            if (! ($distanceQuote['success'] ?? false)) {
+                $messages[] = $distanceQuote['message'] ?? 'Distance-based delivery calculation is not available.';
+            } else {
+                $distanceRule = $this->distanceRuleFor(
+                    $customerType,
+                    $orderValue,
+                    (float) ($distanceQuote['distance_km'] ?? 0)
+                );
+
+                if ($distanceRule) {
+                    $distanceFeeDetails = $this->distanceFeeDetails($distanceRule, $orderValue, (float) $distanceQuote['distance_km']);
+                    $deliveryFee = (float) $distanceFeeDetails['delivery_fee'];
+                    $deliveryTaxRate = (float) ($distanceRule->tax_rate ?? config('delivery.default_delivery_tax_rate', 0));
+                    $deliveryFeeSource = 'distance';
+                } else {
+                    $messages[] = 'No distance-based delivery fee rule matched this address distance.';
+                }
+            }
+        }
+
+        $canUseZoneFallback = ! $b2bDeliveryWaived
+            && $deliveryFeeSource !== 'distance'
+            && (! $distanceEnabled || $fallbackToZone || ! $distanceRequired);
+
+        if ($canUseZoneFallback) {
+            $deliveryRule = $zone ? $this->deliveryRuleFor($zone, $customerType, $orderValue) : null;
+
+            if ($deliveryRule) {
+                $deliveryFee = $this->feeForRule($deliveryRule, $orderValue, 'delivery_fee', 'free_delivery_above');
+                $deliveryTaxRate = (float) ($deliveryRule->tax_rate ?? config('delivery.default_delivery_tax_rate', 0));
+                $deliveryFeeSource = 'zone';
+            }
+        }
+
+        if (! $b2bDeliveryWaived && $pincode && ! $zone && $deliveryFeeSource !== 'distance') {
+            $messages[] = $requireServiceable
+                ? 'This pincode is not mapped to a serviceable delivery zone yet.'
+                : 'Delivery zone is not mapped for this pincode yet; delivery zone fallback fee is treated as ₹0.';
+        }
+
+        $distanceBlocked = $distanceEnabled
+            && $distanceRequired
+            && ! ($distanceQuote['success'] ?? false)
+            && ! $fallbackToZone;
+
+        $serviceable = $b2bDeliveryWaived
+            ? true
+            : (! $distanceBlocked && ($zone !== null || ! $requireServiceable || $deliveryFeeSource === 'distance'));
+
+        if ($b2bDeliveryWaived) {
+            $deliveryFeeSource = 'b2b_waived';
+            $deliveryFee = 0.0;
+            $deliveryTaxRate = 0.0;
+            $distanceRule = null;
+            $deliveryRule = null;
+            $distanceFeeDetails = [];
+        }
+
+        $handlingRule = $this->handlingRuleFor($customerType, $temperatureMode, $orderValue);
+        $handlingFeeBeforeWaiver = $handlingRule ? round(max(0, (float) ($handlingRule->handling_fee ?? 0)), 2) : 0.0;
+        $handlingFreeAbove = $handlingRule?->free_handling_above;
+        $handlingFreeApplied = $handlingRule && (
+            ($handlingFreeAbove !== null && (float) $handlingFreeAbove > 0 && $orderValue >= (float) $handlingFreeAbove)
+            || ($handlingFreeAbove !== null && (float) $handlingFreeAbove === 0.0)
+        );
+        $handlingFee = $handlingRule ? $this->feeForRule($handlingRule, $orderValue, 'handling_fee', 'free_handling_above') : 0.0;
         $handlingTaxRate = (float) ($handlingRule?->tax_rate ?? config('delivery.default_handling_tax_rate', 0));
 
         $deliveryTax = round($deliveryFee * max($deliveryTaxRate, 0) / 100, 2);
@@ -45,16 +124,33 @@ class DeliveryChargeService
 
         return [
             'serviceable' => $serviceable,
-            'messages' => $messages,
+            'messages' => array_values(array_unique(array_filter($messages))),
             'customer_type' => $customerType,
             'pincode' => $pincode,
             'zone_id' => $zone?->id,
             'zone_name' => $zone?->name,
             'zone_code' => $zone?->code,
             'delivery_rule_id' => $deliveryRule?->id,
-            'handling_rule_id' => $handlingRule?->id,
+            'distance_rule_id' => $distanceRule?->id,
+            'delivery_fee_source' => $deliveryFeeSource,
+            'delivery_fee_formula' => $distanceFeeDetails['formula'] ?? null,
+            'delivery_base_fee' => $distanceFeeDetails['base_fee'] ?? null,
+            'delivery_included_distance_km' => $distanceFeeDetails['included_distance_km'] ?? null,
+            'delivery_per_km_fee' => $distanceFeeDetails['per_km_fee'] ?? null,
+            'delivery_chargeable_km_units' => $distanceFeeDetails['chargeable_km_units'] ?? null,
+            'delivery_fee_before_waiver' => $distanceFeeDetails['fee_before_waiver'] ?? null,
+            'delivery_free_delivery_applied' => $distanceFeeDetails['free_delivery_applied'] ?? false,
+            'delivery_distance_km' => $distanceQuote['distance_km'] ?? null,
+            'delivery_duration_minutes' => $distanceQuote['duration_minutes'] ?? null,
+            'delivery_distance_provider' => $distanceQuote['provider'] ?? null,
+            'delivery_distance_calculated_at' => $distanceQuote['calculated_at'] ?? null,
+            'delivery_distance_status' => $distanceQuote['status'] ?? null,
             'delivery_fee' => round($deliveryFee, 2),
+            'handling_rule_id' => $handlingRule?->id,
+            'handling_temperature_mode' => $handlingRule?->temperature_mode,
             'handling_fee' => round($handlingFee, 2),
+            'handling_fee_before_waiver' => $handlingFeeBeforeWaiver,
+            'handling_free_handling_applied' => $handlingFreeApplied,
             'delivery_tax_rate' => round(max($deliveryTaxRate, 0), 2),
             'handling_tax_rate' => round(max($handlingTaxRate, 0), 2),
             'delivery_tax_amount' => $deliveryTax,
@@ -62,7 +158,7 @@ class DeliveryChargeService
             'fee_total' => round($deliveryFee + $handlingFee, 2),
             'tax_total' => round($deliveryTax + $handlingTax, 2),
             'grand_total' => round($deliveryFee + $handlingFee + $deliveryTax + $handlingTax, 2),
-            'delivery_free_above' => $deliveryRule?->free_delivery_above,
+            'delivery_free_above' => $distanceRule?->free_delivery_above ?? $deliveryRule?->free_delivery_above,
             'handling_free_above' => $handlingRule?->free_handling_above,
         ];
     }
@@ -137,6 +233,33 @@ class DeliveryChargeService
             ->first();
     }
 
+    private function distanceRuleFor(string $customerType, float $orderValue, float $distanceKm): ?DeliveryDistanceRule
+    {
+        if ($distanceKm <= 0) {
+            return null;
+        }
+
+        return DeliveryDistanceRule::query()
+            ->where('is_active', true)
+            ->whereIn('customer_type', [$customerType, 'all'])
+            ->where('min_order_value', '<=', $orderValue)
+            ->where('min_distance_km', '<=', $distanceKm)
+            ->where(function ($query) use ($distanceKm) {
+                $query->whereNull('max_distance_km')->orWhere('max_distance_km', '>=', $distanceKm);
+            })
+            ->where(function ($query) {
+                $query->whereNull('starts_at')->orWhere('starts_at', '<=', Carbon::now());
+            })
+            ->where(function ($query) {
+                $query->whereNull('ends_at')->orWhere('ends_at', '>=', Carbon::now());
+            })
+            ->orderByRaw("CASE WHEN customer_type = ? THEN 0 ELSE 1 END", [$customerType])
+            ->orderByDesc('min_order_value')
+            ->orderByDesc('min_distance_km')
+            ->orderByDesc('id')
+            ->first();
+    }
+
     private function handlingRuleFor(string $customerType, string $temperatureMode, float $orderValue): ?HandlingChargeRule
     {
         $temperatureMode = in_array($temperatureMode, ['all', 'frozen', 'chilled', 'ambient'], true) ? $temperatureMode : 'all';
@@ -171,5 +294,45 @@ class DeliveryChargeService
         }
 
         return round(max(0, (float) ($rule->{$feeField} ?? 0)), 2);
+    }
+
+    private function feeForDistanceRule(DeliveryDistanceRule $rule, float $orderValue, float $distanceKm): float
+    {
+        return (float) $this->distanceFeeDetails($rule, $orderValue, $distanceKm)['delivery_fee'];
+    }
+
+    private function distanceFeeDetails(DeliveryDistanceRule $rule, float $orderValue, float $distanceKm): array
+    {
+        $freeAbove = $rule->free_delivery_above;
+        $freeDeliveryApplied = false;
+
+        if ($freeAbove !== null && (float) $freeAbove > 0 && $orderValue >= (float) $freeAbove) {
+            $freeDeliveryApplied = true;
+        }
+
+        if ($freeAbove !== null && (float) $freeAbove === 0.0) {
+            $freeDeliveryApplied = true;
+        }
+
+        $baseFee = max(0, (float) ($rule->delivery_fee ?? 0));
+        $perKmFee = max(0, (float) ($rule->per_km_fee ?? 0));
+        $includedDistanceKm = max(0, (float) ($rule->included_distance_km ?? 0));
+        $chargeableDistanceKm = max(0, $distanceKm - $includedDistanceKm);
+        $chargeableKmUnits = $perKmFee > 0 ? (int) ceil($chargeableDistanceKm) : 0;
+
+        $feeBeforeWaiver = $perKmFee > 0
+            ? $baseFee + ($perKmFee * $chargeableKmUnits)
+            : $baseFee;
+
+        return [
+            'delivery_fee' => round($freeDeliveryApplied ? 0 : $feeBeforeWaiver, 2),
+            'fee_before_waiver' => round($feeBeforeWaiver, 2),
+            'free_delivery_applied' => $freeDeliveryApplied,
+            'formula' => $perKmFee > 0 ? 'base_plus_per_km' : 'fixed',
+            'base_fee' => round($baseFee, 2),
+            'included_distance_km' => round($includedDistanceKm, 2),
+            'per_km_fee' => round($perKmFee, 2),
+            'chargeable_km_units' => $chargeableKmUnits,
+        ];
     }
 }

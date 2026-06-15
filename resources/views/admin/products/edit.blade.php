@@ -12,7 +12,7 @@
                 Edit product
             </h1>
             <p class="mt-1 text-[12px] text-gray-500 dark:text-gray-400">
-                Update the core product details first, then manage images, variants, and optional settings.
+                Update core product details first, then manage images, pack variants, and optional settings.
             </p>
 
             <div class="mt-3 flex flex-wrap gap-2 text-[11px]">
@@ -52,12 +52,7 @@
 
             <a href="{{ route('admin.products.variants.index', $product) }}"
                class="text-[12px] px-4 py-2 rounded-sm border border-gray-300 dark:border-gray-700 hover:bg-gray-50 dark:hover:bg-gray-800">
-                Manage variants
-            </a>
-
-            <a href="{{ route('admin.products.sell-units.index', $product) }}"
-               class="text-[12px] px-4 py-2 rounded-sm border border-gray-300 dark:border-gray-700 hover:bg-gray-50 dark:hover:bg-gray-800">
-                Sellable units
+                Manage pack variants
             </a>
 
             @if(Route::has('admin.recipes.index'))

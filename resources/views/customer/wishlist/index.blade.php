@@ -70,9 +70,20 @@
                                 foreach ($variant->attributeValues ?? [] as $value) {
                                     $parts[] = $value->attribute->name . ': ' . $value->value;
                                 }
+                                $variantName = trim((string) ($variant->name ?? ''));
+                                $packType = (string) ($variant->pack_type ?? '');
+                                if ($variantName !== '') {
+                                    $variantLabel = $variantName;
+                                } elseif ($packType === 'fixed_piece_pack' && (float) ($variant->pieces_per_pack ?? 0) > 0) {
+                                    $variantLabel = rtrim(rtrim(number_format((float) $variant->pieces_per_pack, 3), '0'), '.') . ' pcs pack';
+                                } elseif ($packType === 'fixed_weight_pack' && (float) ($variant->product_weight ?? 0) > 0) {
+                                    $variantLabel = rtrim(rtrim(number_format((float) $variant->product_weight, 3), '0'), '.') . ' kg pack';
+                                } else {
+                                    $variantLabel = implode(' · ', $parts) ?: ('Variant #'.$variant->id);
+                                }
                             @endphp
                             <div class="text-[11px] text-gray-500 dark:text-gray-400">
-                                {{ implode(' · ', $parts) ?: ('Variant #'.$variant->id) }}
+                                {{ $variantLabel }}
                             </div>
                         @endif
                     </div>

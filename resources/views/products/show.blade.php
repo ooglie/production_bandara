@@ -75,6 +75,20 @@
         : null;
 
     $variantLabel = function ($variant) {
+        $name = trim((string) ($variant->name ?? ''));
+        if ($name !== '') {
+            return $name;
+        }
+
+        $packType = (string) ($variant->pack_type ?? '');
+        if ($packType === 'fixed_piece_pack' && (float) ($variant->pieces_per_pack ?? 0) > 0) {
+            return rtrim(rtrim(number_format((float) $variant->pieces_per_pack, 3), '0'), '.') . ' pcs pack';
+        }
+
+        if ($packType === 'fixed_weight_pack' && (float) ($variant->product_weight ?? 0) > 0) {
+            return rtrim(rtrim(number_format((float) $variant->product_weight, 3), '0'), '.') . ' kg pack';
+        }
+
         $parts = [];
 
         foreach (($variant->attributeValues ?? collect()) as $value) {
@@ -380,12 +394,7 @@
                                 <option value="">Select…</option>
                                 @foreach($variants as $variant)
                                     @php
-                                        $parts = [];
-                                        foreach ($variant->attributeValues ?? [] as $value) {
-                                            $parts[] = $value->attribute->name . ': ' . $value->value;
-                                        }
-
-                                        $label = $parts ? implode(' · ', $parts) : ($variant->sku ?? 'Variant '.$variant->id);
+                                        $label = $variantLabel($variant);
                                         $variantPrice = $displayVariantPrice($variant);
                                     @endphp
                                     <option

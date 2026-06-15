@@ -1,0 +1,590 @@
+--- a/resources/views/partials/home_cards/product_card.blade.php
++++ b/resources/views/partials/home_cards/product_card.blade.php
+@@ -59,6 +59,8 @@
+         'wishlistUrl' => $wishlistUrl,
+         'loginUrl' => $loginUrl,
+         'isVariable' => $isVariable,
++        'hasVariants' => $hasVariants,
++        'variantOptionsUrl' => $variantOptionsUrl,
+         'inStock' => $inStock,
+     ], $actionsViewData);
+ 
+@@ -130,29 +132,26 @@
+                     @if($priceView)
+                         @include($priceView, $priceData)
+                     @elseif($hasPieceSelector && count($pieceBands))
+-                        <div class="flex items-center gap-2">
+-                            <select
+-                                class="h-9 max-w-[180px] truncate rounded-sm border border-gray-200 dark:border-gray-700 bg-white/90 dark:bg-gray-950/60 backdrop-blur px-3 text-[12px] text-gray-800 dark:text-gray-100 hover:bg-white dark:hover:bg-gray-900 focus:outline-none focus:ring-2 focus:ring-gray-300 dark:focus:ring-gray-700"
+-                                onchange="if(this.value){ window.location = this.value; }"
+-                                title="Choose slab range"
+-                            >
+-                                <option value="">Choose slab</option>
+-                                @foreach($pieceBands as $band)
+-                                    <option value="{{ $productUrl }}?band={{ urlencode($band['key']) }}#piece-selector-root">
+-                                        {{ $band['label'] }}
+-                                    </option>
+-                                @endforeach
+-                            </select>
++                        @php
++                            $pieceMin = (float) collect($pieceBands)->min('price_min');
++                            $pieceMax = (float) collect($pieceBands)->max('price_max');
++                        @endphp
++                        <div class="space-y-0.5 leading-tight">
++                            <div class="text-[12px] font-semibold text-gray-900 dark:text-gray-50">Choose slab</div>
++                            <div class="text-[10px] text-gray-500 dark:text-gray-400">
++                                {{ count($pieceBands) }} size {{ count($pieceBands) === 1 ? 'range' : 'ranges' }}
++                                @if($pieceMin > 0)
++                                    · ₹{{ number_format($pieceMin, 2) }}
++                                    @if($pieceMax > $pieceMin)
++                                        – ₹{{ number_format($pieceMax, 2) }}
++                                    @endif
++                                @endif
++                            </div>
+                         </div>
+                     @elseif($hasVariants && $variantOptionsUrl)
+-                        <div class="flex items-center gap-2">
+-                            <select
+-                                class="js-variant-select h-9 max-w-[170px] truncate rounded-sm border border-gray-200 dark:border-gray-700 bg-white/90 dark:bg-gray-950/60 backdrop-blur px-3 text-[12px] text-gray-800 dark:text-gray-100 hover:bg-white dark:hover:bg-gray-900 focus:outline-none focus:ring-2 focus:ring-gray-300 dark:focus:ring-gray-700"
+-                                data-url="{{ $variantOptionsUrl }}"
+-                                title="Select product"
+-                            >
+-                                <option value="">Loading…</option>
+-                            </select>
++                        <div class="space-y-0.5 leading-tight">
++                            <div class="js-variant-price-summary text-[12px] font-semibold text-gray-900 dark:text-gray-50">Choose pack</div>
++                            <div class="js-variant-count-summary text-[10px] text-gray-500 dark:text-gray-400">Options loading…</div>
+                         </div>
+                     @else
+                         <div class="flex flex-col items-start leading-tight">
+--- a/resources/views/partials/home_cards/wishlist_cart_view.blade.php
++++ b/resources/views/partials/home_cards/wishlist_cart_view.blade.php
+@@ -3,6 +3,8 @@
+     $hasPieceSelector = (bool) data_get($pieceSelector, 'enabled', false);
+     $pieceBands = data_get($pieceSelector, 'bands', []);
+     $hasMultipleBands = is_array($pieceBands) && count($pieceBands) > 1;
++    $hasVariants = (bool) ($hasVariants ?? false);
++    $variantOptionsUrl = $variantOptionsUrl ?? null;
+ @endphp
+ 
+ {{-- Wishlist --}}
+@@ -62,13 +64,13 @@
+     @endif
+ @endif
+ 
+-{{-- Add to cart / Choose size --}}
++{{-- Add to cart / Choose option --}}
+ @if($hasPieceSelector)
+     @if($inStock)
+         @if($hasMultipleBands)
+-            <details class="relative js-slab-band-menu">
++            <details class="relative js-card-option-menu js-slab-band-menu">
+                 <summary
+-                    title="Choose size"
++                    title="Choose slab size"
+                     class="list-none inline-flex items-center justify-center w-9 h-9 rounded-sm
+                            border border-gray-200 dark:border-gray-700
+                            bg-white/80 dark:bg-gray-950/70 backdrop-blur
+@@ -83,9 +85,9 @@
+                     </svg>
+                 </summary>
+ 
+-                <div class="absolute right-0 z-50 mt-2 w-56 rounded-xl border border-gray-200 dark:border-gray-800 bg-white dark:bg-gray-900 shadow-lg p-2">
++                <div class="absolute right-0 z-50 mt-2 w-64 rounded-xl border border-gray-200 dark:border-gray-800 bg-white dark:bg-gray-900 shadow-lg p-2">
+                     <div class="px-2 pb-1 text-[10px] uppercase tracking-wide text-gray-400">
+-                        Choose size
++                        Choose slab size
+                     </div>
+ 
+                     <div class="space-y-1">
+@@ -139,6 +141,43 @@
+             </svg>
+         </button>
+     @endif
++@elseif($hasVariants && $variantOptionsUrl && $cartAddUrl)
++    <details
++        class="relative js-card-option-menu js-variant-option-menu"
++        data-url="{{ $variantOptionsUrl }}"
++        data-cart-url="{{ $cartAddUrl }}"
++        data-product-id="{{ $product->id }}"
++        data-csrf="{{ csrf_token() }}"
++    >
++        <summary
++            title="Choose pack"
++            class="list-none inline-flex items-center justify-center w-9 h-9 rounded-sm
++                   border border-gray-200 dark:border-gray-700
++                   bg-white/80 dark:bg-gray-950/70 backdrop-blur
++                   text-gray-700 dark:text-gray-200 hover:bg-white dark:hover:bg-gray-900
++                   cursor-pointer"
++            style="list-style: none;"
++        >
++            <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24"
++                    stroke-width="1.5" stroke="currentColor" class="w-5 h-5">
++                <path stroke-linecap="round" stroke-linejoin="round"
++                        d="M2.25 3h1.5l1.5 12h13.5l1.5-9H6.75" />
++                <path stroke-linecap="round" stroke-linejoin="round"
++                        d="M9 20.25a.75.75 0 1 0 0-1.5.75.75 0 0 0 0 1.5Zm10.5 0a.75.75 0 1 0 0-1.5.75.75 0 0 0 0 1.5Z" />
++            </svg>
++        </summary>
++
++        <div class="absolute right-0 z-50 mt-2 w-64 rounded-xl border border-gray-200 dark:border-gray-800 bg-white dark:bg-gray-900 shadow-lg p-2">
++            <div class="px-2 pb-1 text-[10px] uppercase tracking-wide text-gray-400">
++                Choose pack
++            </div>
++            <div class="js-variant-options-menu space-y-1">
++                <div class="rounded-lg px-3 py-2 text-[11px] text-gray-500 dark:text-gray-400">
++                    Loading options…
++                </div>
++            </div>
++        </div>
++    </details>
+ @elseif($cartAddUrl)
+     <form method="POST" action="{{ $cartAddUrl }}" class="js-cart-form">
+         @csrf
+@@ -148,7 +187,7 @@
+ 
+         <button
+             type="submit"
+-            title="{{ $inStock ? ($isVariable ? 'Select a slab and add to cart' : 'Add to cart') : 'Out of stock' }}"
++            title="{{ $inStock ? 'Add to cart' : 'Out of stock' }}"
+             @disabled(!$inStock)
+             class="js-cart-btn inline-flex items-center justify-center w-9 h-9 rounded-sm
+                 border border-gray-200 dark:border-gray-700
+@@ -201,14 +240,14 @@
+     @push('scripts')
+         <script>
+         (function () {
+-            if (window.__bandaraSlabBandDropdownCloserBound) {
++            if (window.__bandaraProductCardMenuCloserBound) {
+                 return;
+             }
+ 
+-            window.__bandaraSlabBandDropdownCloserBound = true;
+-
+-            function closeOpenSlabMenus(exceptMenu) {
+-                document.querySelectorAll('details.js-slab-band-menu[open]').forEach(function (menu) {
++            window.__bandaraProductCardMenuCloserBound = true;
++
++            function closeOpenProductCardMenus(exceptMenu) {
++                document.querySelectorAll('details.js-card-option-menu[open]').forEach(function (menu) {
+                     if (menu !== exceptMenu) {
+                         menu.removeAttribute('open');
+                     }
+@@ -221,7 +260,7 @@
+                     return;
+                 }
+ 
+-                document.querySelectorAll('details.js-slab-band-menu[open]').forEach(function (menu) {
++                document.querySelectorAll('details.js-card-option-menu[open]').forEach(function (menu) {
+                     if (!menu.contains(target)) {
+                         menu.removeAttribute('open');
+                     }
+@@ -230,16 +269,16 @@
+ 
+             document.addEventListener('toggle', function (event) {
+                 var menu = event.target;
+-                if (!menu || menu.tagName !== 'DETAILS' || !menu.classList || !menu.classList.contains('js-slab-band-menu') || !menu.open) {
++                if (!menu || menu.tagName !== 'DETAILS' || !menu.classList || !menu.classList.contains('js-card-option-menu') || !menu.open) {
+                     return;
+                 }
+ 
+-                closeOpenSlabMenus(menu);
++                closeOpenProductCardMenus(menu);
+             }, true);
+ 
+             document.addEventListener('keydown', function (event) {
+                 if (event.key === 'Escape') {
+-                    closeOpenSlabMenus(null);
++                    closeOpenProductCardMenus(null);
+                 }
+             });
+         })();
+--- a/resources/views/home/sections/product-card-scripts.blade.php
++++ b/resources/views/home/sections/product-card-scripts.blade.php
+@@ -1,66 +1,244 @@
+ <script>
+ (function () {
++    if (window.__bandaraProductCardScriptsBound) {
++        return;
++    }
++
++    window.__bandaraProductCardScriptsBound = true;
++
++    function formatINR(amount) {
++        var value = Number(amount || 0);
++        return '₹' + value.toLocaleString('en-IN', {
++            minimumFractionDigits: 2,
++            maximumFractionDigits: 2
++        });
++    }
++
+     function setVariant(card, variantId) {
+-        card.querySelectorAll('input.js-variant-input').forEach(inp => inp.value = variantId || '');
+-        const btn = card.querySelector('form.js-cart-form button.js-cart-btn');
++        card.querySelectorAll('input.js-variant-input').forEach(function (inp) {
++            inp.value = variantId || '';
++        });
++
++        var btn = card.querySelector('form.js-cart-form button.js-cart-btn');
+         if (btn) {
+             btn.disabled = !variantId || btn.hasAttribute('data-force-disabled');
+             btn.classList.toggle('opacity-40', btn.disabled);
+         }
+     }
+ 
+-    async function hydrateCard(card) {
+-        const sel = card.querySelector('select.js-variant-select');
++    function hiddenInput(name, value) {
++        var input = document.createElement('input');
++        input.type = 'hidden';
++        input.name = name;
++        input.value = value == null ? '' : String(value);
++        return input;
++    }
++
++    function closeOpenMenus(exceptMenu) {
++        document.querySelectorAll('details.js-card-option-menu[open]').forEach(function (menu) {
++            if (menu !== exceptMenu) {
++                menu.removeAttribute('open');
++            }
++        });
++    }
++
++    function optionCountText(count) {
++        return count === 1 ? '1 pack option' : count + ' pack options';
++    }
++
++    function updateVariantSummary(card, variants) {
++        var priceSummary = card.querySelector('.js-variant-price-summary');
++        var countSummary = card.querySelector('.js-variant-count-summary');
++
++        if (!variants.length) {
++            if (priceSummary) priceSummary.textContent = 'Out of stock';
++            if (countSummary) countSummary.textContent = 'No pack options available';
++            return;
++        }
++
++        var prices = variants
++            .map(function (variant) { return Number(variant.price || 0); })
++            .filter(function (price) { return price > 0; });
++
++        if (priceSummary) {
++            priceSummary.textContent = prices.length ? 'From ' + formatINR(Math.min.apply(Math, prices)) : 'Choose pack';
++        }
++
++        if (countSummary) {
++            countSummary.textContent = optionCountText(variants.length);
++        }
++    }
++
++    function buildVariantRow(menu, variant) {
++        var form = document.createElement('form');
++        form.method = 'POST';
++        form.action = menu.dataset.cartUrl || '#';
++        form.className = 'block';
++
++        form.appendChild(hiddenInput('_token', menu.dataset.csrf || ''));
++        form.appendChild(hiddenInput('product_id', menu.dataset.productId || ''));
++        form.appendChild(hiddenInput('product_variant_id', variant.id || ''));
++        form.appendChild(hiddenInput('quantity', '1'));
++
++        var button = document.createElement('button');
++        button.type = 'submit';
++        button.className = 'flex w-full items-center justify-between gap-3 rounded-lg px-3 py-2 text-left hover:bg-gray-100 dark:hover:bg-gray-800';
++
++        var labelWrap = document.createElement('span');
++        labelWrap.className = 'min-w-0';
++
++        var name = document.createElement('span');
++        name.className = 'block truncate text-[12px] font-medium text-gray-900 dark:text-gray-50';
++        name.textContent = variant.name || variant.label || ('Option #' + (variant.id || ''));
++
++        var sub = document.createElement('span');
++        sub.className = 'mt-0.5 block text-[10px] text-gray-500 dark:text-gray-400';
++        sub.textContent = variant.stock_label || 'Add 1 pack';
++
++        var price = document.createElement('span');
++        price.className = 'shrink-0 text-[12px] font-semibold text-gray-900 dark:text-gray-50';
++        price.textContent = variant.price_label || formatINR(variant.price || 0);
++
++        labelWrap.appendChild(name);
++        labelWrap.appendChild(sub);
++        button.appendChild(labelWrap);
++        button.appendChild(price);
++        form.appendChild(button);
++
++        return form;
++    }
++
++    async function hydrateVariantMenu(menu) {
++        if (!menu || menu.dataset.loaded === 'true') {
++            return;
++        }
++
++        var body = menu.querySelector('.js-variant-options-menu');
++        var card = menu.closest('.js-product-card');
++        var url = menu.dataset.url;
++
++        if (!body || !url) {
++            return;
++        }
++
++        body.innerHTML = '<div class="rounded-lg px-3 py-2 text-[11px] text-gray-500 dark:text-gray-400">Loading options…</div>';
++
++        try {
++            var res = await fetch(url, { headers: { 'Accept': 'application/json' } });
++            if (!res.ok) throw new Error('Unable to load variants');
++
++            var data = await res.json();
++            var variants = Array.isArray(data.variants) ? data.variants : [];
++
++            menu.dataset.loaded = 'true';
++            body.innerHTML = '';
++            updateVariantSummary(card || document, variants);
++
++            if (!variants.length) {
++                body.innerHTML = '<div class="rounded-lg px-3 py-2 text-[11px] text-gray-500 dark:text-gray-400">No pack options available.</div>';
++                return;
++            }
++
++            variants.forEach(function (variant) {
++                body.appendChild(buildVariantRow(menu, variant));
++            });
++        } catch (e) {
++            body.innerHTML = '<div class="rounded-lg px-3 py-2 text-[11px] text-red-600 dark:text-red-300">Could not load pack options.</div>';
++            updateVariantSummary(card || document, []);
++        }
++    }
++
++    async function hydrateLegacyVariantSelect(card) {
++        var sel = card.querySelector('select.js-variant-select');
+         if (!sel) return;
+ 
+-        const url = sel.dataset.url;
+-        const hint = card.querySelector('.js-variant-hint');
++        var url = sel.dataset.url;
++        var hint = card.querySelector('.js-variant-hint');
+ 
+         sel.innerHTML = '<option value="">Loading…</option>';
+         sel.disabled = true;
+ 
+-        const btn = card.querySelector('form.js-cart-form button.js-cart-btn');
++        var btn = card.querySelector('form.js-cart-form button.js-cart-btn');
+         if (btn) {
+             btn.disabled = true;
+             btn.classList.add('opacity-40');
+         }
+ 
+         try {
+-            const res = await fetch(url, { headers: { 'Accept': 'application/json' } });
+-            if (!res.ok) throw new Error('bad');
+-            const data = await res.json();
+-            const list = Array.isArray(data.variants) ? data.variants : [];
++            var res = await fetch(url, { headers: { 'Accept': 'application/json' } });
++            if (!res.ok) throw new Error('Unable to load variants');
++            var data = await res.json();
++            var list = Array.isArray(data.variants) ? data.variants : [];
+ 
+             sel.innerHTML = '<option value="">Choose option</option>';
+ 
+             if (!list.length) {
+-                sel.innerHTML = '<option value="">No slabs available</option>';
+-                if (hint) hint.textContent = 'No available slabs in stock.';
++                sel.innerHTML = '<option value="">No options available</option>';
++                if (hint) hint.textContent = 'No available options in stock.';
+                 sel.disabled = true;
+                 setVariant(card, '');
+                 return;
+             }
+ 
+-            list.forEach(v => {
+-                const opt = document.createElement('option');
++            list.forEach(function (v) {
++                var opt = document.createElement('option');
+                 opt.value = v.id;
+-                opt.textContent = v.label || ('Slab #' + v.id);
++                opt.textContent = v.label || v.name || ('Option #' + v.id);
+                 sel.appendChild(opt);
+             });
+ 
+             sel.disabled = false;
+             if (hint) hint.textContent = 'Select & add to cart.';
+         } catch (e) {
+-            sel.innerHTML = '<option value="">Unable to load slabs</option>';
++            sel.innerHTML = '<option value="">Unable to load options</option>';
+             sel.disabled = true;
+-            if (hint) hint.textContent = 'Could not load slab list.';
++            if (hint) hint.textContent = 'Could not load option list.';
+             setVariant(card, '');
+             return;
+         }
+ 
+-        sel.addEventListener('change', () => setVariant(card, sel.value));
+-    }
+-
+-    document.querySelectorAll('.js-product-card').forEach(hydrateCard);
++        sel.addEventListener('change', function () {
++            setVariant(card, sel.value);
++        });
++    }
++
++    document.addEventListener('click', function (event) {
++        var target = event.target;
++        if (!target) return;
++
++        document.querySelectorAll('details.js-card-option-menu[open]').forEach(function (menu) {
++            if (!menu.contains(target)) {
++                menu.removeAttribute('open');
++            }
++        });
++    });
++
++    document.addEventListener('toggle', function (event) {
++        var menu = event.target;
++        if (!menu || menu.tagName !== 'DETAILS' || !menu.classList || !menu.classList.contains('js-card-option-menu') || !menu.open) {
++            return;
++        }
++
++        closeOpenMenus(menu);
++
++        if (menu.classList.contains('js-variant-option-menu')) {
++            hydrateVariantMenu(menu);
++        }
++    }, true);
++
++    document.addEventListener('keydown', function (event) {
++        if (event.key === 'Escape') {
++            closeOpenMenus(null);
++        }
++    });
++
++    document.querySelectorAll('.js-product-card').forEach(function (card) {
++        hydrateLegacyVariantSelect(card);
++
++        var variantMenu = card.querySelector('details.js-variant-option-menu');
++        if (variantMenu) {
++            hydrateVariantMenu(variantMenu);
++        }
++    });
+ })();
+ </script>
+--- a/resources/views/shop/index.blade.php
++++ b/resources/views/shop/index.blade.php
+@@ -321,73 +321,7 @@
+ 
+ </div>
+ 
+-{{-- ✅ Inline slab dropdown loader (works for variable products) --}}
+ @if(\Illuminate\Support\Facades\Route::has('product.variants.options'))
+-<script>
+-(function () {
+-    function setVariant(card, variantId) {
+-        card.querySelectorAll('input.js-variant-input').forEach(inp => inp.value = variantId || '');
+-        const btn = card.querySelector('form.js-cart-form button.js-cart-btn');
+-        if (btn) {
+-            btn.disabled = !variantId || btn.hasAttribute('data-force-disabled');
+-            btn.classList.toggle('opacity-40', btn.disabled);
+-        }
+-    }
+-
+-    async function hydrateCard(card) {
+-        const sel = card.querySelector('select.js-variant-select');
+-        if (!sel) return;
+-
+-        const url = sel.dataset.url;
+-        const hint = card.querySelector('.js-variant-hint');
+-
+-        sel.innerHTML = '<option value="">Loading…</option>';
+-        sel.disabled = true;
+-
+-        const btn = card.querySelector('form.js-cart-form button.js-cart-btn');
+-        if (btn) {
+-            btn.disabled = true;
+-            btn.classList.add('opacity-40');
+-        }
+-
+-        try {
+-            const res = await fetch(url, { headers: { 'Accept': 'application/json' } });
+-            if (!res.ok) throw new Error('bad');
+-            const data = await res.json();
+-            const list = Array.isArray(data.variants) ? data.variants : [];
+-
+-            sel.innerHTML = '<option value="">Choose option</option>';
+-
+-            if (!list.length) {
+-                sel.innerHTML = '<option value="">No slabs available</option>';
+-                if (hint) hint.textContent = 'No available slabs in stock.';
+-                sel.disabled = true;
+-                setVariant(card, '');
+-                return;
+-            }
+-
+-            list.forEach(v => {
+-                const opt = document.createElement('option');
+-                opt.value = v.id;
+-                opt.textContent = v.label || ('Slab #' + v.id);
+-                sel.appendChild(opt);
+-            });
+-
+-            sel.disabled = false;
+-            if (hint) hint.textContent = 'Select & add to cart.';
+-        } catch (e) {
+-            sel.innerHTML = '<option value="">Unable to load slabs</option>';
+-            sel.disabled = true;
+-            if (hint) hint.textContent = 'Could not load slab list.';
+-            setVariant(card, '');
+-            return;
+-        }
+-
+-        sel.addEventListener('change', () => setVariant(card, sel.value));
+-    }
+-
+-    document.querySelectorAll('.js-product-card').forEach(hydrateCard);
+-})();
+-</script>
++    @include('home.sections.product-card-scripts')
+ @endif
+ @endsection--- a/app/Http/Controllers/Frontend/ProductController.php
++++ b/app/Http/Controllers/Frontend/ProductController.php
+@@ -49,11 +49,15 @@
+             ->filter(fn ($variant) => $this->variantIsSelectable($variant))
+             ->map(function ($variant) use ($product, $request, $pricing) {
+                 $displayPrice = $pricing->priceFor($request->user(), $product, $variant);
++                $name = $this->variantLabel($variant);
+ 
+                 return [
+-                    'id'    => $variant->id,
+-                    'label' => $this->variantLabel($variant) . ' — ₹' . number_format($displayPrice, 2),
++                    'id' => $variant->id,
++                    'name' => $name,
++                    'label' => $name . ' — ₹' . number_format($displayPrice, 2),
+                     'price' => $displayPrice,
++                    'price_label' => '₹' . number_format($displayPrice, 2),
++                    'stock_label' => $this->variantStockLabel($variant),
+                 ];
+             })
+             ->values();
+@@ -97,6 +101,23 @@
+         }
+ 
+         return round($price, 2);
++    }
++
++    protected function variantStockLabel($variant): string
++    {
++        $packType = (string) ($variant->pack_type ?? '');
++
++        if ($packType === 'fixed_piece_pack' && (float) ($variant->pieces_per_pack ?? 0) > 0) {
++            $pieces = rtrim(rtrim(number_format((float) $variant->pieces_per_pack, 3), '0'), '.');
++            return $pieces . ' pcs per pack';
++        }
++
++        if ($packType === 'fixed_weight_pack' && (float) ($variant->product_weight ?? 0) > 0) {
++            $weight = rtrim(rtrim(number_format((float) $variant->product_weight, 3), '0'), '.');
++            return $weight . ' kg per pack';
++        }
++
++        return 'Add 1 pack';
+     }
+ 
+     protected function variantLabel($variant): string

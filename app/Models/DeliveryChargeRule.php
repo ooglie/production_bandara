@@ -12,6 +12,7 @@ class DeliveryChargeRule extends Model
         'customer_type',
         'min_order_value',
         'delivery_fee',
+        'included_distance_km',
         'free_delivery_above',
         'tax_rate',
         'is_active',
@@ -22,6 +23,7 @@ class DeliveryChargeRule extends Model
     protected $casts = [
         'min_order_value' => 'float',
         'delivery_fee' => 'float',
+        'included_distance_km' => 'float',
         'free_delivery_above' => 'float',
         'tax_rate' => 'float',
         'is_active' => 'bool',

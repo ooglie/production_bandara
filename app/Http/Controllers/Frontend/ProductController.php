@@ -49,11 +49,15 @@ class ProductController extends Controller
             ->filter(fn ($variant) => $this->variantIsSelectable($variant))
             ->map(function ($variant) use ($product, $request, $pricing) {
                 $displayPrice = $pricing->priceFor($request->user(), $product, $variant);
+                $name = $this->variantLabel($variant);
 
                 return [
-                    'id'    => $variant->id,
-                    'label' => $this->variantLabel($variant) . ' — ₹' . number_format($displayPrice, 2),
+                    'id' => $variant->id,
+                    'name' => $name,
+                    'label' => $name . ' — ₹' . number_format($displayPrice, 2),
                     'price' => $displayPrice,
+                    'price_label' => '₹' . number_format($displayPrice, 2),
+                    'stock_label' => $this->variantStockLabel($variant),
                 ];
             })
             ->values();
@@ -99,8 +103,39 @@ class ProductController extends Controller
         return round($price, 2);
     }
 
+    protected function variantStockLabel($variant): string
+    {
+        $packType = (string) ($variant->pack_type ?? '');
+
+        if ($packType === 'fixed_piece_pack' && (float) ($variant->pieces_per_pack ?? 0) > 0) {
+            $pieces = rtrim(rtrim(number_format((float) $variant->pieces_per_pack, 3), '0'), '.');
+            return $pieces . ' pcs per pack';
+        }
+
+        if ($packType === 'fixed_weight_pack' && (float) ($variant->product_weight ?? 0) > 0) {
+            $weight = rtrim(rtrim(number_format((float) $variant->product_weight, 3), '0'), '.');
+            return $weight . ' kg per pack';
+        }
+
+        return 'Add 1 pack';
+    }
+
     protected function variantLabel($variant): string
     {
+        $name = trim((string) ($variant->name ?? ''));
+        if ($name !== '') {
+            return $name;
+        }
+
+        $packType = (string) ($variant->pack_type ?? '');
+        if ($packType === 'fixed_piece_pack' && (float) ($variant->pieces_per_pack ?? 0) > 0) {
+            return rtrim(rtrim(number_format((float) $variant->pieces_per_pack, 3), '0'), '.') . ' pcs pack';
+        }
+
+        if ($packType === 'fixed_weight_pack' && (float) ($variant->product_weight ?? 0) > 0) {
+            return rtrim(rtrim(number_format((float) $variant->product_weight, 3), '0'), '.') . ' kg pack';
+        }
+
         $parts = [];
 
         foreach (($variant->attributeValues ?? collect()) as $value) {
@@ -135,7 +170,7 @@ class ProductController extends Controller
             ->where('inventory_lots.product_id', $product->id)
             ->where('inventory_lots.is_saleable', true)
             ->where('inventory_lots.lot_status', 'available')
-            ->where('inventory_lots.inward_mode', 'pieces')
+            ->whereIn('inventory_lots.inward_mode', ['pieces', 'pieces_weight'])
             ->where(function ($q) {
                 $q->whereNull('inventory_lots.available_piece_count')
                     ->orWhere('inventory_lots.available_piece_count', '>', 0);

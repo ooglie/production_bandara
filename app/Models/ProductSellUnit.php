@@ -20,6 +20,12 @@ class ProductSellUnit extends Model
         'request_weight',
     ];
 
+    public const SALE_TYPES = [
+        'variable_weight',
+        'fixed_weight_pack',
+        'fixed_piece_pack',
+    ];
+
     public const PRICING_UNITS = [
         'unit',
         'piece',
@@ -35,8 +41,12 @@ class ProductSellUnit extends Model
         'barcode',
         'unit_type',
         'pricing_unit',
+        'sale_type',
         'pieces_per_unit',
         'weight_per_unit_kg',
+        'base_price',
+        'mrp_price',
+        'b2c_price_includes_gst',
         'standard_b2b_price',
         'standard_b2b_min_order_quantity',
         'sort_order',
@@ -49,6 +59,9 @@ class ProductSellUnit extends Model
     protected $casts = [
         'pieces_per_unit' => 'decimal:3',
         'weight_per_unit_kg' => 'decimal:3',
+        'base_price' => 'decimal:2',
+        'mrp_price' => 'decimal:2',
+        'b2c_price_includes_gst' => 'boolean',
         'standard_b2b_price' => 'decimal:2',
         'standard_b2b_min_order_quantity' => 'decimal:3',
         'sort_order' => 'integer',
@@ -80,6 +93,30 @@ class ProductSellUnit extends Model
     public function customerPrices(): HasMany
     {
         return $this->hasMany(CustomerProductPrice::class, 'product_sell_unit_id');
+    }
+
+    public function getSaleTypeLabelAttribute(): string
+    {
+        return match ((string) ($this->sale_type ?? 'fixed_piece_pack')) {
+            'variable_weight' => 'Variable weight',
+            'fixed_weight_pack' => 'Fixed weight pack',
+            default => 'Fixed piece pack',
+        };
+    }
+
+    public function isFixedWeightPack(): bool
+    {
+        return (string) ($this->sale_type ?? '') === 'fixed_weight_pack';
+    }
+
+    public function isFixedPiecePack(): bool
+    {
+        return (string) ($this->sale_type ?? 'fixed_piece_pack') === 'fixed_piece_pack';
+    }
+
+    public function isVariableWeight(): bool
+    {
+        return (string) ($this->sale_type ?? '') === 'variable_weight';
     }
 
     public function getDisplayLabelAttribute(): string

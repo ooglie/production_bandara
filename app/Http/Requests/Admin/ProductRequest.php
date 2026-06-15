@@ -15,7 +15,9 @@ class ProductRequest extends FormRequest
 
     public function isDraftSave(): bool
     {
-        return $this->boolean('save_as_draft') || ! $this->boolean('is_active');
+        return $this->boolean('save_as_draft')
+            || ! $this->boolean('is_active')
+            || (string) $this->input('inventory_role', 'saleable') === 'internal';
     }
 
     protected function prepareForValidation(): void
@@ -52,6 +54,8 @@ class ProductRequest extends FormRequest
             'delivery_support' => $normalizeMultiline($this->input('delivery_support')),
 
             'type' => $this->input('type', 'simple'),
+            'inventory_role' => $this->filled('inventory_role') ? $this->input('inventory_role') : 'saleable',
+            'pack_type' => $this->filled('pack_type') ? $this->input('pack_type') : 'quantity',
             'country_of_origin' => $this->filled('country_of_origin')
                 ? strtoupper(trim((string) $this->input('country_of_origin')))
                 : null,
@@ -84,6 +88,14 @@ class ProductRequest extends FormRequest
             : (is_numeric($product) ? (int) $product : null);
 
         $isDraft = $this->isDraftSave();
+        $isVariable = (string) $this->input('type', 'simple') === 'variable';
+        $packType = (string) $this->input('pack_type', 'quantity');
+        $productWeightRules = $isDraft || $isVariable || $packType === 'fixed_piece_pack'
+            ? ['nullable', 'numeric', 'min:0']
+            : ['required', 'numeric', 'gt:0'];
+        $piecesPerPackRules = (! $isDraft && ! $isVariable && $packType === 'fixed_piece_pack')
+            ? ['required', 'numeric', 'gt:0']
+            : ['nullable', 'numeric', 'min:0'];
 
         return [
             'name' => ['required', 'string', 'max:255'],
@@ -107,14 +119,15 @@ class ProductRequest extends FormRequest
             ],
 
             'type' => ['required', Rule::in(['simple', 'variable'])],
+            'inventory_role' => ['required', Rule::in(['internal', 'saleable', 'both'])],
 
             'vendor_id' => ['nullable', 'integer', 'exists:vendors,id'],
             'barcode' => ['nullable', 'string', 'max:191'],
 
-            'mrp_price' => $isDraft
+            'mrp_price' => ($isDraft || $isVariable)
                 ? ['nullable', 'numeric', 'min:0']
                 : ['required', 'numeric', 'gt:0'],
-            'base_price' => $isDraft
+            'base_price' => ($isDraft || $isVariable)
                 ? ['nullable', 'numeric', 'min:0']
                 : ['required', 'numeric', 'gt:0'],
             'b2c_price_includes_gst' => ['required', Rule::in(['0', '1', 0, 1, true, false])],
@@ -124,9 +137,9 @@ class ProductRequest extends FormRequest
             'gst_rate' => ['required', 'numeric', 'min:0', 'max:100'],
 
             'sell_unit' => ['nullable', Rule::in(['piece', 'kg', 'pack'])],
-            'product_weight' => $isDraft
-                ? ['nullable', 'numeric', 'min:0']
-                : ['required', 'numeric', 'gt:0'],
+            'pack_type' => ['nullable', Rule::in(['bulk', 'quantity', 'fixed_weight_pack', 'fixed_piece_pack', 'variable_weight'])],
+            'product_weight' => $productWeightRules,
+            'pieces_per_pack' => $piecesPerPackRules,
 
             'country_of_origin' => ['required', 'string', 'size:2', 'exists:countries,code'],
 
@@ -184,8 +197,10 @@ class ProductRequest extends FormRequest
             'hsn_code_id.required' => 'HSN is required.',
             'gst_rate.required' => 'GST rate is required.',
 
-            'product_weight.required' => 'Product weight is required before activating/publishing the product.',
-            'product_weight.gt' => 'Product weight must be greater than zero before activation.',
+            'product_weight.required' => 'Product weight / pack weight is required before activating/publishing this product.',
+            'product_weight.gt' => 'Product weight / pack weight must be greater than zero before activation.',
+            'pieces_per_pack.required' => 'Pieces per pack is required for fixed piece pack products.',
+            'pieces_per_pack.gt' => 'Pieces per pack must be greater than zero.',
 
             'country_of_origin.required' => 'Country of origin is required.',
             'country_of_origin.exists' => 'Please select a valid country of origin.',
