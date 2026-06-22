@@ -89,11 +89,7 @@
     }
 @endphp
 
-<div class="max-w-6xl mx-auto px-4 py-6 space-y-4 text-xs">
-    @if(session('status'))
-        <div class="rounded border border-emerald-300 bg-emerald-50 px-3 py-2 text-[11px] text-emerald-800">{{ session('status') }}</div>
-    @endif
-    @if($errors->any())
+<div class="max-w-6xl mx-auto px-4 py-6 space-y-4 text-xs">    @if($errors->any())
         <div class="rounded border border-red-300 bg-red-50 px-3 py-2 text-[11px] text-red-800">
             <ul class="list-disc list-inside space-y-0.5">
                 @foreach($errors->all() as $error)

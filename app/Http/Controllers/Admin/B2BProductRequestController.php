@@ -6,7 +6,6 @@ use App\Http\Controllers\Controller;
 use App\Models\B2BCustomerProduct;
 use App\Models\B2BProductRequest;
 use App\Models\CustomerProductPrice;
-use App\Models\ProductSellUnit;
 use Illuminate\Http\Request;
 use Illuminate\Validation\Rule;
 
@@ -22,7 +21,7 @@ class B2BProductRequestController extends Controller
         }
 
         $query = B2BProductRequest::query()
-            ->with(['user', 'product', 'productSellUnit', 'productVariant', 'resolvedBy'])
+            ->with(['user', 'product', 'productVariant', 'resolvedBy'])
             ->latest();
 
         if ($status !== 'all') {
@@ -42,7 +41,7 @@ class B2BProductRequestController extends Controller
         $data = $request->validate([
             'min_order_quantity' => ['nullable', 'numeric', 'min:0.01'],
             'price' => ['nullable', 'numeric', 'min:0'],
-            'price_scope' => ['nullable', Rule::in(['product', 'sell_unit', 'variant'])],
+            'price_scope' => ['nullable', Rule::in(['product', 'variant'])],
             'admin_note' => ['nullable', 'string', 'max:1000'],
         ]);
 
@@ -57,12 +56,12 @@ class B2BProductRequestController extends Controller
             return back()->withErrors(['request' => 'This request is not linked to a B2B customer.']);
         }
 
-        $sellUnitId = $this->validatedSellUnitId($productRequest);
+        $variantId = $this->validatedVariantId($productRequest);
 
         $assignment = B2BCustomerProduct::query()->firstOrNew([
             'user_id' => $user->id,
             'product_id' => $product->id,
-            'product_sell_unit_id' => $sellUnitId,
+            'product_variant_id' => $variantId,
         ]);
 
         $assignment->min_order_quantity = (float) ($data['min_order_quantity'] ?? $assignment->min_order_quantity ?? 1);
@@ -76,21 +75,13 @@ class B2BProductRequestController extends Controller
         $assignment->save();
 
         if (array_key_exists('price', $data) && $data['price'] !== null && $data['price'] !== '') {
-            $scope = $data['price_scope'] ?? ($sellUnitId ? 'sell_unit' : 'product');
-            $variantId = null;
-            $priceSellUnitId = null;
-
-            if ($scope === 'variant' && $productRequest->product_variant_id) {
-                $variantId = (int) $productRequest->product_variant_id;
-            } elseif ($scope === 'sell_unit' && $sellUnitId) {
-                $priceSellUnitId = $sellUnitId;
-            }
+            $scope = $data['price_scope'] ?? ($variantId ? 'variant' : 'product');
+            $priceVariantId = ($scope === 'variant' && $variantId) ? $variantId : null;
 
             $price = CustomerProductPrice::query()->firstOrNew([
                 'user_id' => $user->id,
                 'product_id' => $product->id,
-                'product_sell_unit_id' => $priceSellUnitId,
-                'product_variant_id' => $variantId,
+                'product_variant_id' => $priceVariantId,
             ]);
 
             $price->price = (float) $data['price'];
@@ -111,7 +102,7 @@ class B2BProductRequestController extends Controller
         $productRequest->resolved_at = now();
         $productRequest->save();
 
-        return back()->with('status', 'Request approved and product/unit terms are available for the customer account.');
+        return back()->with('status', 'Request approved and product/variant terms are available for the customer account.');
     }
 
     public function reject(Request $request, B2BProductRequest $productRequest)
@@ -129,19 +120,16 @@ class B2BProductRequestController extends Controller
         return back()->with('status', 'Request rejected.');
     }
 
-    protected function validatedSellUnitId(B2BProductRequest $productRequest): ?int
+    protected function validatedVariantId(B2BProductRequest $productRequest): ?int
     {
-        if (! $productRequest->product_sell_unit_id) {
+        if (! $productRequest->product_variant_id) {
             return null;
         }
 
-        $sellUnit = ProductSellUnit::query()
-            ->where('id', $productRequest->product_sell_unit_id)
-            ->where('product_id', $productRequest->product_id)
-            ->where('is_active', true)
-            ->where('is_b2b_visible', true)
-            ->first();
+        $variant = $productRequest->productVariant;
 
-        return $sellUnit ? (int) $sellUnit->id : null;
+        return $variant && (int) $variant->product_id === (int) $productRequest->product_id
+            ? (int) $variant->id
+            : null;
     }
 }

@@ -72,15 +72,32 @@
 
             <div>
                 <label class="block text-[10px] font-medium text-gray-600 dark:text-gray-300">
-                    Type
+                    Storefront
                 </label>
                 <select
                     name="type"
                     class="mt-1 w-32 rounded border border-gray-300 dark:border-gray-700 bg-white dark:bg-gray-900 px-2 py-1.5 text-xs focus:outline-none focus:ring-1 focus:ring-gray-400 dark:focus:ring-gray-500"
                 >
                     <option value="">All</option>
-                    <option value="simple" @selected(request('type') === 'simple')>Simple</option>
-                    <option value="variable" @selected(request('type') === 'variable')>Variant</option>
+                    <option value="simple" @selected(request('type') === 'simple')>Direct / Physical</option>
+                    <option value="variable" @selected(request('type') === 'variable')>Variant choice</option>
+                </select>
+            </div>
+
+            <div>
+                <label class="block text-[10px] font-medium text-gray-600 dark:text-gray-300">
+                    Product model
+                </label>
+                <select
+                    name="model"
+                    class="mt-1 w-44 rounded border border-gray-300 dark:border-gray-700 bg-white dark:bg-gray-900 px-2 py-1.5 text-xs focus:outline-none focus:ring-1 focus:ring-gray-400 dark:focus:ring-gray-500"
+                >
+                    <option value="">All</option>
+                    <option value="simple" @selected(request('model') === 'simple')>Simple Products</option>
+                    <option value="variable_pack" @selected(request('model') === 'variable_pack')>Variant Choice Products</option>
+                    <option value="catchweight" @selected(request('model') === 'catchweight')>Catchweight Products</option>
+                    <option value="produced" @selected(request('model') === 'produced')>Produced Products</option>
+                    <option value="raw_source" @selected(request('model') === 'raw_source')>Raw Source Products</option>
                 </select>
             </div>
 
@@ -116,7 +133,7 @@
                     <tr class="text-[11px] uppercase text-gray-500 dark:text-gray-400">
                         <th class="px-3 py-2 text-left">Name</th>
                         <th class="px-3 py-2 text-left">SKU</th>
-                        <th class="px-3 py-2 text-left">Type</th>
+                        <th class="px-3 py-2 text-left">Storefront</th>
                         <th class="px-3 py-2 text-right">Price (₹)</th>
                         <th class="px-3 py-2 text-right">Stock</th>
                         <th class="px-3 py-2 text-left">Vendor</th>
@@ -147,11 +164,43 @@
                                     </div>
                                 @endif
 
-                                @if($product->variants()->count() > 0)
+                                @php
+                                    $packType = (string) ($product->pack_type ?? 'quantity');
+                                    $isRawSource = (int) ($product->produces_count ?? 0) > 0;
+                                    $isProduced = (int) ($product->produced_from_count ?? 0) > 0;
+                                    $modelLabel = (string) ($product->type ?? 'simple') === 'variable'
+                                        ? 'Variable Pack'
+                                        : ($packType === 'variable_weight' || (string)($product->sell_unit ?? '') === 'kg' ? 'Catchweight' : 'Simple');
+                                @endphp
+
+                                <div class="mt-1 flex flex-wrap gap-1">
+                                    <span class="inline-flex items-center rounded-full bg-gray-100 dark:bg-gray-800 px-2 py-0.5 text-[10px] text-gray-600 dark:text-gray-300">
+                                        {{ $modelLabel }}
+                                    </span>
+                                    @if($isProduced)
+                                        <span class="inline-flex items-center rounded-full bg-indigo-50 dark:bg-indigo-900/30 px-2 py-0.5 text-[10px] text-indigo-700 dark:text-indigo-300">
+                                            Produced Product
+                                        </span>
+                                    @endif
+                                    @if($isRawSource)
+                                        <span class="inline-flex items-center rounded-full bg-amber-50 dark:bg-amber-900/30 px-2 py-0.5 text-[10px] text-amber-700 dark:text-amber-300">
+                                            Raw Source Product
+                                        </span>
+                                    @endif
+                                </div>
+
+                                @if($product->producedFromProducts->isNotEmpty())
+                                    <div class="mt-1 text-[10px] text-gray-500 dark:text-gray-400">
+                                        ↳ Produced from:
+                                        {{ $product->producedFromProducts->pluck('name')->take(3)->implode(', ') }}{{ $product->producedFromProducts->count() > 3 ? ' +' . ($product->producedFromProducts->count() - 3) : '' }}
+                                    </div>
+                                @endif
+
+                                @if((int)($product->variants_count ?? 0) > 0)
                                     <div class="mt-1 text-[11px]">
                                         <a href="{{ route('admin.products.variants.index', $product) }}"
                                         class="text-gray-500 hover:text-gray-800 dark:text-gray-400 dark:hover:text-gray-200">
-                                            {{ $product->variants()->count() }} variant(s)
+                                            {{ (int)($product->variants_count ?? 0) }} variant(s)
                                         </a>
                                     </div>
                                 @else
@@ -185,8 +234,14 @@
                                 {{ $product->sku ?: '—' }}
                             </td>
                             <td class="px-3 py-2 align-top text-gray-700 dark:text-gray-300">
+                                @php
+                                    $packType = (string) ($product->pack_type ?? 'quantity');
+                                    $typeLabel = (string) ($product->type ?? 'simple') === 'variable'
+                                        ? 'Variable choice'
+                                        : ($packType === 'variable_weight' || (string)($product->sell_unit ?? '') === 'kg' ? 'Physical choice' : 'Direct buy');
+                                @endphp
                                 <span class="rounded-full border border-gray-200 dark:border-gray-700 px-2 py-0.5 text-[11px]">
-                                    {{ ucfirst($product->type) }}
+                                    {{ $typeLabel }}
                                 </span>
                             </td>
                             <td class="px-3 py-2 align-top text-right">

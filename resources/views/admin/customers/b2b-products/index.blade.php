@@ -13,7 +13,7 @@
                 B2B Catalog: {{ $user->name }}
             </h1>
             <p class="text-[11px] text-gray-500 dark:text-gray-400">
-                Assign product-level access or specific sellable units such as 10pc pack, 20pc pack, or box. MOQ and price can vary per option.
+                Assign product-level access or specific pack variants such as 10pc pack, 20pc pack, or box. MOQ and price can vary per option.
             </p>
         </div>
 
@@ -48,7 +48,7 @@
             <thead class="bg-gray-50 dark:bg-gray-950/40">
                 <tr class="text-left text-gray-600 dark:text-gray-300">
                     <th class="px-3 py-2 font-medium">Product</th>
-                    <th class="px-3 py-2 font-medium">Sellable unit</th>
+                    <th class="px-3 py-2 font-medium">Variant / scope</th>
                     <th class="px-3 py-2 font-medium">MOQ</th>
                     <th class="px-3 py-2 font-medium">Price</th>
                     <th class="px-3 py-2 font-medium">Active</th>
@@ -58,7 +58,7 @@
             <tbody class="divide-y divide-gray-100 dark:divide-gray-800">
                 @forelse($rows as $row)
                     @php
-                        $price = $priceOverrides->get($row->product_id . '|' . ((int)($row->product_sell_unit_id ?? 0)));
+                        $price = $priceOverrides->get($row->product_id . '|' . ((int)($row->product_variant_id ?? 0)));
                     @endphp
                     <tr class="hover:bg-gray-50 dark:hover:bg-gray-900/40">
                         <td class="px-3 py-2 text-gray-900 dark:text-gray-50">
@@ -68,9 +68,11 @@
                             @endif
                         </td>
                         <td class="px-3 py-2 text-gray-700 dark:text-gray-200">
-                            @if($row->sellUnit)
-                                <div class="font-medium">{{ $row->sellUnit->display_label }}</div>
-                                <div class="text-[10px] text-gray-400">{{ $row->sellUnit->pricing_unit }}</div>
+                            @if($row->productVariant)
+                                <div class="font-medium">{{ $row->productVariant->name ?: ($row->productVariant->sku ?: ('Variant #' . $row->product_variant_id)) }}</div>
+                                @if($row->productVariant->sku)
+                                    <div class="text-[10px] text-gray-400">{{ $row->productVariant->sku }}</div>
+                                @endif
                             @else
                                 <span class="text-gray-400">Product-level</span>
                             @endif

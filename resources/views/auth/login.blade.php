@@ -51,12 +51,6 @@
                 </p>
             </div>
 
-            @if(session('status'))
-                <div class="rounded-sm border border-emerald-300 bg-emerald-50 px-3 py-2 text-[11px] text-emerald-800">
-                    {{ session('status') }}
-                </div>
-            @endif
-
             @if($errors->any())
                 <div class="rounded-sm border border-red-300 bg-red-50 px-3 py-2 text-[11px] text-red-800">
                     <ul class="list-disc pl-4 space-y-0.5">

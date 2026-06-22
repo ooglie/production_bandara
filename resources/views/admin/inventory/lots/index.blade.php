@@ -16,7 +16,7 @@
                 Inventory Lots
             </h1>
             <p class="text-[11px] text-gray-500 dark:text-gray-400">
-                Received batches from vendor invoices. Use these lots to produce blocks/slices/repacks.
+                Received batches from vendor invoices. Use these lots as source stock for Transform Stock.
             </p>
         </div>
 
@@ -24,7 +24,7 @@
             @if($has('admin.inventory.packs.create'))
                 <a href="{{ route('admin.inventory.packs.create') }}"
                    class="inline-flex items-center rounded-full border border-gray-300 dark:border-gray-700 px-3 py-1 text-[11px] font-medium text-gray-700 dark:text-gray-200 hover:bg-gray-50 dark:hover:bg-gray-800">
-                    Create packs
+                    Transform stock
                 </a>
             @endif
             @if($has('admin.production.create'))
@@ -135,13 +135,13 @@
                             @if($has('admin.inventory.packs.create') && ($lot->can_repack ?? false) && ($lot->lot_status ?? 'available') === 'available')
                                 <a href="{{ route('admin.inventory.packs.create', ['source_inventory_lot_id' => $lot->id]) }}"
                                    class="text-[11px] px-3 py-1 rounded-full border border-gray-300 dark:border-gray-700 hover:bg-gray-100 dark:hover:bg-gray-800">
-                                    Create packs
+                                    Transform stock
                                 </a>
                             @endif
                             @if($has('admin.production.create'))
                                 <a href="{{ route('admin.production.create', ['lot_id' => $lot->id]) }}"
                                    class="text-[11px] px-3 py-1 rounded-full border border-gray-300 dark:border-gray-700 hover:bg-gray-100 dark:hover:bg-gray-800">
-                                    Produce / Repack
+                                    Production
                                 </a>
                             @endif
                             @if(($mode === 'pieces') && $has('admin.inventory.lots.pieces.index'))

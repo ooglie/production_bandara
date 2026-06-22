@@ -27,6 +27,7 @@
     }
 
     $defaultPackType = old('pack_type', $variant->pack_type ?? 'quantity');
+    $defaultCustomerVisibility = old('customer_visibility', $variant->customer_visibility ?? 'all');
 
     $variantB2BPriceInput = old('standard_b2b_price');
     if ($variantB2BPriceInput === null) {
@@ -88,7 +89,7 @@
         </div>
 
         <div class="rounded-sm border border-amber-200 dark:border-amber-900/60 bg-amber-50 dark:bg-amber-950/20 px-3 py-2 text-[11px] text-amber-800 dark:text-amber-200">
-            Use variants only for true customer choices such as Dimsum 10 pcs / 20 pcs. Do not create variants for vendor lots, pork belly pieces, or slab weights.
+            Use variants only for true customer choices such as Dimsum 10/20/100 pcs or Prawns Jumbo 500g / Jumbo 1kg. Do not create variants for vendor lots, pork belly pieces, or slab weights.
         </div>
 
         <div class="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
@@ -195,6 +196,24 @@
                     class="mt-1 w-full rounded-sm border border-gray-300 dark:border-gray-700 bg-white dark:bg-gray-900 px-2 py-1.5 text-sm focus:outline-none focus:ring-1 focus:ring-gray-400 dark:focus:ring-gray-500"
                 >
                 @error('standard_b2b_min_order_quantity')
+                    <p class="mt-1 text-[11px] text-red-600">{{ $message }}</p>
+                @enderror
+            </div>
+
+            <div>
+                <label class="block text-xs font-medium text-gray-700 dark:text-gray-300">
+                    Customer visibility
+                </label>
+                <select
+                    name="customer_visibility"
+                    class="mt-1 w-full rounded-sm border border-gray-300 dark:border-gray-700 bg-white dark:bg-gray-900 px-2 py-1.5 text-sm focus:outline-none focus:ring-1 focus:ring-gray-400 dark:focus:ring-gray-500"
+                >
+                    <option value="all" @selected($defaultCustomerVisibility === 'all')>B2C + B2B</option>
+                    <option value="b2c" @selected($defaultCustomerVisibility === 'b2c')>B2C only</option>
+                    <option value="b2b" @selected($defaultCustomerVisibility === 'b2b')>B2B only</option>
+                </select>
+                <p class="mt-1 text-[10px] text-gray-500 dark:text-gray-400">Use B2B only for options such as Box of 12 cheese packs.</p>
+                @error('customer_visibility')
                     <p class="mt-1 text-[11px] text-red-600">{{ $message }}</p>
                 @enderror
             </div>
@@ -317,7 +336,7 @@
             @if($attributeValuesByAttribute->isEmpty())
                 <p class="text-[11px] text-gray-500 dark:text-gray-400">
                     No attributes configured for this product.
-                    Set attribute values on the product first.
+                    Set attribute values on the product first. For two-level products such as Prawns, add attributes like Size and Pack Size, then assign both values to each variant.
                 </p>
             @else
                 <div class="space-y-3 text-xs">

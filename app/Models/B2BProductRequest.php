@@ -14,7 +14,6 @@ class B2BProductRequest extends Model
     protected $fillable = [
         'user_id',
         'product_id',
-        'product_sell_unit_id',
         'product_variant_id',
         'status',
         'requested_quantity',
@@ -25,7 +24,7 @@ class B2BProductRequest extends Model
     ];
 
     protected $casts = [
-        'product_sell_unit_id' => 'integer',
+        'product_variant_id' => 'integer',
         'requested_quantity' => 'decimal:2',
         'resolved_at' => 'datetime',
     ];
@@ -38,11 +37,6 @@ class B2BProductRequest extends Model
     public function product()
     {
         return $this->belongsTo(Product::class);
-    }
-
-    public function productSellUnit()
-    {
-        return $this->belongsTo(ProductSellUnit::class, 'product_sell_unit_id');
     }
 
     public function productVariant()

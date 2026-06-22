@@ -1,0 +1,382 @@
+/*
+ |--------------------------------------------------------------------------
+ | Bandara frontend messages + confirmation modal
+ |--------------------------------------------------------------------------
+ |
+ | Manage the popup/notification colours here.
+ | Update the CSS variables below to adjust the message palette globally.
+ | No Blade or JavaScript changes are needed for normal colour changes.
+ |
+ */
+
+:root {
+    --bandara-message-page-x: 1rem;
+    --bandara-message-max-width: 80rem;
+    --bandara-message-gap: 0.75rem;
+
+    --bandara-message-bg: #fffaf5;
+    --bandara-message-text: #292524;
+    --bandara-message-muted: #78716c;
+    --bandara-message-border: #eadfd5;
+    --bandara-message-shadow: 0 12px 30px rgba(68, 64, 60, 0.08);
+    --bandara-message-radius: 1rem;
+
+    --bandara-message-success-accent: #2f7d57;
+    --bandara-message-success-bg: #f2f8f4;
+    --bandara-message-success-border: #cfe4d5;
+
+    --bandara-message-error-accent: #a9473f;
+    --bandara-message-error-bg: #fff4f2;
+    --bandara-message-error-border: #f0cdc8;
+
+    --bandara-message-warning-accent: #9a6a20;
+    --bandara-message-warning-bg: #fff8e8;
+    --bandara-message-warning-border: #ecd9a6;
+
+    --bandara-message-info-accent: #6f6258;
+    --bandara-message-info-bg: #fbf7f2;
+    --bandara-message-info-border: #e4d8cc;
+
+    --bandara-confirm-overlay: rgba(41, 37, 36, 0.34);
+    --bandara-confirm-bg: #fffaf5;
+    --bandara-confirm-text: #292524;
+    --bandara-confirm-muted: #78716c;
+    --bandara-confirm-border: #e7d9cc;
+    --bandara-confirm-radius: 1.35rem;
+    --bandara-confirm-shadow: 0 24px 70px rgba(41, 37, 36, 0.22);
+
+    --bandara-confirm-primary-bg: #7a4f34;
+    --bandara-confirm-primary-text: #ffffff;
+    --bandara-confirm-primary-border: #7a4f34;
+    --bandara-confirm-primary-hover-bg: #68432c;
+
+    --bandara-confirm-danger-bg: #9b4a42;
+    --bandara-confirm-danger-text: #ffffff;
+    --bandara-confirm-danger-border: #9b4a42;
+    --bandara-confirm-danger-hover-bg: #863e38;
+
+    --bandara-confirm-warning-bg: #9a6a20;
+    --bandara-confirm-warning-text: #ffffff;
+    --bandara-confirm-warning-border: #9a6a20;
+    --bandara-confirm-warning-hover-bg: #835919;
+
+    --bandara-confirm-cancel-bg: #ffffff;
+    --bandara-confirm-cancel-text: #6f6258;
+    --bandara-confirm-cancel-border: #d6c9bd;
+    --bandara-confirm-cancel-hover-bg: #fbf7f2;
+}
+
+html.dark {
+    --bandara-message-bg: #1c1917;
+    --bandara-message-text: #fafaf9;
+    --bandara-message-muted: #d6d3d1;
+    --bandara-message-border: #44403c;
+    --bandara-message-shadow: 0 12px 34px rgba(0, 0, 0, 0.35);
+
+    --bandara-message-success-bg: #10251a;
+    --bandara-message-success-border: #265b3e;
+    --bandara-message-success-accent: #8ecaa6;
+
+    --bandara-message-error-bg: #2a1515;
+    --bandara-message-error-border: #66302d;
+    --bandara-message-error-accent: #e6aaa4;
+
+    --bandara-message-warning-bg: #2b2110;
+    --bandara-message-warning-border: #6d5524;
+    --bandara-message-warning-accent: #efd08a;
+
+    --bandara-message-info-bg: #211d1a;
+    --bandara-message-info-border: #57504a;
+    --bandara-message-info-accent: #d7cdc5;
+
+    --bandara-confirm-overlay: rgba(0, 0, 0, 0.55);
+    --bandara-confirm-bg: #1c1917;
+    --bandara-confirm-text: #fafaf9;
+    --bandara-confirm-muted: #d6d3d1;
+    --bandara-confirm-border: #44403c;
+
+    --bandara-confirm-cancel-bg: #1c1917;
+    --bandara-confirm-cancel-text: #e7e5e4;
+    --bandara-confirm-cancel-border: #57534e;
+    --bandara-confirm-cancel-hover-bg: #292524;
+}
+
+html.bandara-confirm-open {
+    overflow: hidden;
+}
+
+.bandara-message-root {
+    width: 100%;
+    max-width: var(--bandara-message-max-width);
+    margin: 0 auto;
+    padding: 0 var(--bandara-message-page-x);
+}
+
+.bandara-message {
+    display: block;
+    width: 100%;
+    margin-top: var(--bandara-message-gap);
+    border: 1px solid var(--bandara-message-border);
+    border-left-width: 4px;
+    border-radius: var(--bandara-message-radius);
+    background: var(--bandara-message-bg);
+    color: var(--bandara-message-text);
+    box-shadow: var(--bandara-message-shadow);
+    padding: 0.75rem;
+    transform: translateY(0);
+    opacity: 1;
+    transition: opacity 180ms ease, transform 180ms ease;
+}
+
+.bandara-message.is-removing {
+    opacity: 0;
+    transform: translateY(-4px);
+}
+
+.bandara-message--success {
+    background: var(--bandara-message-success-bg);
+    border-color: var(--bandara-message-success-border);
+    border-left-color: var(--bandara-message-success-accent);
+}
+
+.bandara-message--error {
+    background: var(--bandara-message-error-bg);
+    border-color: var(--bandara-message-error-border);
+    border-left-color: var(--bandara-message-error-accent);
+}
+
+.bandara-message--warning {
+    background: var(--bandara-message-warning-bg);
+    border-color: var(--bandara-message-warning-border);
+    border-left-color: var(--bandara-message-warning-accent);
+}
+
+.bandara-message--info {
+    background: var(--bandara-message-info-bg);
+    border-color: var(--bandara-message-info-border);
+    border-left-color: var(--bandara-message-info-accent);
+}
+
+.bandara-message__row {
+    display: flex;
+    align-items: flex-start;
+    gap: 0.75rem;
+}
+
+.bandara-message__icon {
+    display: flex;
+    flex: 0 0 auto;
+    align-items: center;
+    justify-content: center;
+    width: 1.75rem;
+    height: 1.75rem;
+    margin-top: 0.125rem;
+    border-radius: 999px;
+    font-size: 0.7rem;
+    font-weight: 700;
+    background: rgba(255, 255, 255, 0.62);
+    border: 1px solid currentColor;
+}
+
+.bandara-message--success .bandara-message__icon { color: var(--bandara-message-success-accent); }
+.bandara-message--error .bandara-message__icon { color: var(--bandara-message-error-accent); }
+.bandara-message--warning .bandara-message__icon { color: var(--bandara-message-warning-accent); }
+.bandara-message--info .bandara-message__icon { color: var(--bandara-message-info-accent); }
+
+.bandara-message__content {
+    min-width: 0;
+    flex: 1 1 auto;
+}
+
+.bandara-message__title {
+    font-size: 0.75rem;
+    line-height: 1rem;
+    font-weight: 700;
+}
+
+.bandara-message__body {
+    margin-top: 0.125rem;
+    font-size: 0.72rem;
+    line-height: 1rem;
+    color: var(--bandara-message-muted);
+}
+
+.bandara-message__close {
+    appearance: none;
+    border: 0;
+    background: transparent;
+    color: var(--bandara-message-muted);
+    cursor: pointer;
+    border-radius: 999px;
+    font-size: 1rem;
+    line-height: 1;
+    padding: 0.25rem 0.45rem;
+    opacity: 0.75;
+}
+
+.bandara-message__close:hover,
+.bandara-message__close:focus {
+    opacity: 1;
+    outline: none;
+    background: rgba(120, 113, 108, 0.12);
+}
+
+.bandara-confirm.hidden {
+    display: none;
+}
+
+.bandara-confirm {
+    position: fixed;
+    inset: 0;
+    z-index: 100001;
+    display: none;
+    align-items: center;
+    justify-content: center;
+    padding: 1.5rem 1rem;
+}
+
+.bandara-confirm.is-open {
+    display: flex;
+}
+
+.bandara-confirm__overlay {
+    position: absolute;
+    inset: 0;
+    background: var(--bandara-confirm-overlay);
+    backdrop-filter: blur(1px);
+}
+
+.bandara-confirm__panel {
+    position: relative;
+    width: 100%;
+    max-width: 24rem;
+    border-radius: var(--bandara-confirm-radius);
+    border: 1px solid var(--bandara-confirm-border);
+    background: var(--bandara-confirm-bg);
+    color: var(--bandara-confirm-text);
+    box-shadow: var(--bandara-confirm-shadow);
+    padding: 1.25rem;
+}
+
+.bandara-confirm__body {
+    display: flex;
+    align-items: flex-start;
+    gap: 0.75rem;
+}
+
+.bandara-confirm__icon {
+    display: flex;
+    flex: 0 0 auto;
+    align-items: center;
+    justify-content: center;
+    width: 2.25rem;
+    height: 2.25rem;
+    margin-top: 0.125rem;
+    border-radius: 999px;
+    background: var(--bandara-message-info-bg);
+    color: var(--bandara-message-info-accent);
+    border: 1px solid var(--bandara-message-info-border);
+    font-weight: 700;
+}
+
+.bandara-confirm__content {
+    min-width: 0;
+    flex: 1 1 auto;
+}
+
+.bandara-confirm__title {
+    margin: 0;
+    font-size: 0.9rem;
+    line-height: 1.25rem;
+    font-weight: 700;
+}
+
+.bandara-confirm__message {
+    margin: 0.25rem 0 0;
+    font-size: 0.78rem;
+    line-height: 1.3rem;
+    color: var(--bandara-confirm-muted);
+}
+
+.bandara-confirm__actions {
+    display: flex;
+    justify-content: flex-end;
+    gap: 0.5rem;
+    margin-top: 1.25rem;
+}
+
+.bandara-confirm__button {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    min-height: 2.25rem;
+    border-radius: 999px;
+    border: 1px solid transparent;
+    padding: 0.5rem 1rem;
+    font-size: 0.75rem;
+    line-height: 1rem;
+    font-weight: 700;
+    cursor: pointer;
+    transition: background-color 150ms ease, border-color 150ms ease, transform 150ms ease;
+}
+
+.bandara-confirm__button:active {
+    transform: translateY(1px);
+}
+
+.bandara-confirm__button:focus {
+    outline: 2px solid rgba(122, 79, 52, 0.28);
+    outline-offset: 2px;
+}
+
+.bandara-confirm__button--cancel {
+    background: var(--bandara-confirm-cancel-bg);
+    color: var(--bandara-confirm-cancel-text);
+    border-color: var(--bandara-confirm-cancel-border);
+}
+
+.bandara-confirm__button--cancel:hover {
+    background: var(--bandara-confirm-cancel-hover-bg);
+}
+
+.bandara-confirm__button--confirm {
+    background: var(--bandara-confirm-primary-bg);
+    color: var(--bandara-confirm-primary-text);
+    border-color: var(--bandara-confirm-primary-border);
+}
+
+.bandara-confirm__button--confirm:hover {
+    background: var(--bandara-confirm-primary-hover-bg);
+}
+
+.bandara-confirm__button--danger {
+    background: var(--bandara-confirm-danger-bg);
+    color: var(--bandara-confirm-danger-text);
+    border-color: var(--bandara-confirm-danger-border);
+}
+
+.bandara-confirm__button--danger:hover {
+    background: var(--bandara-confirm-danger-hover-bg);
+}
+
+.bandara-confirm__button--warning {
+    background: var(--bandara-confirm-warning-bg);
+    color: var(--bandara-confirm-warning-text);
+    border-color: var(--bandara-confirm-warning-border);
+}
+
+.bandara-confirm__button--warning:hover {
+    background: var(--bandara-confirm-warning-hover-bg);
+}
+
+@media (min-width: 640px) {
+    :root {
+        --bandara-message-page-x: 1.5rem;
+    }
+}
+
+@media (min-width: 1024px) {
+    :root {
+        --bandara-message-page-x: 2rem;
+    }
+}

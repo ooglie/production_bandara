@@ -14,7 +14,6 @@ class ProductVariant extends Model
 
     protected $fillable = [
         'product_id',
-        'product_sell_unit_id',
         'barcode',
         'sku',
         'name',
@@ -29,6 +28,7 @@ class ProductVariant extends Model
         'mrp_price',
         'standard_b2b_price',
         'standard_b2b_min_order_quantity',
+        'customer_visibility',
         'pricing_unit',
         'is_active',
     ];
@@ -45,7 +45,7 @@ class ProductVariant extends Model
         'mrp_price' => 'float',
         'standard_b2b_price' => 'float',
         'standard_b2b_min_order_quantity' => 'float',
-        'product_sell_unit_id' => 'integer',
+        'customer_visibility' => 'string',
     ];
 
     public function product(): BelongsTo
@@ -53,10 +53,14 @@ class ProductVariant extends Model
         return $this->belongsTo(Product::class);
     }
 
-    public function sellUnit(): BelongsTo
+    public function isVisibleToCustomerType(?string $customerType): bool
     {
-        return $this->belongsTo(ProductSellUnit::class, 'product_sell_unit_id');
+        $visibility = (string) ($this->customer_visibility ?: 'all');
+        $customerType = $customerType === 'b2b' ? 'b2b' : 'b2c';
+
+        return $visibility === 'all' || $visibility === $customerType;
     }
+
 
     /**
      * Selected product_attribute_values assigned to this variant.

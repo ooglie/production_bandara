@@ -77,6 +77,7 @@ class ProductRequest extends FormRequest
 
             'category_ids' => $normalizeArrayInts($this->input('category_ids', [])),
             'attribute_value_ids' => $normalizeArrayInts($this->input('attribute_value_ids', [])),
+            'source_product_ids' => $normalizeArrayInts($this->input('source_product_ids', [])),
         ]);
     }
 
@@ -90,9 +91,15 @@ class ProductRequest extends FormRequest
         $isDraft = $this->isDraftSave();
         $isVariable = (string) $this->input('type', 'simple') === 'variable';
         $packType = (string) $this->input('pack_type', 'quantity');
-        $productWeightRules = $isDraft || $isVariable || $packType === 'fixed_piece_pack'
-            ? ['nullable', 'numeric', 'min:0']
-            : ['required', 'numeric', 'gt:0'];
+        // Product weight is only mandatory when the product itself is a fixed-weight finished pack.
+        // Catchweight/physical-choice products use the exact weights saved on inventory pieces/lots,
+        // and variable products keep pack weight on their variants.
+        $productWeightRules = (! $isDraft && ! $isVariable && $packType === 'fixed_weight_pack')
+            ? ['required', 'numeric', 'gt:0']
+            : ['nullable', 'numeric', 'min:0'];
+
+        // Pieces-per-pack is only mandatory when the product itself is a single fixed-piece pack.
+        // Dimsum/Prawns-style variant products keep pieces/pack metadata on variants.
         $piecesPerPackRules = (! $isDraft && ! $isVariable && $packType === 'fixed_piece_pack')
             ? ['required', 'numeric', 'gt:0']
             : ['nullable', 'numeric', 'min:0'];
@@ -149,6 +156,9 @@ class ProductRequest extends FormRequest
             'attribute_value_ids' => ['nullable', 'array'],
             'attribute_value_ids.*' => ['integer', 'exists:attribute_values,id'],
 
+            'source_product_ids' => ['nullable', 'array'],
+            'source_product_ids.*' => ['integer', 'exists:products,id', Rule::notIn(array_filter([(int) ($productId ?? 0)]))],
+
             'stock_quantity' => ['nullable', 'numeric', 'min:0'],
             'low_stock_threshold' => ['nullable', 'numeric', 'min:0'],
             'min_order_quantity' => ['nullable', 'numeric', 'min:0'],
@@ -197,8 +207,8 @@ class ProductRequest extends FormRequest
             'hsn_code_id.required' => 'HSN is required.',
             'gst_rate.required' => 'GST rate is required.',
 
-            'product_weight.required' => 'Product weight / pack weight is required before activating/publishing this product.',
-            'product_weight.gt' => 'Product weight / pack weight must be greater than zero before activation.',
+            'product_weight.required' => 'Product / pack weight is required only for fixed-weight finished packs before activation.',
+            'product_weight.gt' => 'Product / pack weight must be greater than zero for fixed-weight finished packs.',
             'pieces_per_pack.required' => 'Pieces per pack is required for fixed piece pack products.',
             'pieces_per_pack.gt' => 'Pieces per pack must be greater than zero.',
 
@@ -207,6 +217,7 @@ class ProductRequest extends FormRequest
 
             'category_ids.required' => 'Please select at least one category.',
             'category_ids.min' => 'Please select at least one category.',
+            'source_product_ids.*.not_in' => 'A product cannot be produced from itself.',
 
             'slug.unique' => 'This slug has already been taken.',
 

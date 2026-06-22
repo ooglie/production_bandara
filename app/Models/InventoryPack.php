@@ -15,7 +15,6 @@ class InventoryPack extends Model
         'source_inventory_piece_id',
         'product_id',
         'product_variant_id',
-        'product_sell_unit_id',
         'pack_code',
         'pack_no',
         'pack_quantity',
@@ -94,10 +93,6 @@ class InventoryPack extends Model
         return $this->belongsTo(ProductVariant::class);
     }
 
-    public function sellUnit(): BelongsTo
-    {
-        return $this->belongsTo(ProductSellUnit::class, 'product_sell_unit_id');
-    }
 
     public function soldOrder(): BelongsTo
     {

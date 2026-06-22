@@ -11,7 +11,6 @@ class CustomerProductPrice extends Model
     protected $fillable = [
         'user_id',
         'product_id',
-        'product_sell_unit_id',
         'product_variant_id',
         'price',
         'currency',
@@ -27,7 +26,7 @@ class CustomerProductPrice extends Model
         'is_active'  => 'boolean',
         'valid_from' => 'date',
         'valid_to'   => 'date',
-        'product_sell_unit_id' => 'integer',
+        'product_variant_id' => 'integer',
     ];
 
     public function user()
@@ -38,11 +37,6 @@ class CustomerProductPrice extends Model
     public function product()
     {
         return $this->belongsTo(Product::class);
-    }
-
-    public function sellUnit()
-    {
-        return $this->belongsTo(ProductSellUnit::class, 'product_sell_unit_id');
     }
 
     public function productVariant()

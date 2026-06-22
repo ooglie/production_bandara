@@ -216,7 +216,7 @@
                 @if($inventoryPacksUrl)
                     <a href="{{ $inventoryPacksUrl }}"
                        class="block px-2 py-1.5 rounded-md hover:bg-gray-100 dark:hover:bg-gray-800">
-                        Inventory Packs
+                        Transform Stock
                     </a>
                 @endif
 

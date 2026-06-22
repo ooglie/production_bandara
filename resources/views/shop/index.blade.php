@@ -284,13 +284,6 @@
         @endif
     </div>
 
-    {{-- Status message --}}
-    @if(session('status'))
-        <div class="rounded border border-emerald-300 bg-emerald-50 px-3 py-2 text-[11px] text-emerald-800">
-            {{ session('status') }}
-        </div>
-    @endif
-
     {{-- Results --}}
     
     @if($products->isEmpty())

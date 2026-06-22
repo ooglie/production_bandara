@@ -239,7 +239,7 @@ class CheckoutController extends Controller
             $terms = app(\App\Services\B2BTermsService::class);
 
             foreach ($items as $it) {
-                if ($it->product && ! $terms->canBuy($user, $it->product, $it->productVariant?->sellUnit, $it->productVariant)) {
+                if ($it->product && ! $terms->canBuy($user, $it->product, $it->productVariant)) {
                     return $this->b2bCartBlockedRedirect()
                         ->withErrors(['cart' => ($it->product->name ?? 'This product') . ' does not have a configured B2B price. Please contact the team before buying.']);
                 }
@@ -253,7 +253,7 @@ class CheckoutController extends Controller
                         continue;
                     }
 
-                    $min = (float) $terms->minOrderQty($user, $it->product, $it->productVariant?->sellUnit, $it->productVariant);
+                    $min = (float) $terms->minOrderQty($user, $it->product, $it->productVariant);
                     if ($min <= 0) {
                         $min = 1.0;
                     }
@@ -818,11 +818,17 @@ class CheckoutController extends Controller
                 }
             }
 
-            if ($variant && (bool) ($variant->manage_stock ?? false)) {
-                $available = (float) ($variant->stock_quantity ?? 0);
+            if ($variant) {
+                if (! $this->variantVisibleToUser($variant, request()->user())) {
+                    return 'One of the selected product options is no longer available for your customer type.';
+                }
 
-                if (($isKg && $qty > round($available, 2)) || (! $isKg && $qty > floor($available))) {
-                    return 'Stock not available for ' . $product->name . '.';
+                if ($variant->stock_quantity !== null || (bool) ($variant->manage_stock ?? false)) {
+                    $available = (float) ($variant->stock_quantity ?? 0);
+
+                    if (($isKg && $qty > round($available, 2)) || (! $isKg && $qty > floor($available))) {
+                        return 'Stock not available for ' . $product->name . '.';
+                    }
                 }
 
                 continue;
@@ -838,6 +844,23 @@ class CheckoutController extends Controller
         }
 
         return null;
+    }
+
+    protected function variantVisibleToUser(?ProductVariant $variant, ?\App\Models\User $user): bool
+    {
+        if (! $variant) {
+            return true;
+        }
+
+        $customerType = $user && (($user->customer_type ?? 'b2c') === 'b2b') ? 'b2b' : 'b2c';
+
+        if (method_exists($variant, 'isVisibleToCustomerType')) {
+            return $variant->isVisibleToCustomerType($customerType);
+        }
+
+        $visibility = (string) ($variant->customer_visibility ?? 'all');
+
+        return $visibility === 'all' || $visibility === $customerType;
     }
 
     /**

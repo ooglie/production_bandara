@@ -64,12 +64,6 @@
         </div>
     </div>
 
-    @if(session('status'))
-        <div class="rounded-sm border border-emerald-300 bg-emerald-50 px-3 py-2 text-[11px] text-emerald-800">
-            {{ session('status') }}
-        </div>
-    @endif
-
     @if(!empty($pricingUpdatedCount) && $pricingUpdatedCount > 0)
         <div class="rounded-sm border border-gray-200 dark:border-gray-800 bg-white dark:bg-gray-900 px-3 py-2 text-[11px] text-gray-700 dark:text-gray-200">
             Prices were updated for {{ $pricingUpdatedCount }} item(s) based on latest product pricing.
@@ -155,7 +149,10 @@
                                 $unitPrice = (float) ($representative->unit_price ?? 0);
                                 $lineTotal = (float) $rowGroup->sum(fn ($it) => (float) ($it->total ?? 0));
 
-                                $packWeight = (float)($product?->product_weight ?? 0);
+                                $packWeight = (float)($variant?->product_weight ?? $product?->product_weight ?? 0);
+                                $pricingUnitForRow = strtolower((string) ($variant?->pricing_unit ?? ($product?->pricing_unit ?? ($isKg ? 'kg' : 'pack'))));
+                                $pricingUnitForRow = in_array($pricingUnitForRow, ['kg', 'pack'], true) ? $pricingUnitForRow : 'pack';
+                                $fixedWeightKgUnit = !$isPieceGroup && $pricingUnitForRow === 'kg' && $packWeight > 0;
 
                                 if ($isPieceGroup) {
                                     $weightPerPiece = (float) ($pieceMeta['weight_kg'] ?? 0);
@@ -166,7 +163,11 @@
                                 } else {
                                     $qtyRaw = (float) ($representative->quantity ?? 1);
 
-                                    if ($isKg) {
+                                    if ($fixedWeightKgUnit) {
+                                        $qtyInt = (int) max(round($qtyRaw), 1);
+                                        $qtyDisplay = $qtyInt;
+                                        $itemWeight = (float) ($representative->item_weight ?? ($qtyInt * $packWeight));
+                                    } elseif ($isKg) {
                                         $qtyDisplay = $fmtQty($qtyRaw);
                                         $itemWeight = (float) ($representative->item_weight ?? $qtyRaw);
                                     } else {
@@ -186,15 +187,14 @@
                                 $available = null;
 
                                 if (!$isPieceGroup) {
-                                    if ($variant && (bool)($variant->manage_stock ?? false)) {
-                                        $manageStock = true;
-                                        $available = (float)($variant->stock_quantity ?? 0);
+                                    if ($variant) {
+                                        if ($variant->stock_quantity !== null || (bool)($variant->manage_stock ?? false)) {
+                                            $manageStock = true;
+                                            $available = (float)($variant->stock_quantity ?? 0);
+                                        }
                                     } elseif ($product && (bool)($product->manage_stock ?? false)) {
                                         $manageStock = true;
                                         $available = (float)($product->stock_quantity ?? 0);
-                                    } elseif ($variant && $variant->stock_quantity !== null && (float)$variant->stock_quantity > 0) {
-                                        $manageStock = true;
-                                        $available = (float) $variant->stock_quantity;
                                     } elseif ($product && $product->stock_quantity !== null && (float)$product->stock_quantity > 0) {
                                         $manageStock = true;
                                         $available = (float) $product->stock_quantity;
@@ -204,21 +204,21 @@
                                 $maxQty = null;
                                 if ($manageStock) {
                                     $available = max((float)$available, 0);
-                                    $maxQty = $isKg ? round($available, 2) : (float) max((int) floor($available), 0);
+                                    $maxQty = ($isKg && ! $fixedWeightKgUnit) ? round($available, 2) : (float) max((int) floor($available), 0);
                                 }
 
                                 $qtyForMath = $isPieceGroup
                                     ? (float) $groupQty
-                                    : ($isKg ? (float) $representative->quantity : (float) max((int) round((float) $representative->quantity), 1));
+                                    : (($isKg && ! $fixedWeightKgUnit) ? (float) $representative->quantity : (float) max((int) round((float) $representative->quantity), 1));
 
-                                $step = $isKg ? 0.01 : 1;
-                                $minQty = $isKg ? 0.01 : 1;
+                                $step = ($isKg && ! $fixedWeightKgUnit) ? 0.01 : 1;
+                                $minQty = ($isKg && ! $fixedWeightKgUnit) ? 0.01 : 1;
 
                                 $decDisabled = (!$isPieceGroup && ($qtyForMath <= ($minQty + 1e-9)));
-                                $decQty = $isKg
+                                $decQty = ($isKg && ! $fixedWeightKgUnit)
                                     ? round(max($qtyForMath - $step, $minQty), 2)
                                     : (float) max((int) round($qtyForMath - $step), 1);
-                                $incQty = $isKg
+                                $incQty = ($isKg && ! $fixedWeightKgUnit)
                                     ? round($qtyForMath + $step, 2)
                                     : (float) ((int) round($qtyForMath + $step));
 
@@ -240,8 +240,7 @@
                                         $perSlabPrice = round((float) ($representative->total ?? 0) * $displayTaxMultiplier, 2);
                                         $displayLineTotal = round($lineTotal * $displayTaxMultiplier, 2);
                                     } else {
-                                        $pricingUnit = strtolower((string) ($variant?->pricing_unit ?? ($product?->pricing_unit ?? ($isKg ? 'kg' : 'pack'))));
-                                        $displayLineTotal = $pricingUnit === 'kg'
+                                        $displayLineTotal = $pricingUnitForRow === 'kg'
                                             ? round(max((float) $itemWeight, 0) * $displayUnitPrice, 2)
                                             : round($qtyForMath * $displayUnitPrice, 2);
                                     }
@@ -410,23 +409,31 @@
 
                                 <td class="px-3 py-2 whitespace-nowrap text-right">
                                     @if($isPieceGroup)
-                                        <form method="POST" action="{{ $cartRoute('cart.update', $representative->id) }}">
+                                        <form method="POST"
+                                              action="{{ $cartRoute('cart.update', $representative->id) }}"
+                                              data-bandara-confirm="Remove all slabs of this size from cart?"
+                                              data-bandara-confirm-title="Remove slab group?"
+                                              data-bandara-confirm-text="Remove all"
+                                              data-bandara-confirm-variant="danger">
                                             @csrf
                                             @method('PATCH')
                                             <input type="hidden" name="quantity" value="{{ $groupQty }}">
                                             <input type="hidden" name="piece_group_action" value="remove_all">
                                             <button type="submit"
-                                                    onclick="return confirm('Remove all slabs of this size from cart?')"
                                                     class="inline-flex items-center rounded-sm border border-gray-300 dark:border-gray-700 px-3 py-1 text-[10px] hover:bg-gray-100 dark:hover:bg-gray-800">
                                                 Remove all
                                             </button>
                                         </form>
                                     @else
-                                        <form method="POST" action="{{ $cartRoute('cart.destroy', $representative->id) }}">
+                                        <form method="POST"
+                                              action="{{ $cartRoute('cart.destroy', $representative->id) }}"
+                                              data-bandara-confirm="Remove this item from cart?"
+                                              data-bandara-confirm-title="Remove item?"
+                                              data-bandara-confirm-text="Remove"
+                                              data-bandara-confirm-variant="danger">
                                             @csrf
                                             @method('DELETE')
                                             <button type="submit"
-                                                    onclick="return confirm('Remove this item from cart?')"
                                                     class="inline-flex items-center rounded-sm border border-gray-300 dark:border-gray-700 px-3 py-1 text-[10px] hover:bg-gray-100 dark:hover:bg-gray-800">
                                                 Remove
                                             </button>
@@ -614,7 +621,7 @@
                     if (Number.isFinite(max) && max > 0 && Number.isFinite(current) && Number.isFinite(step)) {
                         if ((current + step) > (max + 1e-9)) {
                             e.preventDefault();
-                            alert(LIMITED_MSG);
+                            if (window.BandaraToast) { BandaraToast.warning(LIMITED_MSG, 'Limited stock'); }
                         }
                     }
                 });
@@ -646,7 +653,7 @@
                     }
 
                     if (Number.isFinite(max) && max >= 0 && v > max) {
-                        alert(LIMITED_MSG);
+                        if (window.BandaraToast) { BandaraToast.warning(LIMITED_MSG, 'Limited stock'); }
                         v = max;
                     }
 

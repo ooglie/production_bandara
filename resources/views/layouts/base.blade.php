@@ -10,6 +10,8 @@
 
     @vite(['resources/css/app.css', 'resources/js/app.js'])
 
+    <link rel="stylesheet" href="{{ asset('css/bandara-messages.css') }}?v={{ file_exists(public_path('css/bandara-messages.css')) ? filemtime(public_path('css/bandara-messages.css')) : '1' }}">
+
     <style>
         /* Hide Google UI completely, keep translation engine working */
         body > .skiptranslate {

@@ -10,7 +10,6 @@ class InventoryLot extends Model
         'lot_code',
         'product_id',
         'product_variant_id',
-        'product_sell_unit_id',
         'vendor_id',
         'vendor_invoice_id',
         'vendor_invoice_item_id',
@@ -77,10 +76,6 @@ class InventoryLot extends Model
         return $this->belongsTo(ProductVariant::class);
     }
 
-    public function sellUnit()
-    {
-        return $this->belongsTo(ProductSellUnit::class, 'product_sell_unit_id');
-    }
 
     public function vendor()
     {

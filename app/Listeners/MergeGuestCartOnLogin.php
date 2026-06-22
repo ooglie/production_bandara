@@ -48,14 +48,14 @@ class MergeGuestCartOnLogin
                     continue;
                 }
 
-                if (! $terms->canBuy($user, $item->product, $item->productVariant?->sellUnit, $item->productVariant)) {
+                if (! $terms->canBuy($user, $item->product, $item->productVariant)) {
                     $item->delete();
                     $removed++;
                     continue;
                 }
 
                 // MOQ enforce (only if override exists; default is 1)
-                $min = (float) $terms->minOrderQty($user, $item->product, $item->productVariant?->sellUnit, $item->productVariant);
+                $min = (float) $terms->minOrderQty($user, $item->product, $item->productVariant);
 
                 $qty = (float) $item->quantity;
                 if ($qty < $min) {

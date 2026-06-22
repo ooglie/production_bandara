@@ -72,21 +72,15 @@ class OrderInventoryService
 
     protected function hasInventoryPacksForOrderItem(OrderItem $item): bool
     {
-        $variantId = (int) ($item->product_variant_id ?? 0);
-        $sellUnitId = $this->sellUnitIdForOrderItem($item);
-
         if (! Schema::hasTable('inventory_packs')) {
             return false;
         }
 
-        if ($variantId <= 0 && ! $sellUnitId) {
-            return false;
-        }
+        $variantId = (int) ($item->product_variant_id ?? 0);
 
         return InventoryPack::query()
             ->where('product_id', $item->product_id)
             ->when($variantId > 0, fn ($q) => $q->where('product_variant_id', $variantId), fn ($q) => $q->whereNull('product_variant_id'))
-            ->when($sellUnitId, fn ($q) => $q->where('product_sell_unit_id', $sellUnitId), fn ($q) => $q->whereNull('product_sell_unit_id'))
             ->exists();
     }
 
@@ -232,21 +226,15 @@ class OrderInventoryService
 
     protected function consumeInventoryPacksForSale(OrderItem $item, float $qtyToDeduct): array
     {
-        $variantId = (int) ($item->product_variant_id ?? 0);
-        $sellUnitId = $this->sellUnitIdForOrderItem($item);
-
         if (! Schema::hasTable('inventory_packs')) {
             return ['consumed' => 0, 'pack_ids' => []];
         }
 
-        if ($variantId <= 0 && ! $sellUnitId) {
-            return ['consumed' => 0, 'pack_ids' => []];
-        }
+        $variantId = (int) ($item->product_variant_id ?? 0);
 
         $baseQuery = InventoryPack::query()
             ->where('product_id', $item->product_id)
-            ->when($variantId > 0, fn ($q) => $q->where('product_variant_id', $variantId), fn ($q) => $q->whereNull('product_variant_id'))
-            ->when($sellUnitId, fn ($q) => $q->where('product_sell_unit_id', $sellUnitId), fn ($q) => $q->whereNull('product_sell_unit_id'));
+            ->when($variantId > 0, fn ($q) => $q->where('product_variant_id', $variantId), fn ($q) => $q->whereNull('product_variant_id'));
 
         // Do not block legacy stock that predates the repack layer. Once pack
         // rows exist for this product/variant/unit, sales must consume them too.
@@ -341,27 +329,9 @@ class OrderInventoryService
         return [
             'consumed' => $consumed,
             'pack_ids' => $packIds,
-            'product_sell_unit_id' => $sellUnitId,
         ];
     }
 
-    protected function sellUnitIdForOrderItem(OrderItem $item): ?int
-    {
-        if ($this->hasColumn('order_items', 'product_sell_unit_id') && ! empty($item->product_sell_unit_id)) {
-            return (int) $item->product_sell_unit_id;
-        }
-
-        if (! empty($item->product_variant_id)) {
-            $variant = ProductVariant::query()->find($item->product_variant_id);
-            $sellUnitId = (int) ($variant?->product_sell_unit_id ?? 0);
-
-            if ($sellUnitId > 0) {
-                return $sellUnitId;
-            }
-        }
-
-        return null;
-    }
 
     protected function resolveStandardStockTarget(OrderItem $item)
     {
@@ -664,9 +634,6 @@ class OrderInventoryService
             'created_at'  => now(),
         ];
 
-        if ($this->hasColumn('stock_movements', 'product_sell_unit_id')) {
-            $values['product_sell_unit_id'] = $this->sellUnitIdForOrderItem($item);
-        }
 
         StockMovement::query()->firstOrCreate($attributes, $values);
     }

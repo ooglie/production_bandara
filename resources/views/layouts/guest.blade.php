@@ -22,7 +22,9 @@
 @include('partials.nav.customer')
 <div class="min-h-screen flex flex-col bg-gray-50 dark:bg-gray-950">
     {{-- Page content --}}
-    <main class="flex-1">
+    <main class="flex-1 pt-0 md:pt-14">
+        @include('partials.frontend.messages')
+
         @yield('content')
     </main>
 

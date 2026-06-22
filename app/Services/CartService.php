@@ -135,12 +135,17 @@ class CartService
                     ->firstOrFail();
             }
 
-            if ($isB2B && ! $terms->canBuy($user, $product, $variant?->sellUnit, $variant)) {
+            if ($variant && ! $this->variantVisibleToUser($variant, $user)) {
+                throw new \RuntimeException('This option is not available for your customer type.');
+            }
+
+            if ($isB2B && ! $terms->canBuy($user, $product, $variant)) {
                 throw new \RuntimeException('This product is not available for your account.');
             }
 
             $sellUnit = strtolower((string) ($product->sell_unit ?? 'piece'));
             $isKg = ($sellUnit === 'kg');
+            $usesFixedWeightUnit = $this->usesFixedWeightKgUnit($product, $variant);
 
             $unitPrice = $this->resolveUnitPrice($product, $variant);
 
@@ -158,7 +163,9 @@ class CartService
 
             $qty = (float) $qty;
             if ($qty <= 0) $qty = 1.0;
-            $qty = $isKg ? round(max($qty, 0.01), 2) : (float) max((int) round($qty), 1);
+            $qty = ($isKg && ! $usesFixedWeightUnit)
+                ? round(max($qty, 0.01), 2)
+                : (float) max((int) round($qty), 1);
 
             $newQty = $qty;
             if ($item) {
@@ -166,22 +173,27 @@ class CartService
             }
 
             if ($isB2B) {
-                $min = (float) $terms->minOrderQty($user, $product, $variant?->sellUnit, $variant);
-                if ($min <= 0) $min = $isKg ? 0.01 : 1;
+                $min = (float) $terms->minOrderQty($user, $product, $variant);
+                if ($min <= 0) $min = ($isKg && ! $usesFixedWeightUnit) ? 0.01 : 1;
 
-                $min = $isKg ? round(max($min, 0.01), 2) : (float) max((int) ceil($min), 1);
+                $min = ($isKg && ! $usesFixedWeightUnit)
+                    ? round(max($min, 0.01), 2)
+                    : (float) max((int) ceil($min), 1);
 
                 if ($newQty < $min) {
                     $newQty = $min;
                 }
             }
 
-            $newQty = $isKg ? round($newQty, 2) : (float) max((int) round($newQty), 1);
+            $newQty = ($isKg && ! $usesFixedWeightUnit)
+                ? round($newQty, 2)
+                : (float) max((int) round($newQty), 1);
 
-            [$availableQty, $hasStockLimit] = $this->availableStockFor($product, $variant, $isKg);
+            $stockQuantityIsWeight = $isKg && ! $usesFixedWeightUnit;
+            [$availableQty, $hasStockLimit] = $this->availableStockFor($product, $variant, $stockQuantityIsWeight);
 
             if ($hasStockLimit && $availableQty !== null && $newQty > ($availableQty + 1e-9)) {
-                $label = $isKg
+                $label = $stockQuantityIsWeight
                     ? rtrim(rtrim(number_format($availableQty, 2, '.', ''), '0'), '.')
                     : (string) (int) $availableQty;
 
@@ -426,7 +438,7 @@ class CartService
 
         if (class_exists(\App\Services\PricingService::class)) {
             return (float) app(\App\Services\PricingService::class)
-                ->cartUnitPriceFor($user, $product, $variant, $variant?->sellUnit);
+                ->cartUnitPriceFor($user, $product, $variant);
         }
 
         if ($variant && $variant->price !== null && (float) $variant->price > 0) {
@@ -492,15 +504,23 @@ class CartService
         return round((float) ($product->product_weight ?? 0), 3);
     }
 
+    private function usesFixedWeightKgUnit(Product $product, ?ProductVariant $variant): bool
+    {
+        return $this->resolvePricingUnit($product, $variant) === 'kg'
+            && $this->resolveUnitWeightKg($product, $variant) > 0;
+    }
+
     private function calculateLineWeight(Product $product, ?ProductVariant $variant, float $qty): ?float
     {
-        $sellUnit = strtolower((string) ($product->sell_unit ?? 'piece'));
+        $unitWeightKg = $this->resolveUnitWeightKg($product, $variant);
 
-        if ($sellUnit === 'kg') {
+        if ($this->resolvePricingUnit($product, $variant) === 'kg') {
+            if ($unitWeightKg > 0) {
+                return round($qty * $unitWeightKg, 3);
+            }
+
             return round($qty, 3);
         }
-
-        $unitWeightKg = $this->resolveUnitWeightKg($product, $variant);
 
         return $unitWeightKg > 0
             ? round($qty * $unitWeightKg, 3)
@@ -525,19 +545,35 @@ class CartService
     }
 
 
+    private function variantVisibleToUser(?ProductVariant $variant, ?User $user): bool
+    {
+        if (! $variant) {
+            return true;
+        }
+
+        $customerType = $user && (($user->customer_type ?? 'b2c') === 'b2b') ? 'b2b' : 'b2c';
+
+        if (method_exists($variant, 'isVisibleToCustomerType')) {
+            return $variant->isVisibleToCustomerType($customerType);
+        }
+
+        $visibility = (string) ($variant->customer_visibility ?? 'all');
+
+        return $visibility === 'all' || $visibility === $customerType;
+    }
+
     private function availableStockFor(Product $product, ?ProductVariant $variant, bool $isKg): array
     {
         $available = null;
         $hasLimit = false;
 
-        if ($variant && (bool) ($variant->manage_stock ?? false)) {
-            $available = (float) ($variant->stock_quantity ?? 0);
-            $hasLimit = true;
+        if ($variant) {
+            if ($variant->stock_quantity !== null || (bool) ($variant->manage_stock ?? false)) {
+                $available = (float) ($variant->stock_quantity ?? 0);
+                $hasLimit = true;
+            }
         } elseif ((bool) ($product->manage_stock ?? false)) {
             $available = (float) ($product->stock_quantity ?? 0);
-            $hasLimit = true;
-        } elseif ($variant && $variant->stock_quantity !== null && (float) $variant->stock_quantity > 0) {
-            $available = (float) $variant->stock_quantity;
             $hasLimit = true;
         } elseif ($product->stock_quantity !== null && (float) $product->stock_quantity > 0) {
             $available = (float) $product->stock_quantity;

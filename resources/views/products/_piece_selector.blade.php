@@ -1,7 +1,10 @@
 @php
     $bands = $pieceSelector['bands'] ?? [];
     $showBandChooser = count($bands) > 1;
-    $oldSelectedWeightKg = old('piece_weight_kg');
+    $requestedWeightKg = request()->query('piece_weight_kg', request()->query('weight'));
+    $oldSelectedWeightKg = old('piece_weight_kg', $requestedWeightKg !== null && $requestedWeightKg !== ''
+        ? number_format((float) $requestedWeightKg, 3, '.', '')
+        : null);
     $requestedBand = request()->query('band');
 
     $initialBand = null;

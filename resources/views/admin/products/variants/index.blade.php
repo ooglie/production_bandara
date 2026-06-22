@@ -49,6 +49,7 @@
                         <th class="px-3 py-2 text-left">SKU</th>
                         <th class="px-3 py-2 text-left">Name</th>
                         <th class="px-3 py-2 text-left">Pack setup</th>
+                        <th class="px-3 py-2 text-left">Visibility / attributes</th>
                         <th class="px-3 py-2 text-right">MRP / Price (₹)</th>
                         <th class="px-3 py-2 text-right">Stock</th>
                         <th class="px-3 py-2 text-center">Status</th>
@@ -74,6 +75,25 @@
                                     {{ rtrim(rtrim(number_format((float)($variant->product_weight ?? 0), 3), '0'), '.') }} kg / pack
                                 @else
                                     Quantity pack
+                                @endif
+                            </td>
+                            <td class="px-3 py-2 align-top text-gray-700 dark:text-gray-300">
+                                @php
+                                    $visibility = $variant->customer_visibility ?? 'all';
+                                    $visibilityLabel = $visibility === 'b2b' ? 'B2B only' : ($visibility === 'b2c' ? 'B2C only' : 'B2C + B2B');
+                                    $attributeLabels = collect($variant->attributeValues ?? [])->map(function ($row) {
+                                        $attributeName = $row->attribute?->display_name ?? $row->attribute?->name ?? 'Option';
+                                        $valueName = $row->name ?? $row->attributeValue?->name ?? '';
+                                        return trim($attributeName . ': ' . $valueName);
+                                    })->filter();
+                                @endphp
+                                <span class="inline-flex items-center rounded-full bg-gray-100 dark:bg-gray-800 px-2 py-0.5 text-[10px] text-gray-600 dark:text-gray-300">
+                                    {{ $visibilityLabel }}
+                                </span>
+                                @if($attributeLabels->isNotEmpty())
+                                    <div class="mt-1 text-[10px] text-gray-500 dark:text-gray-400">
+                                        {{ $attributeLabels->implode(' · ') }}
+                                    </div>
                                 @endif
                             </td>
                             <td class="px-3 py-2 align-top text-right text-gray-800 dark:text-gray-100">
@@ -117,7 +137,7 @@
                         </tr>
                     @empty
                         <tr>
-                            <td colspan="7" class="px-3 py-6 text-center text-xs text-gray-500 dark:text-gray-400">
+                            <td colspan="8" class="px-3 py-6 text-center text-xs text-gray-500 dark:text-gray-400">
                                 No variants for this product yet.
                             </td>
                         </tr>

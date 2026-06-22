@@ -189,10 +189,36 @@ class Product extends Model
         return $this->hasMany(ProductVariant::class);
     }
 
-    public function sellUnits()
+    public function sourceTransformations()
     {
-        return $this->hasMany(ProductSellUnit::class)->orderBy('sort_order')->orderBy('name');
+        return $this->hasMany(ProductTransformation::class, 'source_product_id');
     }
+
+    public function targetTransformations()
+    {
+        return $this->hasMany(ProductTransformation::class, 'target_product_id');
+    }
+
+    public function producesProducts()
+    {
+        return $this->belongsToMany(
+            Product::class,
+            'product_transformations',
+            'source_product_id',
+            'target_product_id'
+        )->withPivot(['transformation_type', 'notes'])->withTimestamps();
+    }
+
+    public function producedFromProducts()
+    {
+        return $this->belongsToMany(
+            Product::class,
+            'product_transformations',
+            'target_product_id',
+            'source_product_id'
+        )->withPivot(['transformation_type', 'notes'])->withTimestamps();
+    }
+
 
         public function recipes()
     {

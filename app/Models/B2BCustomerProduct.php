@@ -11,7 +11,7 @@ class B2BCustomerProduct extends Model
     protected $fillable = [
         'user_id',
         'product_id',
-        'product_sell_unit_id',
+        'product_variant_id',
         'min_order_quantity',
         'is_active',
         'created_by_id',
@@ -20,7 +20,7 @@ class B2BCustomerProduct extends Model
 
     protected $casts = [
         'min_order_quantity' => 'decimal:2',
-        'product_sell_unit_id' => 'integer',
+        'product_variant_id' => 'integer',
         'is_active'          => 'boolean',
     ];
 
@@ -34,17 +34,18 @@ class B2BCustomerProduct extends Model
         return $this->belongsTo(Product::class);
     }
 
-    public function sellUnit()
+    public function productVariant()
     {
-        return $this->belongsTo(ProductSellUnit::class, 'product_sell_unit_id');
+        return $this->belongsTo(ProductVariant::class);
     }
 
     public function getAssignmentLabelAttribute(): string
     {
         $product = $this->product?->name ?? ('Product #' . $this->product_id);
 
-        if ($this->sellUnit) {
-            return $product . ' — ' . $this->sellUnit->display_label;
+        if ($this->productVariant) {
+            $variantLabel = $this->productVariant->name ?: ($this->productVariant->sku ?: ('Variant #' . $this->product_variant_id));
+            return $product . ' — ' . $variantLabel;
         }
 
         return $product . ' — product-level';

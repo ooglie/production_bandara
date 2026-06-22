@@ -81,7 +81,7 @@ class B2BQuickOrderController extends Controller
                 }
             }
 
-            if (! $terms->canBuy($user, $product, $variant?->sellUnit, $variant)) {
+            if (! $terms->canBuy($user, $product, $variant)) {
                 $skipped[] = "{$product->name}: B2B price is not available.";
                 continue;
             }
@@ -94,7 +94,7 @@ class B2BQuickOrderController extends Controller
                 continue;
             }
 
-            $min = (float) $terms->minOrderQty($user, $product, $variant?->sellUnit, $variant);
+            $min = (float) $terms->minOrderQty($user, $product, $variant);
             if ($min <= 0) $min = 1;
 
             $qty = (float) ($line['quantity'] ?? 0);

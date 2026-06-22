@@ -154,7 +154,7 @@ class ShopController extends Controller
             ->whereIn('inventory_lots.product_id', $productIds)
             ->where('inventory_lots.is_saleable', true)
             ->where('inventory_lots.lot_status', 'available')
-            ->where('inventory_lots.inward_mode', 'pieces')
+            ->whereIn('inventory_lots.inward_mode', ['pieces', 'pieces_weight'])
             ->where(function ($q) {
                 $q->whereNull('inventory_lots.available_piece_count')
                     ->orWhere('inventory_lots.available_piece_count', '>', 0);
@@ -167,6 +167,7 @@ class ShopController extends Controller
             ->orderBy('inventory_lots.product_id')
             ->orderBy('inventory_pieces.weight_kg')
             ->get()
+            ->filter(fn ($piece) => (float) ($piece->weight_kg ?? 0) > 0)
             ->groupBy('product_id');
 
         foreach ($products as $product) {
@@ -183,23 +184,35 @@ class ShopController extends Controller
                 ->map(function ($bandPieces, $bandKey) use ($product) {
                     [$fromGrams, $toGrams] = $this->parseBandKey($bandKey);
 
-                    $effectivePrice = (float) ($product->effective_price ?? 0);
+                    $effectivePrice = round((float) app(\App\Services\PricingService::class)->priceFor(request()->user(), $product), 2);
                     $sellUnit = strtolower((string) ($product->sell_unit ?? 'piece'));
 
-                    if ($sellUnit === 'kg') {
-                        $priceMin = round($effectivePrice * ($fromGrams / 1000), 2);
-                        $priceMax = round($effectivePrice * ($toGrams / 1000), 2);
-                    } else {
-                        $priceMin = round($effectivePrice, 2);
-                        $priceMax = round($effectivePrice, 2);
-                    }
+                    $choices = collect($bandPieces)
+                        ->groupBy(fn ($piece) => number_format((float) $piece->weight_kg, 3, '.', ''))
+                        ->map(function ($sameWeightPieces, $weightKey) use ($effectivePrice, $sellUnit) {
+                            $weightKg = (float) $weightKey;
+                            $price = $sellUnit === 'kg'
+                                ? round($effectivePrice * $weightKg, 2)
+                                : round($effectivePrice, 2);
+
+                            return [
+                                'key' => $weightKey,
+                                'weight_kg' => $weightKg,
+                                'weight_label' => $this->formatWeightLabel($weightKg),
+                                'count' => $sameWeightPieces->count(),
+                                'price' => $price,
+                            ];
+                        })
+                        ->sortBy('weight_kg')
+                        ->values();
 
                     return [
                         'key' => $bandKey,
                         'label' => $fromGrams . '-' . $toGrams . ' g',
-                        'count' => $bandPieces->count(),
-                        'price_min' => $priceMin,
-                        'price_max' => $priceMax,
+                        'count' => (int) $choices->sum('count'),
+                        'price_min' => (float) ($choices->min('price') ?? 0),
+                        'price_max' => (float) ($choices->max('price') ?? 0),
+                        'choices' => $choices->all(),
                     ];
                 })
                 ->sortBy('key')
@@ -228,5 +241,14 @@ class ShopController extends Controller
         [$from, $to] = array_pad(explode('-', $key), 2, 0);
 
         return [(int) $from, (int) $to];
+    }
+
+    protected function formatWeightLabel(float $kg): string
+    {
+        if ($kg < 1) {
+            return round($kg * 1000) . ' g';
+        }
+
+        return rtrim(rtrim(number_format($kg, 3, '.', ''), '0'), '.') . ' kg';
     }
 }

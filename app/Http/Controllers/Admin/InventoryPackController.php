@@ -7,6 +7,7 @@ use App\Models\InventoryLot;
 use App\Models\InventoryPack;
 use App\Models\InventoryPiece;
 use App\Models\Product;
+use App\Models\ProductTransformation;
 use App\Models\ProductVariant;
 use App\Models\StockMovement;
 use Illuminate\Http\Request;
@@ -83,6 +84,12 @@ class InventoryPackController extends Controller
             ->get()
             ->groupBy('product_id');
 
+        $transformationTargetsBySource = ProductTransformation::query()
+            ->select(['source_product_id', 'target_product_id'])
+            ->get()
+            ->groupBy('source_product_id')
+            ->map(fn ($rows) => $rows->pluck('target_product_id')->map(fn ($id) => (int) $id)->unique()->values()->all());
+
         $recentPacks = InventoryPack::query()
             ->with(['product', 'productVariant', 'sourcePiece', 'sourceLot.product', 'sourceLot.parentLot.product', 'soldOrder'])
             ->latest('id')
@@ -91,7 +98,7 @@ class InventoryPackController extends Controller
 
         $selectedLotId = $request->integer('source_inventory_lot_id') ?: $request->integer('lot_id') ?: old('source_inventory_lot_id');
 
-        return view('admin.inventory.packs.create', compact('lots', 'outputProducts', 'outputVariants', 'recentPacks', 'selectedLotId'));
+        return view('admin.inventory.packs.create', compact('lots', 'outputProducts', 'outputVariants', 'transformationTargetsBySource', 'recentPacks', 'selectedLotId'));
     }
 
     public function store(Request $request)
@@ -116,7 +123,7 @@ class InventoryPackController extends Controller
         DB::transaction(function () use ($validated, $request, &$createdPackCount) {
             /** @var InventoryLot $sourceLot */
             $sourceLot = InventoryLot::query()
-                ->with(['product'])
+                ->with(['product', 'productVariant'])
                 ->lockForUpdate()
                 ->findOrFail((int) $validated['source_inventory_lot_id']);
 
@@ -192,7 +199,6 @@ class InventoryPackController extends Controller
                     'source_inventory_piece_id' => $sourcePiece?->id,
                     'product_id' => $outputProduct->id,
                     'product_variant_id' => $outputVariant?->id,
-                    'product_sell_unit_id' => null,
                     'pack_no' => $startNo + $i,
                     'pack_code' => $batchCode . '-' . str_pad((string) ($startNo + $i), 3, '0', STR_PAD_LEFT),
                     'pack_quantity' => $outputQuantityPerPack,
@@ -221,7 +227,6 @@ class InventoryPackController extends Controller
             $this->writeStockMovement(
                 productId: (int) $sourceProduct->id,
                 variantId: $sourceLot->product_variant_id ? (int) $sourceLot->product_variant_id : null,
-                sellUnitId: $sourceLot->product_sell_unit_id ? (int) $sourceLot->product_sell_unit_id : null,
                 quantity: -1 * (float) $consumption['source_stock_quantity'],
                 referenceId: (int) $sourceLot->id,
                 costPrice: $consumption['source_unit_cost'],
@@ -234,7 +239,6 @@ class InventoryPackController extends Controller
             $this->writeStockMovement(
                 productId: (int) $outputProduct->id,
                 variantId: $outputVariant?->id,
-                sellUnitId: null,
                 quantity: $stockIncrease,
                 referenceId: (int) $outputLot->id,
                 costPrice: $consumption['pack_cost'],
@@ -263,7 +267,6 @@ class InventoryPackController extends Controller
         $lot->lot_code = $this->generateOutputLotCode($sourceLot, $product);
         $lot->product_id = $product->id;
         $lot->product_variant_id = $variant?->id;
-        $lot->product_sell_unit_id = null;
         $lot->parent_inventory_lot_id = $sourceLot->id;
         $lot->root_inventory_lot_id = $sourceLot->root_inventory_lot_id ?: $sourceLot->id;
         $lot->lot_stage = 'pack';
@@ -355,7 +358,8 @@ class InventoryPackController extends Controller
             ]);
         }
 
-        $sourcePiecesPerUnit = $this->positiveDecimal($validated['source_pieces_per_unit'] ?? null) ?: 1.0;
+        $sourcePiecesPerUnit = $this->positiveDecimal($validated['source_pieces_per_unit'] ?? null)
+            ?: $this->sourcePiecesPerUnit($sourceLot);
         $requiredSourcePieces = round($packCount * $piecesPerPack, 3);
         $requiredSourceQuantity = round($requiredSourcePieces / $sourcePiecesPerUnit, 3);
         $availablePieces = $this->availablePiecesForRepack($sourceLot);
@@ -603,6 +607,29 @@ class InventoryPackController extends Controller
         $sourceProduct->save();
     }
 
+    private function sourcePiecesPerUnit(InventoryLot $lot): float
+    {
+        if ($lot->pieces_per_pack !== null && (float) $lot->pieces_per_pack > 0) {
+            return round((float) $lot->pieces_per_pack, 3);
+        }
+
+        if ($lot->relationLoaded('productVariant') && $lot->productVariant && (float) ($lot->productVariant->pieces_per_pack ?? 0) > 0) {
+            return round((float) $lot->productVariant->pieces_per_pack, 3);
+        }
+
+        if ($lot->relationLoaded('product') && $lot->product && (float) ($lot->product->pieces_per_pack ?? 0) > 0) {
+            return round((float) $lot->product->pieces_per_pack, 3);
+        }
+
+        $availableQuantity = (float) ($lot->available_quantity ?? 0);
+        $availablePieces = (float) ($lot->available_piece_count ?? 0);
+        if ($availableQuantity > 0 && $availablePieces > 0) {
+            return round($availablePieces / $availableQuantity, 3);
+        }
+
+        return 1.0;
+    }
+
     private function availablePiecesForRepack(InventoryLot $lot): ?float
     {
         if ($lot->available_piece_count !== null && (float) $lot->available_piece_count > 0) {
@@ -691,12 +718,11 @@ class InventoryPackController extends Controller
         return null;
     }
 
-    private function writeStockMovement(int $productId, ?int $variantId, ?int $sellUnitId, float $quantity, int $referenceId, ?float $costPrice, string $notes): void
+    private function writeStockMovement(int $productId, ?int $variantId, float $quantity, int $referenceId, ?float $costPrice, string $notes): void
     {
         $attrs = [
             'product_id' => $productId,
             'product_variant_id' => $variantId,
-            'product_sell_unit_id' => $sellUnitId,
             'vendor_id' => null,
             'quantity' => round($quantity, 3),
             'movement_type' => 'adjustment',

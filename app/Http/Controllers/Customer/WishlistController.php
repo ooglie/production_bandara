@@ -23,7 +23,12 @@ class WishlistController extends Controller
             ->latest()
             ->get();
 
-        return view('customer.wishlist.index', compact('items'));
+        $isB2BWishlist = (bool) (
+            $request->routeIs('b2b.*')
+            || (($user->customer_type ?? 'b2c') === 'b2b')
+        );
+
+        return view('customer.wishlist.index', compact('items', 'isB2BWishlist'));
     }
 
     public function store(Request $request)

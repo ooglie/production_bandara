@@ -17,6 +17,7 @@ class ProductVariantController extends Controller
     public function index(Product $product)
     {
         $variants = ProductVariant::query()
+            ->with(['attributeValues.attribute', 'attributeValues.attributeValue'])
             ->where('product_id', $product->id)
             ->orderBy('name')
             ->orderBy('id')
@@ -159,6 +160,7 @@ class ProductVariantController extends Controller
             'min_order_quantity' => ['nullable', 'numeric', 'min:0'],
             'standard_b2b_price' => ['nullable', 'numeric', 'min:0'],
             'standard_b2b_min_order_quantity' => ['nullable', 'numeric', 'min:0.001'],
+            'customer_visibility' => ['nullable', Rule::in(['all', 'b2c', 'b2b'])],
 
             'product_weight' => $productWeightRules,
             'pieces_per_pack' => $piecesPerPackRules,
@@ -203,6 +205,11 @@ class ProductVariantController extends Controller
 
             'is_active' => (bool) ($data['is_active'] ?? false),
         ];
+
+        if ($this->tableHasColumn('product_variants', 'customer_visibility')) {
+            $visibility = (string) ($data['customer_visibility'] ?? 'all');
+            $payload['customer_visibility'] = in_array($visibility, ['all', 'b2c', 'b2b'], true) ? $visibility : 'all';
+        }
 
         if ($this->tableHasColumn('product_variants', 'pack_type')) {
             $payload['pack_type'] = $packType;

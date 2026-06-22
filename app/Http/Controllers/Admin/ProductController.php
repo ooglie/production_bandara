@@ -10,11 +10,13 @@ use App\Models\Country;
 use App\Models\HsnCode;
 use App\Models\Product;
 use App\Models\ProductVariant;
+use App\Models\ProductTransformation;
 use App\Models\Vendor;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Schema;
 use Illuminate\Support\Str;
+use Illuminate\Validation\ValidationException;
 use Illuminate\View\View;
 
 class ProductController extends Controller
@@ -41,8 +43,20 @@ class ProductController extends Controller
                 ->with('error', 'No product found for the scanned barcode / SKU.');
         }
 
+        $hasTransformations = Schema::hasTable('product_transformations');
+
         $query = Product::query()
-            ->with(['vendor', 'categories'])
+            ->with(array_filter([
+                'vendor',
+                'categories',
+                $hasTransformations ? 'producedFromProducts:id,name,sku' : null,
+                $hasTransformations ? 'producesProducts:id,name,sku' : null,
+            ]))
+            ->withCount(array_filter([
+                'variants',
+                $hasTransformations ? 'producedFromProducts as produced_from_count' : null,
+                $hasTransformations ? 'producesProducts as produces_count' : null,
+            ]))
             ->latest();
 
         // Search by name / SKU
@@ -70,6 +84,30 @@ class ProductController extends Controller
 
             if (in_array($type, ['simple', 'variable'], true)) {
                 $query->where('type', $type);
+            }
+        }
+
+        // Bandara V1 product model filter
+        if ($request->filled('model')) {
+            $model = (string) $request->input('model');
+
+            if ($model === 'simple') {
+                $query->where('type', 'simple')
+                    ->where(function ($q) {
+                        $q->whereNull('pack_type')
+                            ->orWhereNotIn('pack_type', ['variable_weight']);
+                    });
+            } elseif ($model === 'variable_pack') {
+                $query->where('type', 'variable');
+            } elseif ($model === 'catchweight') {
+                $query->where(function ($q) {
+                    $q->where('pack_type', 'variable_weight')
+                        ->orWhere('sell_unit', 'kg');
+                });
+            } elseif ($model === 'produced' && $hasTransformations) {
+                $query->whereHas('producedFromProducts');
+            } elseif ($model === 'raw_source' && $hasTransformations) {
+                $query->whereHas('producesProducts');
             }
         }
 
@@ -150,7 +188,14 @@ class ProductController extends Controller
 
     protected function formData(Product $product): array
     {
-        $product->loadMissing(['categories', 'attributeValues']);
+        $hasTransformations = Schema::hasTable('product_transformations');
+
+        $product->loadMissing(array_filter([
+            'categories',
+            'attributeValues',
+            $hasTransformations ? 'producedFromProducts' : null,
+            $hasTransformations ? 'producesProducts' : null,
+        ]));
 
         return [
             'product' => $product,
@@ -188,6 +233,20 @@ class ProductController extends Controller
             'countries' => Country::query()
                 ->orderBy('name')
                 ->get(),
+
+            'transformationSourceProducts' => Product::query()
+                ->when($product->exists, fn ($query) => $query->whereKeyNot($product->getKey()))
+                ->orderBy('name')
+                ->get(['id', 'name', 'sku', 'inventory_role', 'pack_type', 'type', 'is_active']),
+
+            'selectedSourceProductIds' => $hasTransformations
+                ? $product->producedFromProducts
+                    ->pluck('id')
+                    ->map(fn ($id) => (int) $id)
+                    ->all()
+                : [],
+
+            'producesProducts' => $hasTransformations ? $product->producesProducts : collect(),
 
             // kept because your Blade expects it
             'supplierVendors' => Vendor::query()
@@ -425,6 +484,89 @@ class ProductController extends Controller
         if (method_exists($product, 'attributeValues')) {
             $product->attributeValues()->sync($attributeValueIds);
         }
+
+        $this->syncProductTransformations($product, $validated['source_product_ids'] ?? []);
+    }
+
+    protected function syncProductTransformations(Product $product, array $sourceProductIds): void
+    {
+        if (! Schema::hasTable('product_transformations')) {
+            return;
+        }
+
+        $sourceProductIds = collect($sourceProductIds)
+            ->map(fn ($id) => (int) $id)
+            ->filter(fn ($id) => $id > 0 && $id !== (int) $product->id)
+            ->unique()
+            ->values()
+            ->all();
+
+        foreach ($sourceProductIds as $sourceProductId) {
+            if ($this->wouldCreateTransformationCycle((int) $product->id, (int) $sourceProductId, $sourceProductIds)) {
+                $sourceName = Product::query()->whereKey($sourceProductId)->value('name') ?: ('Product #' . $sourceProductId);
+
+                throw ValidationException::withMessages([
+                    'source_product_ids' => "Cannot set {$sourceName} as a source because it would create a circular product transformation.",
+                ]);
+            }
+        }
+
+        $syncPayload = collect($sourceProductIds)
+            ->mapWithKeys(fn ($sourceProductId) => [
+                $sourceProductId => ['transformation_type' => 'repack'],
+            ])
+            ->all();
+
+        $product->producedFromProducts()->sync($syncPayload);
+    }
+
+    protected function wouldCreateTransformationCycle(int $targetProductId, int $candidateSourceProductId, array $newSourceProductIds): bool
+    {
+        if ($targetProductId <= 0 || $candidateSourceProductId <= 0) {
+            return false;
+        }
+
+        if ($targetProductId === $candidateSourceProductId) {
+            return true;
+        }
+
+        $edges = ProductTransformation::query()
+            ->where('target_product_id', '!=', $targetProductId)
+            ->get(['source_product_id', 'target_product_id'])
+            ->map(fn ($row) => [(int) $row->source_product_id, (int) $row->target_product_id])
+            ->all();
+
+        foreach ($newSourceProductIds as $sourceProductId) {
+            $edges[] = [(int) $sourceProductId, $targetProductId];
+        }
+
+        $adjacency = [];
+        foreach ($edges as [$source, $target]) {
+            $adjacency[$source][] = $target;
+        }
+
+        $stack = [$targetProductId];
+        $seen = [];
+
+        while ($stack) {
+            $current = array_pop($stack);
+
+            if (isset($seen[$current])) {
+                continue;
+            }
+
+            $seen[$current] = true;
+
+            foreach ($adjacency[$current] ?? [] as $next) {
+                if ($next === $candidateSourceProductId) {
+                    return true;
+                }
+
+                $stack[] = $next;
+            }
+        }
+
+        return false;
     }
 
     protected function resolveSlug(?string $rawSlug, string $name, Product $product): string

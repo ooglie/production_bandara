@@ -47,7 +47,6 @@ use App\Http\Controllers\Support\{
 
 use App\Http\Controllers\Admin\{
     ProductController,
-    ProductSellUnitController,
     CategoryController,
     VendorController,
     ProductVariantController,
@@ -395,9 +394,6 @@ Route::middleware(['auth', 'role:Admin|Manager|Accountant|CAAccountant|Stores'])
             ->except(['show'])
             ->shallow();
 
-        Route::resource('products.sell-units', ProductSellUnitController::class)
-            ->except(['show'])
-            ->shallow();
 
         Route::get('products/barcode/lookup', [ProductController::class, 'barcodeLookup'])
             ->middleware('throttle:60,1')

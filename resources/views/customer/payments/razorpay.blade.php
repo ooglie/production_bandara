@@ -300,8 +300,10 @@
                     isVerifying = false;
                     setButtonBusy(false);
                     hideProcessing();
-                    alert((error && error.message) ? error.message : 'Something went wrong while verifying your payment. Please contact support.');
-                    window.location.href = "{{ route('orders.show', $order) }}";
+                    if (window.BandaraToast) {
+                        BandaraToast.error((error && error.message) ? error.message : 'Something went wrong while verifying your payment. Please contact support.', 'Payment issue');
+                    }
+                    setTimeout(function () { window.location.href = "{{ route('orders.show', $order) }}"; }, 900);
                 });
             },
             modal: {
@@ -316,7 +318,9 @@
             if (isVerifying || launchCooldown) return;
 
             if (typeof Razorpay === 'undefined') {
-                alert('Secure payment window could not be loaded. Please refresh the page and try again.');
+                if (window.BandaraToast) {
+                    BandaraToast.error('Secure payment window could not be loaded. Please refresh the page and try again.', 'Payment window unavailable');
+                }
                 return;
             }
 

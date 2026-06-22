@@ -1,10 +1,5 @@
 @if(config('features.newsletter', true))
     <div class="max-w-md">
-        @if(session('newsletter_status'))
-            <div class="mb-2 rounded-sm border border-emerald-300 bg-emerald-50 px-3 py-2 text-[11px] text-emerald-800">
-                {{ session('newsletter_status') }}
-            </div>
-        @endif
 
         <form method="POST" action="{{ route('newsletter.subscribe') }}" class="flex flex-col sm:flex-row gap-2 text-xs">
             @csrf

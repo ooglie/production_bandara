@@ -1,6 +1,6 @@
 @extends('layouts.company')
 
-@section('title', 'Create pack stock')
+@section('title', 'Transform stock')
 
 @section('content')
 @php
@@ -74,14 +74,33 @@
             ];
         })->filter(fn ($piece) => (float) ($piece['available_weight_kg'] ?? 0) > 0)->values()->all()];
     });
+
+    $transformationTargetsMeta = collect($transformationTargetsBySource ?? [])->mapWithKeys(function ($ids, $sourceId) {
+        return [(string) $sourceId => collect($ids)->map(fn ($id) => (int) $id)->values()->all()];
+    });
+
+    $sourcePiecesPerUnitForLot = function ($lot): float {
+        $value = (float) ($lot->pieces_per_pack ?? 0);
+        if ($value <= 0 && $lot->productVariant) {
+            $value = (float) ($lot->productVariant->pieces_per_pack ?? 0);
+        }
+        if ($value <= 0 && $lot->product) {
+            $value = (float) ($lot->product->pieces_per_pack ?? 0);
+        }
+        if ($value <= 0 && (float) ($lot->available_quantity ?? 0) > 0 && (float) ($lot->available_piece_count ?? 0) > 0) {
+            $value = (float) $lot->available_piece_count / (float) $lot->available_quantity;
+        }
+
+        return $value > 0 ? round($value, 3) : 1.0;
+    };
 @endphp
 
 <div class="max-w-6xl mx-auto px-4 py-6 space-y-4 text-xs">
     <div class="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
         <div>
-            <h1 class="text-xl font-semibold text-gray-900 dark:text-gray-50">Create pack stock</h1>
+            <h1 class="text-xl font-semibold text-gray-900 dark:text-gray-50">Transform stock</h1>
             <p class="mt-1 text-[12px] text-gray-500 dark:text-gray-400">
-                Convert a raw/internal source lot into a normal saleable product. Example: Full Pork Belly lot → Pork Belly With Skin 500g Slice Pack product.
+                Convert a source lot into another product or pack variant. Examples: Full Pork Belly → slabs, Dimsum Master Box → 10 pcs variant, Prawns 1kg → 500g variant.
             </p>
         </div>
         <a href="{{ route('admin.inventory.packs.index') }}" class="rounded border border-gray-300 px-3 py-2 text-xs hover:bg-gray-50 dark:border-gray-700 dark:hover:bg-gray-800">Back</a>
@@ -112,6 +131,8 @@
                                 data-available-qty="{{ (float) ($lot->available_quantity ?? 0) }}"
                                 data-available-weight="{{ (float) ($lot->available_weight_kg ?? 0) }}"
                                 data-available-pieces="{{ (float) ($lot->available_piece_count ?? 0) }}"
+                                data-source-pieces-per-unit="{{ $sourcePiecesPerUnitForLot($lot) }}"
+                                data-source-unit-weight="{{ (float) ($lot->unit_weight_kg ?? ($lot->productVariant?->product_weight ?? $lot->product?->product_weight ?? 0)) }}"
                                 data-batch="{{ $lot->batch_code }}"
                                 data-expiry="{{ optional($lot->expiry_date)->format('Y-m-d') }}"
                                 data-mode="{{ $lot->inward_mode }}"
@@ -132,6 +153,14 @@
                 <p class="mt-1 text-[11px] text-gray-500 dark:text-gray-400">Optional. Use this when cutting from one belly/fillet piece and you want piece-level balance updated.</p>
             </div>
 
+            <div class="md:col-span-4 rounded-lg border border-gray-200 bg-gray-50 px-3 py-2 dark:border-gray-800 dark:bg-gray-900">
+                <label class="inline-flex items-center gap-2 text-[12px] text-gray-700 dark:text-gray-300">
+                    <input id="show_all_outputs" type="checkbox" class="rounded border-gray-300 dark:border-gray-700">
+                    <span>Show all output products, not only mapped transformations</span>
+                </label>
+                <p id="transformation_hint" class="mt-1 text-[11px] text-gray-500 dark:text-gray-400">Select a source lot. If transformation relationships are configured, the output list will be filtered automatically.</p>
+            </div>
+
             <div>
                 <label class="block text-[12px] font-medium text-gray-700 dark:text-gray-300 mb-1">Output product</label>
                 <select id="output_product_id" name="output_product_id" required class="w-full rounded-lg border border-gray-300 bg-white px-3 py-2 text-[13px] dark:border-gray-700 dark:bg-gray-900">
@@ -141,7 +170,7 @@
                             $role = (string) ($product->inventory_role ?? (($product->is_active ?? false) ? 'saleable' : 'internal'));
                             $packType = (string) ($product->pack_type ?? 'quantity');
                         @endphp
-                        <option value="{{ $product->id }}" @selected((string) old('output_product_id') === (string) $product->id)>
+                        <option value="{{ $product->id }}" data-output-product-id="{{ $product->id }}" @selected((string) old('output_product_id') === (string) $product->id)>
                             {{ $product->name }} @if($product->sku) ({{ $product->sku }}) @endif · {{ str_replace('_', ' ', $packType) }} @unless($product->is_active) · Internal/Draft @endunless
                         </option>
                     @endforeach
@@ -180,7 +209,7 @@
             <div id="source_pieces_wrap">
                 <label class="block text-[12px] font-medium text-gray-700 dark:text-gray-300 mb-1">Source pieces per source unit</label>
                 <input id="source_pieces_per_unit" name="source_pieces_per_unit" type="number" min="0.001" step="0.001" value="{{ old('source_pieces_per_unit', 1) }}" class="w-full rounded-lg border border-gray-300 bg-white px-3 py-2 text-[13px] dark:border-gray-700 dark:bg-gray-900">
-                <p class="mt-1 text-[11px] text-gray-500 dark:text-gray-400">Usually 1 for loose pieces.</p>
+                <p class="mt-1 text-[11px] text-gray-500 dark:text-gray-400">Auto-filled from the source product/variant. Example: a 100-piece master box should be 100.</p>
             </div>
         </div>
 
@@ -248,10 +277,14 @@
     const preview = document.getElementById('source_qty_preview');
     const batch = document.getElementById('batch_code');
     const expiry = document.getElementById('expiry_date');
+    const showAllOutputs = document.getElementById('show_all_outputs');
+    const transformationHint = document.getElementById('transformation_hint');
     const productMeta = @json($productMeta);
     const variantMeta = @json($variantMeta);
     const lotPiecesMeta = @json($lotPiecesMeta);
+    const transformationTargets = @json($transformationTargetsMeta);
     const oldOutputVariantId = @json(old('output_product_variant_id'));
+    const oldSourcePiecesPerUnit = @json(old('source_pieces_per_unit'));
 
     function selectedOption(select) {
         return select && select.options[select.selectedIndex] ? select.options[select.selectedIndex] : null;
@@ -259,6 +292,60 @@
 
     function selectedPiece() {
         return sourcePiece && sourcePiece.value ? (lotPiecesMeta[String(source.value)] || []).find(piece => String(piece.id) === String(sourcePiece.value)) || null : null;
+    }
+
+    function selectedSourceProductId() {
+        const src = selectedOption(source);
+        return src ? String(src.dataset.productId || '') : '';
+    }
+
+    function mappedTargetIdsForSelectedSource() {
+        const sourceProductId = selectedSourceProductId();
+        if (!sourceProductId) return [];
+
+        const ids = new Set((transformationTargets[sourceProductId] || []).map(String));
+        ids.add(sourceProductId); // enables same-product variant transforms, e.g. Prawns 1kg → Prawns 500g.
+
+        return Array.from(ids);
+    }
+
+    function filterOutputProducts() {
+        if (!output) return;
+
+        const mappedTargetIds = mappedTargetIdsForSelectedSource();
+        const shouldFilter = mappedTargetIds.length > 0 && !showAllOutputs?.checked;
+        let selectedStillVisible = false;
+
+        Array.from(output.options).forEach(option => {
+            if (!option.value) {
+                option.hidden = false;
+                option.disabled = false;
+                return;
+            }
+
+            const visible = !shouldFilter || mappedTargetIds.includes(String(option.value));
+            option.hidden = !visible;
+            option.disabled = !visible;
+            if (visible && option.value === output.value) {
+                selectedStillVisible = true;
+            }
+        });
+
+        if (shouldFilter && output.value && !selectedStillVisible) {
+            output.value = '';
+        }
+
+        if (transformationHint) {
+            if (!selectedSourceProductId()) {
+                transformationHint.textContent = 'Select a source lot. If transformation relationships are configured, the output list will be filtered automatically.';
+            } else if (mappedTargetIds.length > 0 && shouldFilter) {
+                transformationHint.textContent = 'Showing only products mapped as outputs from this source product. Tick show all to override for exceptions.';
+            } else if (mappedTargetIds.length > 0) {
+                transformationHint.textContent = 'Showing all products. Mapped outputs are still highlighted in the preview.';
+            } else {
+                transformationHint.textContent = 'No transformation mapping has been configured for this source product yet, so all output products are shown.';
+            }
+        }
     }
 
     function selectedProduct() {
@@ -344,11 +431,17 @@
 
     function applySourceDefaults() {
         populateSourcePieces();
+        filterOutputProducts();
         const src = selectedOption(source);
         if (src) {
             if (!batch.value && src.dataset.batch) batch.value = src.dataset.batch;
             if (!expiry.value && src.dataset.expiry) expiry.value = src.dataset.expiry;
+            if (sourcePieces && (!oldSourcePiecesPerUnit || sourcePieces.dataset.autoFilled === '1' || !sourcePieces.value || sourcePieces.value === '1')) {
+                sourcePieces.value = String(src.dataset.sourcePiecesPerUnit || '1');
+                sourcePieces.dataset.autoFilled = '1';
+            }
         }
+        updateFieldsFromProduct();
         updatePreview();
     }
 
@@ -390,8 +483,11 @@
             html += '<div>Using source piece: <strong>' + (piece.label || ('Piece ' + piece.piece_no)) + '</strong> with <strong>' + fmt(piece.available_weight_kg) + ' kg</strong> available.</div>';
         }
 
-        if (src.dataset.productId && String(src.dataset.productId) !== String(product.id)) {
-            html += '<div class="mt-1 text-amber-700">Cross-product repack: source lot stock is consumed, and stock is added to the selected output product.</div>';
+        const mappedTargetIds = mappedTargetIdsForSelectedSource();
+        if (mappedTargetIds.includes(String(product.id))) {
+            html += '<div class="mt-1 text-emerald-700">Mapped transformation: this output product is configured as producible from the selected source product.</div>';
+        } else if (src.dataset.productId && String(src.dataset.productId) !== String(product.id)) {
+            html += '<div class="mt-1 text-amber-700">Cross-product transform: source lot stock is consumed, and stock is added to the selected output product. Add a Product Transformation mapping if this is a normal workflow.</div>';
         }
 
         if (productMode === 'weight') {
@@ -438,6 +534,10 @@
 
     source?.addEventListener('change', applySourceDefaults);
     sourcePiece?.addEventListener('change', updatePreview);
+    showAllOutputs?.addEventListener('change', () => {
+        filterOutputProducts();
+        updateFieldsFromProduct();
+    });
     output?.addEventListener('change', updateFieldsFromProduct);
     outputVariant?.addEventListener('change', () => {
         const target = selectedOutputTarget();
@@ -449,7 +549,7 @@
     packCount?.addEventListener('input', updatePreview);
     outputWeight?.addEventListener('input', updatePreview);
     pieces?.addEventListener('input', updatePreview);
-    sourcePieces?.addEventListener('input', updatePreview);
+    sourcePieces?.addEventListener('input', () => { sourcePieces.dataset.autoFilled = '0'; updatePreview(); });
 
     applySourceDefaults();
     updateFieldsFromProduct();
