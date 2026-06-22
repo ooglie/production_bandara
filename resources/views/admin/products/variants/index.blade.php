@@ -49,7 +49,7 @@
                         <th class="px-3 py-2 text-left">SKU</th>
                         <th class="px-3 py-2 text-left">Name</th>
                         <th class="px-3 py-2 text-left">Pack setup</th>
-                        <th class="px-3 py-2 text-left">Visibility / attributes</th>
+                        <th class="px-3 py-2 text-left">Visibility / options</th>
                         <th class="px-3 py-2 text-right">MRP / Price (₹)</th>
                         <th class="px-3 py-2 text-right">Stock</th>
                         <th class="px-3 py-2 text-center">Status</th>

@@ -34,7 +34,7 @@ class AttributeValueController extends Controller
 
         return redirect()
             ->route('admin.attributes.values.index', $attribute)
-            ->with('status', 'Attribute value created.');
+            ->with('status', 'Variant option value created.');
     }
 
     public function edit(AttributeValue $value)
@@ -52,7 +52,7 @@ class AttributeValueController extends Controller
 
         return redirect()
             ->route('admin.attributes.values.index', $value->attribute)
-            ->with('status', 'Attribute value updated.');
+            ->with('status', 'Variant option value updated.');
     }
 
     public function destroy(AttributeValue $value)
@@ -63,7 +63,7 @@ class AttributeValueController extends Controller
 
         return redirect()
             ->route('admin.attributes.values.index', $attribute)
-            ->with('status', 'Attribute value deleted.');
+            ->with('status', 'Variant option value deleted.');
     }
 
     protected function validatedData(Request $request): array

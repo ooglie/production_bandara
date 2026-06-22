@@ -1,9 +1,9 @@
 @extends('layouts.company')
 
-@section('title', 'Attribute values')
+@section('title', 'Variant option values')
 
 @section('breadcrumb')
-    Admin · Attributes · {{ $attribute->name }} · Values
+    Admin · Variant Options · {{ $attribute->name }} · Option Values
 @endsection
 
 @section('content')
@@ -11,7 +11,7 @@
         <div class="flex items-center justify-between gap-3">
             <div>
                 <h1 class="text-lg font-semibold text-gray-900 dark:text-gray-50">
-                    Values – {{ $attribute->name }}
+                    Option values – {{ $attribute->name }}
                 </h1>
                 @if($attribute->display_name)
                     <p class="text-[11px] text-gray-500 dark:text-gray-400">
@@ -23,12 +23,12 @@
             <div class="flex items-center gap-2">
                 <a href="{{ route('admin.attributes.index') }}"
                    class="text-[11px] text-gray-500 hover:text-gray-800 dark:hover:text-gray-200">
-                    Back to attributes
+                    Back to variant options
                 </a>
 
                 <a href="{{ route('admin.attributes.values.create', $attribute) }}"
                    class="inline-flex items-center px-3 py-1.5 text-xs rounded border border-gray-300 dark:border-gray-700 bg-gray-900 text-white dark:bg-gray-100 dark:text-gray-900 hover:bg-gray-800 dark:hover:bg-gray-200">
-                    + New value
+                    + New option value
                 </a>
             </div>
         </div>
@@ -63,13 +63,13 @@
                             </td>
                             <td class="px-3 py-2 align-top text-right">
                                 <div class="inline-flex items-center gap-2">
-                                    <a href="{{ route('admin.attributes.values.edit', $value) }}"
+                                    <a href="{{ route('admin.values.edit', $value) }}"
                                        class="text-[11px] text-gray-600 dark:text-gray-300 hover:text-gray-900 dark:hover:text-gray-100">
                                         Edit
                                     </a>
                                     <form method="POST"
-                                          action="{{ route('admin.attributes.values.destroy', $value) }}"
-                                          onsubmit="return confirm('Delete this value?');">
+                                          action="{{ route('admin.values.destroy', $value) }}"
+                                          onsubmit="return confirm('Delete this option value?');">
                                         @csrf
                                         @method('DELETE')
                                         <button type="submit"
@@ -83,7 +83,7 @@
                     @empty
                         <tr>
                             <td colspan="4" class="px-3 py-6 text-center text-xs text-gray-500 dark:text-gray-400">
-                                No values defined for this attribute.
+                                No option values defined for this group.
                             </td>
                         </tr>
                     @endforelse

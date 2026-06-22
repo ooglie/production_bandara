@@ -570,12 +570,12 @@
         </div>
     </details>
 
-    {{-- ATTRIBUTES --}}
+    {{-- VARIANT OPTIONS --}}
     <details class="fb-acc {{ $card }}">
         <summary class="px-5 py-4 flex items-center justify-between gap-3 cursor-pointer">
             <div>
-                <div class="text-sm font-semibold text-gray-900 dark:text-gray-50">Attributes & values</div>
-                <div class="text-[11px] text-gray-500 dark:text-gray-400">Optional attribute mapping for filters and variants.</div>
+                <div class="text-sm font-semibold text-gray-900 dark:text-gray-50">Variant options</div>
+                <div class="text-[11px] text-gray-500 dark:text-gray-400">Choose the option values allowed for variant-choice products such as Dimsum and Prawns.</div>
             </div>
             <span class="text-[12px] text-gray-500 dark:text-gray-400 select-none">▾</span>
         </summary>
@@ -583,9 +583,9 @@
         <div class="px-5 pb-5">
             @if($attributes->isEmpty())
                 <div class="rounded-sm border border-gray-200 dark:border-gray-800 bg-gray-50 dark:bg-gray-950/40 px-4 py-3 text-[12px] text-gray-500 dark:text-gray-400">
-                    No attributes defined yet.
+                    No variant option groups defined yet.
                     @if(\Illuminate\Support\Facades\Route::has('admin.attributes.index'))
-                        <a href="{{ route('admin.attributes.index') }}" class="underline">Manage attributes</a>.
+                        <a href="{{ route('admin.attributes.index') }}" class="underline">Manage variant options</a>.
                     @endif
                 </div>
             @else
@@ -601,9 +601,9 @@
 
                             @if($attribute->values->isEmpty())
                                 <div class="mt-1 text-[12px] text-gray-500 dark:text-gray-400">
-                                    No values defined.
+                                    No option values defined.
                                     @if(\Illuminate\Support\Facades\Route::has('admin.attributes.values.index'))
-                                        <a href="{{ route('admin.attributes.values.index', $attribute) }}" class="underline">Add values</a>.
+                                        <a href="{{ route('admin.attributes.values.index', $attribute) }}" class="underline">Add option values</a>.
                                     @endif
                                 </div>
                             @else
@@ -710,6 +710,31 @@
                     <div class="{{ $hint }}">These fields decide whether the product behaves like Dimsum/Prawns, Pork/Salmon slabs, a simple retail pack, or an internal source item.</div>
                 </div>
 
+                <div class="rounded-sm border border-amber-200 bg-amber-50/70 p-3 dark:border-amber-900/60 dark:bg-amber-950/20">
+                    <div class="text-[12px] font-semibold text-amber-900 dark:text-amber-100">Quick setup presets</div>
+                    <div class="mt-1 text-[11px] text-amber-800/80 dark:text-amber-200/80">
+                        Optional helper only. Presets fill the storefront, inventory and pricing fields below; you can still adjust any value before saving.
+                    </div>
+                    <div class="mt-3 grid gap-2 sm:grid-cols-2 lg:grid-cols-4" data-product-presets>
+                        <button type="button" data-product-preset="direct" class="rounded-sm border border-amber-200 bg-white px-3 py-2 text-left text-[11px] hover:bg-amber-50 dark:border-amber-900 dark:bg-gray-950 dark:hover:bg-amber-950/30">
+                            <span class="block font-semibold text-gray-900 dark:text-gray-50">Direct buy</span>
+                            <span class="block text-gray-500 dark:text-gray-400">One product, one price, normal cart button.</span>
+                        </button>
+                        <button type="button" data-product-preset="variant" class="rounded-sm border border-amber-200 bg-white px-3 py-2 text-left text-[11px] hover:bg-amber-50 dark:border-amber-900 dark:bg-gray-950 dark:hover:bg-amber-950/30">
+                            <span class="block font-semibold text-gray-900 dark:text-gray-50">Variant choice</span>
+                            <span class="block text-gray-500 dark:text-gray-400">Dimsum, prawns, pack/dropdown products.</span>
+                        </button>
+                        <button type="button" data-product-preset="physical" class="rounded-sm border border-amber-200 bg-white px-3 py-2 text-left text-[11px] hover:bg-amber-50 dark:border-amber-900 dark:bg-gray-950 dark:hover:bg-amber-950/30">
+                            <span class="block font-semibold text-gray-900 dark:text-gray-50">Physical choice</span>
+                            <span class="block text-gray-500 dark:text-gray-400">Pork, salmon, tuna, cheese blocks by exact weight.</span>
+                        </button>
+                        <button type="button" data-product-preset="internal" class="rounded-sm border border-amber-200 bg-white px-3 py-2 text-left text-[11px] hover:bg-amber-50 dark:border-amber-900 dark:bg-gray-950 dark:hover:bg-amber-950/30">
+                            <span class="block font-semibold text-gray-900 dark:text-gray-50">Internal source</span>
+                            <span class="block text-gray-500 dark:text-gray-400">Master boxes/raw stock used only for Transform Stock.</span>
+                        </button>
+                    </div>
+                </div>
+
                 <div class="grid gap-4 md:grid-cols-3">
                     <div>
                         <label class="block text-[12px] font-medium text-gray-700 dark:text-gray-300">
@@ -794,6 +819,7 @@
                         <input type="checkbox"
                                name="inventory_is_saleable"
                                value="1"
+                               data-inventory-saleable
                                class="mt-0.5 rounded border-gray-300 dark:border-gray-700"
                                @checked(old('inventory_is_saleable', $product->inventory_is_saleable ?? true))>
                         <span>
@@ -806,6 +832,7 @@
                         <input type="checkbox"
                                name="inventory_can_repack"
                                value="1"
+                               data-inventory-repack
                                class="mt-0.5 rounded border-gray-300 dark:border-gray-700"
                                @checked(old('inventory_can_repack', $product->inventory_can_repack ?? false))>
                         <span>
@@ -823,7 +850,7 @@
 
             <div class="grid gap-2 md:grid-cols-3">
                 <label class="rounded-sm border border-gray-200 dark:border-gray-800 bg-gray-50 dark:bg-gray-950/40 px-3 py-2 flex items-center gap-2">
-                    <input type="checkbox" name="manage_stock" value="1" class="rounded border-gray-300 dark:border-gray-700"
+                    <input type="checkbox" name="manage_stock" value="1" data-manage-stock class="rounded border-gray-300 dark:border-gray-700"
                            @checked(old('manage_stock', $product->manage_stock ?? false))>
                     <span class="text-[12px] text-gray-800 dark:text-gray-200">Manage stock</span>
                 </label>
@@ -970,7 +997,65 @@
     const packTypeEl = document.querySelector('[data-pack-type]');
     const inventoryRoleEl = document.querySelector('[data-inventory-role]');
     const sellUnitEl = document.querySelector('[data-sell-unit]');
+    const inventorySaleableEl = document.querySelector('[data-inventory-saleable]');
+    const inventoryRepackEl = document.querySelector('[data-inventory-repack]');
+    const manageStockEl = document.querySelector('[data-manage-stock]');
     const behaviourGuide = document.getElementById('product-behaviour-guide');
+
+    function setSelectValue(el, value) {
+        if (!el) return;
+        el.value = value;
+        el.dispatchEvent(new Event('change', { bubbles: true }));
+    }
+
+    function setCheckboxValue(el, checked) {
+        if (!el) return;
+        el.checked = !!checked;
+        el.dispatchEvent(new Event('change', { bubbles: true }));
+    }
+
+    function applyProductPreset(preset) {
+        if (preset === 'variant') {
+            setSelectValue(storefrontTypeEl, 'variable');
+            setSelectValue(packTypeEl, 'quantity');
+            setSelectValue(inventoryRoleEl, 'saleable');
+            setSelectValue(sellUnitEl, 'pack');
+            setCheckboxValue(inventorySaleableEl, false);
+            setCheckboxValue(inventoryRepackEl, false);
+            setCheckboxValue(manageStockEl, false);
+        } else if (preset === 'physical') {
+            setSelectValue(storefrontTypeEl, 'simple');
+            setSelectValue(packTypeEl, 'variable_weight');
+            setSelectValue(inventoryRoleEl, 'both');
+            setSelectValue(sellUnitEl, 'kg');
+            setCheckboxValue(inventorySaleableEl, true);
+            setCheckboxValue(inventoryRepackEl, true);
+            setCheckboxValue(manageStockEl, true);
+        } else if (preset === 'internal') {
+            setSelectValue(storefrontTypeEl, 'simple');
+            setSelectValue(packTypeEl, 'bulk');
+            setSelectValue(inventoryRoleEl, 'internal');
+            setSelectValue(sellUnitEl, 'piece');
+            setCheckboxValue(inventorySaleableEl, false);
+            setCheckboxValue(inventoryRepackEl, true);
+            setCheckboxValue(manageStockEl, true);
+        } else {
+            setSelectValue(storefrontTypeEl, 'simple');
+            setSelectValue(packTypeEl, 'quantity');
+            setSelectValue(inventoryRoleEl, 'saleable');
+            setSelectValue(sellUnitEl, 'pack');
+            setCheckboxValue(inventorySaleableEl, false);
+            setCheckboxValue(inventoryRepackEl, false);
+            setCheckboxValue(manageStockEl, true);
+        }
+        updateProductBehaviourGuide();
+    }
+
+    document.querySelectorAll('[data-product-preset]').forEach(button => {
+        button.addEventListener('click', function () {
+            applyProductPreset(this.dataset.productPreset || 'direct');
+        });
+    });
 
     function updateProductBehaviourGuide() {
         if (!behaviourGuide) return;

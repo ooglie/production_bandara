@@ -8,11 +8,11 @@
 
     $has = fn(string $r) => Route::has($r);
     $shopUrl = $has('shop.index') ? route('shop.index') : '#';
-    $supportUrl = $has('tickets.create') ? route('tickets.create') : ($has('account.tickets.create') ? route('account.tickets.create') : null);
+    $supportUrl = $has('tickets.create') ? route('tickets.create') : null;
 
-    $cartAddUrl = $has('cart.items.store') ? route('cart.items.store') : ($has('cart.add') ? route('cart.add') : ($has('cart.store') ? route('cart.store') : null));
-    $wishlistToggleUrl = $has('wishlist.toggle') ? route('wishlist.toggle') : ($has('wishlist.store') ? route('wishlist.store') : null);
-    $wishlistUrl = $has('wishlist.index') ? route('wishlist.index') : ($has('wishlist') ? route('wishlist') : null);
+    $cartAddUrl = $has('cart.add') ? route('cart.add') : ($has('cart.store') ? route('cart.store') : null);
+    $wishlistToggleUrl = $has('wishlist.store') ? route('wishlist.store') : null;
+    $wishlistUrl = $has('wishlist.index') ? route('wishlist.index') : null;
     $loginUrl = $has('login') ? route('login') : null;
 
     $flagEmoji = function (?string $code) {
@@ -29,9 +29,7 @@
     };
 
     $productUrl = function ($product) use ($has) {
-        if ($has('products.show')) return route('products.show', $product);
-        if ($has('product.show')) return route('product.show', $product);
-        if ($has('shop.show')) return route('shop.show', $product);
+        if ($has('product.show')) return route('product.show', $product->slug ?? $product);
         return '#';
     };
 

@@ -24,7 +24,7 @@
 
     $placeUrl = \Illuminate\Support\Facades\Route::has('checkout.place')
         ? route('checkout.place')
-        : (\Illuminate\Support\Facades\Route::has('checkout.store') ? route('checkout.store') : null);
+        : null;
 
     $backUrl = \Illuminate\Support\Facades\Route::has('cart.index') ? route('cart.index') : url('/');
 
@@ -154,7 +154,6 @@
             </a>
         </div>
     </div>
-
 
     @if(!empty($pricingUpdatedCount) && $pricingUpdatedCount > 0)
         <div class="rounded-sm border border-gray-200 dark:border-gray-800 bg-white dark:bg-gray-900 px-3 py-2 text-[11px] text-gray-700 dark:text-gray-200">
@@ -651,7 +650,7 @@
                 </form>
             @else
                 <div class="rounded-sm border border-yellow-300 bg-yellow-50 px-3 py-2 text-[11px] text-yellow-800">
-                    Checkout place route not found. Expected route name: <code>checkout.place</code> or <code>checkout.store</code>
+                    Checkout place route not found. Expected route name: <code>checkout.place</code>
                 </div>
             @endif
         </div>

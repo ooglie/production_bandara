@@ -1,15 +1,15 @@
 @extends('layouts.company')
 
-@section('title', 'Create attribute value')
+@section('title', 'Create variant option value')
 
 @section('breadcrumb')
-    Admin · Attributes · {{ $attribute->name }} · Values · Create
+    Admin · Variant Options · {{ $attribute->name }} · Option Values · Create
 @endsection
 
 @section('content')
     <div class="space-y-4">
         <h1 class="text-lg font-semibold text-gray-900 dark:text-gray-50">
-            Create value – {{ $attribute->name }}
+            Create option value – {{ $attribute->name }}
         </h1>
 
         @include('admin.attributes.values._form', [

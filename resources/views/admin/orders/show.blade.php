@@ -510,11 +510,9 @@
                                class="inline-flex items-center rounded-full border border-gray-300 dark:border-gray-700 px-3 py-1 text-[10px] text-gray-800 dark:text-gray-100 hover:bg-gray-100 dark:hover:bg-gray-800">
                                 View invoice
                             </a>
-                            {{-- <a href="{{ route('admin.invoices.pdf', $order->invoice) }}" --}}
-                                <a href="#"
-                               class="inline-flex items-center rounded-full border border-gray-300 dark:border-gray-700 px-3 py-1 text-[10px] text-gray-800 dark:text-gray-100 hover:bg-gray-100 dark:hover:bg-gray-800">
-                                Download PDF
-                            </a>
+                            <span class="inline-flex items-center rounded-full border border-gray-200 dark:border-gray-800 px-3 py-1 text-[10px] text-gray-400 dark:text-gray-500">
+                                PDF unavailable
+                            </span>
                         </div>
                     @else
                         <p class="text-[11px] text-gray-500 dark:text-gray-400">

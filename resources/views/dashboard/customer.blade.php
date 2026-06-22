@@ -24,17 +24,14 @@
     $productUrl = function ($product) use ($has) {
         if (!$product) return '#';
 
-        if ($has('products.show')) return route('products.show', $product);
         if ($has('product.show')) return route('product.show', $product->slug ?? $product);
-        if ($has('shop.show')) return route('shop.show', $product->slug ?? $product);
 
         return '#';
     };
 
     $cartAddUrl =
-        $has('cart.items.store') ? route('cart.items.store')
-        : ($has('cart.add') ? route('cart.add')
-        : ($has('cart.store') ? route('cart.store') : null));
+        $has('cart.add') ? route('cart.add')
+        : ($has('cart.store') ? route('cart.store') : null);
 
     $canQuickAdd = function ($product) use ($cartAddUrl) {
         if (!$product || !$cartAddUrl) {

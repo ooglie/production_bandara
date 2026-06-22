@@ -13,9 +13,7 @@
     $shopUrl = $has('shop.index') ? route('shop.index') : '#';
 
     $productUrl = function ($product) use ($has) {
-        if ($has('products.show')) return route('products.show', $product);
-        if ($has('product.show')) return route('product.show', $product);
-        if ($has('shop.show')) return route('shop.show', $product);
+        if ($has('product.show')) return route('product.show', $product->slug ?? $product);
 
         return '#';
     };

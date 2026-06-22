@@ -1,13 +1,13 @@
 @extends('layouts.company')
 
-@section('title', 'Create attribute')
+@section('title', 'Create variant option group')
 
-@section('breadcrumb', 'Admin · Attributes · Create')
+@section('breadcrumb', 'Admin · Variant Options · Create')
 
 @section('content')
     <div class="space-y-4">
         <h1 class="text-lg font-semibold text-gray-900 dark:text-gray-50">
-            Create attribute
+            Create variant option group
         </h1>
 
         @include('admin.attributes._form', [

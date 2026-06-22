@@ -73,6 +73,10 @@ class DeliverySettingsController extends Controller
 
     public function storePincode(Request $request, DeliveryZone $zone)
     {
+        $request->merge([
+            'pincode' => preg_replace('/\D+/', '', (string) $request->input('pincode')),
+        ]);
+
         $data = $request->validate([
             'pincode' => ['required', 'string', 'max:10', 'unique:delivery_zone_pincodes,pincode'],
             'city' => ['nullable', 'string', 'max:120'],
@@ -80,7 +84,6 @@ class DeliverySettingsController extends Controller
             'is_active' => ['nullable', 'boolean'],
         ]);
 
-        $data['pincode'] = preg_replace('/\D+/', '', $data['pincode']);
         $data['is_active'] = $request->boolean('is_active', true);
 
         $zone->pincodes()->create($data);
@@ -120,7 +123,6 @@ class DeliverySettingsController extends Controller
             'customer_type' => ['required', 'in:all,guest,b2c,b2b'],
             'min_order_value' => ['nullable', 'numeric', 'min:0'],
             'delivery_fee' => ['nullable', 'numeric', 'min:0'],
-            'included_distance_km' => ['nullable', 'numeric', 'min:0'],
             'free_delivery_above' => ['nullable', 'numeric', 'min:0'],
             'tax_rate' => ['nullable', 'numeric', 'min:0', 'max:100'],
             'is_active' => ['nullable', 'boolean'],
@@ -148,7 +150,7 @@ class DeliverySettingsController extends Controller
             'customer_type' => ['required', 'in:all,guest,b2c,b2b'],
             'min_order_value' => ['nullable', 'numeric', 'min:0'],
             'min_distance_km' => ['nullable', 'numeric', 'min:0'],
-            'max_distance_km' => ['nullable', 'numeric', 'min:0'],
+            'max_distance_km' => ['nullable', 'numeric', 'min:0', 'gte:min_distance_km'],
             'delivery_fee' => ['nullable', 'numeric', 'min:0'],
             'included_distance_km' => ['nullable', 'numeric', 'min:0'],
             'per_km_fee' => ['nullable', 'numeric', 'min:0'],
@@ -171,7 +173,7 @@ class DeliverySettingsController extends Controller
             'customer_type' => ['required', 'in:all,guest,b2c,b2b'],
             'min_order_value' => ['nullable', 'numeric', 'min:0'],
             'min_distance_km' => ['nullable', 'numeric', 'min:0'],
-            'max_distance_km' => ['nullable', 'numeric', 'min:0'],
+            'max_distance_km' => ['nullable', 'numeric', 'min:0', 'gte:min_distance_km'],
             'delivery_fee' => ['nullable', 'numeric', 'min:0'],
             'included_distance_km' => ['nullable', 'numeric', 'min:0'],
             'per_km_fee' => ['nullable', 'numeric', 'min:0'],

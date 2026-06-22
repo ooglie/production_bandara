@@ -513,6 +513,12 @@ class CheckoutController extends Controller
                 $oa->country = $address->country ?? 'India';
                 $oa->pincode = $address->pincode;
 
+                foreach (['latitude', 'longitude', 'geocoding_provider', 'geocoding_quality'] as $locationColumn) {
+                    if (Schema::hasColumn('order_addresses', $locationColumn)) {
+                        $oa->{$locationColumn} = $address->{$locationColumn} ?? null;
+                    }
+                }
+
                 $oa->gstin = $address->gstin;
                 $oa->save();
             }
@@ -970,8 +976,8 @@ class CheckoutController extends Controller
             return route('account.addresses.create', ['return_to' => $returnTo], false);
         }
 
-        if (Route::has('customer.addresses.create')) {
-            return route('customer.addresses.create', ['return_to' => $returnTo], false);
+        if (Route::has('account.addresses.create')) {
+            return route('account.addresses.create', ['return_to' => $returnTo], false);
         }
 
         return $returnTo;

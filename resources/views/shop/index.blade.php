@@ -30,23 +30,15 @@
         ->filter(fn ($cat) => in_array((string) $cat->id, $selectedCategoryIds, true))
         ->values();
 
-    // Guess/try common route names (adjust anytime)
     $cartAddUrl =
-        $has('cart.items.store') ? route('cart.items.store')
-        : ($has('cart.add') ? route('cart.add')
-        : ($has('cart.store') ? route('cart.store') : null));
+        $has('cart.add') ? route('cart.add')
+        : ($has('cart.store') ? route('cart.store') : null);
 
-    $cartUrl =
-        $has('cart.index') ? route('cart.index')
-        : ($has('cart.show') ? route('cart.show') : null);
+    $cartUrl = $has('cart.index') ? route('cart.index') : null;
 
-    $wishlistToggleUrl =
-        $has('wishlist.toggle') ? route('wishlist.toggle')
-        : ($has('wishlist.store') ? route('wishlist.store') : null);
+    $wishlistToggleUrl = $has('wishlist.store') ? route('wishlist.store') : null;
 
-    $wishlistUrl =
-        $has('wishlist.index') ? route('wishlist.index')
-        : ($has('wishlist') ? route('wishlist') : null);
+    $wishlistUrl = $has('wishlist.index') ? route('wishlist.index') : null;
 
     $loginUrl = $has('login') ? route('login') : null;
 

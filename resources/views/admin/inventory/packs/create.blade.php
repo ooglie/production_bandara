@@ -117,7 +117,7 @@
         </div>
     @endif
 
-    <form method="POST" action="{{ route('admin.inventory.packs.store') }}" class="rounded-2xl border border-gray-200 bg-white p-5 space-y-5 dark:border-gray-800 dark:bg-gray-950">
+    <form method="POST" action="{{ route('admin.inventory.packs.store') }}" class="rounded-2xl border border-gray-200 bg-white p-5 space-y-5 dark:border-gray-800 dark:bg-gray-950" data-transform-stock-form>
         @csrf
 
         <div class="grid gap-4 md:grid-cols-4">
@@ -240,9 +240,30 @@
 
         <div class="flex justify-end gap-2">
             <a href="{{ route('admin.inventory.packs.index') }}" class="rounded border border-gray-300 px-4 py-2 text-xs hover:bg-gray-50 dark:border-gray-700 dark:hover:bg-gray-800">Cancel</a>
-            <button class="rounded bg-gray-900 px-4 py-2 text-xs font-medium text-white hover:bg-gray-800 dark:bg-gray-100 dark:text-gray-900 dark:hover:bg-gray-200">Create stock</button>
+            <button type="submit" data-transform-stock-submit class="rounded bg-gray-900 px-4 py-2 text-xs font-medium text-white hover:bg-gray-800 dark:bg-gray-100 dark:text-gray-900 dark:hover:bg-gray-200">Review & create stock</button>
         </div>
     </form>
+
+    <div id="transform_confirm_modal" class="fixed inset-0 z-50 hidden items-center justify-center bg-gray-950/35 px-4 py-6" role="dialog" aria-modal="true" aria-labelledby="transform_confirm_title">
+        <div class="w-full max-w-xl rounded-2xl border border-gray-200 bg-white p-5 shadow-2xl dark:border-gray-800 dark:bg-gray-950">
+            <div class="flex items-start justify-between gap-3">
+                <div>
+                    <h2 id="transform_confirm_title" class="text-base font-semibold text-gray-900 dark:text-gray-50">Confirm stock transformation</h2>
+                    <p class="mt-1 text-[12px] text-gray-500 dark:text-gray-400">Please review the consumption and output before stock is created.</p>
+                </div>
+                <button type="button" data-transform-confirm-cancel class="rounded-full border border-gray-200 px-2 py-1 text-xs text-gray-500 hover:bg-gray-50 dark:border-gray-700 dark:hover:bg-gray-900" aria-label="Close">×</button>
+            </div>
+
+            <div id="transform_confirm_summary" class="mt-4 rounded-xl border border-gray-200 bg-gray-50 px-4 py-3 text-[12px] text-gray-700 dark:border-gray-800 dark:bg-gray-900 dark:text-gray-300">
+                Review summary unavailable.
+            </div>
+
+            <div class="mt-4 flex flex-col-reverse gap-2 sm:flex-row sm:justify-end">
+                <button type="button" data-transform-confirm-cancel class="rounded-lg border border-gray-300 px-4 py-2 text-xs font-semibold hover:bg-gray-50 dark:border-gray-700 dark:hover:bg-gray-900">Go back</button>
+                <button type="button" data-transform-confirm-submit class="rounded-lg bg-gray-900 px-4 py-2 text-xs font-semibold text-white hover:bg-gray-800 dark:bg-gray-100 dark:text-gray-900 dark:hover:bg-gray-200">Confirm & create stock</button>
+            </div>
+        </div>
+    </div>
 
     @if($recentPacks->isNotEmpty())
         <div class="rounded-2xl border border-gray-200 bg-white p-4 dark:border-gray-800 dark:bg-gray-950">
@@ -261,6 +282,13 @@
 
 <script>
 (function () {
+    const form = document.querySelector('[data-transform-stock-form]');
+    const confirmModal = document.getElementById('transform_confirm_modal');
+    const confirmSummary = document.getElementById('transform_confirm_summary');
+    const confirmSubmit = document.querySelector('[data-transform-confirm-submit]');
+    const confirmCancelButtons = Array.from(document.querySelectorAll('[data-transform-confirm-cancel]'));
+    let confirmedSubmit = false;
+
     const source = document.getElementById('source_inventory_lot_id');
     const sourcePiece = document.getElementById('source_inventory_piece_id');
     const sourcePieceWrap = document.getElementById('source_piece_wrap');
@@ -550,6 +578,45 @@
     outputWeight?.addEventListener('input', updatePreview);
     pieces?.addEventListener('input', updatePreview);
     sourcePieces?.addEventListener('input', () => { sourcePieces.dataset.autoFilled = '0'; updatePreview(); });
+
+    function openConfirmModal() {
+        if (!confirmModal || !confirmSummary) return false;
+        updatePreview();
+        confirmSummary.innerHTML = preview ? preview.innerHTML : 'Review summary unavailable.';
+        confirmModal.classList.remove('hidden');
+        confirmModal.classList.add('flex');
+        confirmSubmit?.focus();
+        return true;
+    }
+
+    function closeConfirmModal() {
+        if (!confirmModal) return;
+        confirmModal.classList.add('hidden');
+        confirmModal.classList.remove('flex');
+    }
+
+    form?.addEventListener('submit', function (event) {
+        if (confirmedSubmit) return;
+        event.preventDefault();
+        if (!this.reportValidity || this.reportValidity()) {
+            openConfirmModal();
+        }
+    });
+
+    confirmSubmit?.addEventListener('click', function () {
+        if (!form) return;
+        confirmedSubmit = true;
+        closeConfirmModal();
+        form.submit();
+    });
+
+    confirmCancelButtons.forEach(button => button.addEventListener('click', closeConfirmModal));
+    confirmModal?.addEventListener('click', function (event) {
+        if (event.target === confirmModal) closeConfirmModal();
+    });
+    document.addEventListener('keydown', function (event) {
+        if (event.key === 'Escape') closeConfirmModal();
+    });
 
     applySourceDefaults();
     updateFieldsFromProduct();

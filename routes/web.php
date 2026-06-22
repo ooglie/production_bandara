@@ -69,6 +69,7 @@ use App\Http\Controllers\Admin\{
     HsnCodeController,
     OrderPrintController,
     OrderDeliveryController,
+    PageController,
     B2BCustomerProductController,
     ProductVariantLookupController,
     B2BCustomerController,
@@ -134,6 +135,10 @@ Route::middleware('guest')->group(function () {
 Route::post('logout', [LoginController::class, 'logout'])
     ->middleware('auth')
     ->name('logout');
+
+Route::post('/impersonation/stop', [AdminUserController::class, 'stopImpersonating'])
+    ->middleware('auth')
+    ->name('impersonation.stop');
 
 // CART ROUTES
 Route::get('/cart', [CartController::class, 'index'])->name('cart.index');
@@ -246,6 +251,9 @@ Route::middleware(['auth', 'role:Customer'])->group(function () {
 
     Route::get('/account/rewards', [ProfileController::class, 'rewards'])
         ->name('account.rewards');
+
+    Route::get('/account/rewards/terms', [ProfileController::class, 'rewardTerms'])
+        ->name('account.rewards.terms');
 
     // kept as-is so nothing breaks
     Route::get('/invoices', [CustomerInvoiceController::class, 'index'])
@@ -499,7 +507,7 @@ Route::middleware(['auth', 'role:Admin|Manager|Accountant|CAAccountant|Stores'])
         });
 
         Route::middleware('role:Admin|Manager')->group(function () {
-            // Route::resource('pages', AdminPageController::class)->except(['show']);
+            Route::resource('pages', PageController::class)->except(['show']);
             Route::resource('product-collections', ProductCollectionController::class)
                 ->parameters(['product-collections' => 'productCollection'])
                 ->except('show');
@@ -663,6 +671,9 @@ Route::middleware(['auth', 'role:Admin|Manager|Accountant|CAAccountant|Stores'])
                     Route::delete('/campaigns/{campaign}', [BandaraCreditController::class, 'destroyCampaign'])->middleware('can:manage rewards')->name('campaigns.destroy');
                     Route::get('/customers', [BandaraCreditController::class, 'customers'])->name('customers');
                     Route::post('/adjustments', [BandaraCreditController::class, 'storeAdjustment'])->middleware('can:manage rewards')->name('adjustments.store');
+                    Route::get('/reports', [BandaraCreditController::class, 'reports'])->name('reports');
+                    Route::get('/reports/export', [BandaraCreditController::class, 'exportReport'])->middleware('can:manage rewards')->name('reports.export');
+                    Route::post('/order-adjustments', [BandaraCreditController::class, 'storeOrderAdjustment'])->middleware('can:manage rewards')->name('order-adjustments.store');
                     Route::get('/ledger', [BandaraCreditController::class, 'ledger'])->name('ledger');
                 });
 

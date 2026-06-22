@@ -48,7 +48,7 @@ class AttributeController extends Controller
 
         return redirect()
             ->route('admin.attributes.index')
-            ->with('status', 'Attribute created.');
+            ->with('status', 'Variant option group created.');
     }
 
     public function edit(Attribute $attribute)
@@ -70,7 +70,7 @@ class AttributeController extends Controller
 
         return redirect()
             ->route('admin.attributes.index')
-            ->with('status', 'Attribute updated.');
+            ->with('status', 'Variant option group updated.');
     }
 
     public function destroy(Attribute $attribute)
@@ -79,7 +79,7 @@ class AttributeController extends Controller
 
         return redirect()
             ->route('admin.attributes.index')
-            ->with('status', 'Attribute deleted.');
+            ->with('status', 'Variant option group deleted.');
     }
 
     protected function validatedData(Request $request, ?int $attributeId = null): array

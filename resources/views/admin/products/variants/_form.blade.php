@@ -330,13 +330,13 @@
 
         <div>
             <label class="block text-xs font-medium text-gray-700 dark:text-gray-300 mb-1">
-                Attribute values for this variant
+                Variant option combination
             </label>
 
             @if($attributeValuesByAttribute->isEmpty())
                 <p class="text-[11px] text-gray-500 dark:text-gray-400">
-                    No attributes configured for this product.
-                    Set attribute values on the product first. For two-level products such as Prawns, add attributes like Size and Pack Size, then assign both values to each variant.
+                    No variant options configured for this product.
+                    Set allowed option values on the product first. For two-level products such as Prawns, add option groups like Size and Pack Size, then assign both values to each variant.
                 </p>
             @else
                 <div class="space-y-3 text-xs">

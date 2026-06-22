@@ -178,7 +178,7 @@
                 @if($has('admin.attributes.index'))
                     <a href="{{ route('admin.attributes.index') }}"
                        class="block px-2 py-1.5 rounded-md hover:bg-gray-100 dark:hover:bg-gray-800">
-                        Attributes
+                        Variant Options
                     </a>
                 @endif
 

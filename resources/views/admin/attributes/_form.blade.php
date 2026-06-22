@@ -53,7 +53,7 @@
         <div class="grid gap-4 sm:grid-cols-2">
             <div>
                 <label class="block text-xs font-medium text-gray-700 dark:text-gray-300">
-                    Display name (optional)
+                    Storefront label (optional)
                 </label>
                 <input
                     type="text"
@@ -68,7 +68,7 @@
 
             <div>
                 <label class="block text-xs font-medium text-gray-700 dark:text-gray-300">
-                    Frontend type
+                    Option display style
                 </label>
                 <select
                     name="frontend_type"
@@ -96,7 +96,7 @@
                     value="1"
                     @checked(old('is_filterable', $attribute->is_filterable ?? true))
                 >
-                <span>Use as filter in shop</span>
+                <span>Use as storefront filter</span>
             </label>
         </div>
 
@@ -105,7 +105,7 @@
                 type="submit"
                 class="inline-flex items-center justify-center rounded border border-gray-900 dark:border-gray-100 bg-gray-900 text-white dark:bg-gray-100 dark:text-gray-900 px-4 py-1.5 text-xs font-medium hover:bg-gray-800 dark:hover:bg-gray-200"
             >
-                {{ $isEdit ? 'Update attribute' : 'Create attribute' }}
+                {{ $isEdit ? 'Update option group' : 'Create option group' }}
             </button>
 
             <a href="{{ route('admin.attributes.index') }}"

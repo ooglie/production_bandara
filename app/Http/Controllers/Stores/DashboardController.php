@@ -28,7 +28,6 @@ class DashboardController extends Controller
 
         // $inventoryPacksIndex =
         //     Route::has('admin.inventory.packs.index') ? route('admin.inventory.packs.index')
-        //     : (Route::has('admin.inventory_packs.index') ? route('admin.inventory-packs.index')
         //     : null);
 
         // Basic counters (won’t crash if tables exist, and yours do)
