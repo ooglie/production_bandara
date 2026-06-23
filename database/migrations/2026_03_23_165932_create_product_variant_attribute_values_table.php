@@ -2,17 +2,16 @@
 
 use Illuminate\Database\Migrations\Migration;
 use Illuminate\Database\Schema\Blueprint;
+use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Schema;
-// sxuse RuntimeException;
 
 return new class extends Migration
 {
+    private const TABLE_NAME = 'product_variant_attribute_values';
+    private const VALUE_FK_NAME = 'pvav_value_fk';
+
     public function up(): void
     {
-        if (Schema::hasTable('product_variant_attribute_values')) {
-            return;
-        }
-
         $valueTable = null;
         $valueForeignKey = null;
 
@@ -30,27 +29,71 @@ return new class extends Migration
             );
         }
 
-        Schema::create('product_variant_attribute_values', function (Blueprint $table) use ($valueTable, $valueForeignKey) {
+        if (Schema::hasTable(self::TABLE_NAME)) {
+            $this->addMissingValueForeignKey($valueTable, $valueForeignKey);
+
+            return;
+        }
+
+        Schema::create(self::TABLE_NAME, function (Blueprint $table) use ($valueTable, $valueForeignKey) {
+            $table->id();
+
             $table->foreignId('product_variant_id')
                 ->constrained('product_variants')
                 ->cascadeOnDelete();
 
             $table->unsignedBigInteger($valueForeignKey);
 
-            $table->foreign($valueForeignKey)
-                ->references('id')
-                ->on($valueTable)
-                ->cascadeOnDelete();
+            $table->timestamps();
 
             $table->unique(
                 ['product_variant_id', $valueForeignKey],
                 'pvav_variant_value_unique'
             );
+
+            $table->foreign($valueForeignKey, self::VALUE_FK_NAME)
+                ->references('id')
+                ->on($valueTable)
+                ->cascadeOnDelete();
         });
     }
 
     public function down(): void
     {
-        Schema::dropIfExists('product_variant_attribute_values');
+        Schema::dropIfExists(self::TABLE_NAME);
+    }
+
+    private function addMissingValueForeignKey(string $valueTable, string $valueForeignKey): void
+    {
+        if (! Schema::hasColumn(self::TABLE_NAME, $valueForeignKey)) {
+            return;
+        }
+
+        if ($this->hasForeignKey(self::TABLE_NAME, $valueForeignKey)) {
+            return;
+        }
+
+        Schema::table(self::TABLE_NAME, function (Blueprint $table) use ($valueTable, $valueForeignKey) {
+            $table->foreign($valueForeignKey, self::VALUE_FK_NAME)
+                ->references('id')
+                ->on($valueTable)
+                ->cascadeOnDelete();
+        });
+    }
+
+    private function hasForeignKey(string $tableName, string $columnName): bool
+    {
+        $connection = DB::connection();
+
+        if ($connection->getDriverName() !== 'mysql') {
+            return false;
+        }
+
+        return DB::table('information_schema.KEY_COLUMN_USAGE')
+            ->where('TABLE_SCHEMA', $connection->getDatabaseName())
+            ->where('TABLE_NAME', $tableName)
+            ->where('COLUMN_NAME', $columnName)
+            ->whereNotNull('REFERENCED_TABLE_NAME')
+            ->exists();
     }
 };
