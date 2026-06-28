@@ -11,10 +11,19 @@
                 Variant Options
             </h1>
 
-            <a href="{{ route('admin.attributes.create') }}"
-               class="inline-flex items-center px-3 py-1.5 text-xs rounded border border-gray-300 dark:border-gray-700 bg-gray-900 text-white dark:bg-gray-100 dark:text-gray-900 hover:bg-gray-800 dark:hover:bg-gray-200">
-                + New option group
-            </a>
+            <div class="flex items-center gap-2">
+                @if(\Illuminate\Support\Facades\Route::has('admin.variant-option-values.index'))
+                    <a href="{{ route('admin.variant-option-values.index') }}"
+                       class="inline-flex items-center px-3 py-1.5 text-xs rounded border border-gray-300 dark:border-gray-700 hover:bg-gray-100 dark:hover:bg-gray-800">
+                        Manage option values
+                    </a>
+                @endif
+
+                <a href="{{ route('admin.attributes.create') }}"
+                   class="inline-flex items-center px-3 py-1.5 text-xs rounded border border-gray-300 dark:border-gray-700 bg-gray-900 text-white dark:bg-gray-100 dark:text-gray-900 hover:bg-gray-800 dark:hover:bg-gray-200">
+                    + New option group
+                </a>
+            </div>
         </div>
 
         @if(session('status'))

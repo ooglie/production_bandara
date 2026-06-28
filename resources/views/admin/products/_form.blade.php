@@ -592,11 +592,27 @@
                 <div class="space-y-3">
                     @foreach($attributes as $attribute)
                         <div class="rounded-sm border border-gray-200 dark:border-gray-800 bg-gray-50 dark:bg-gray-950/40 p-3">
-                            <div class="flex items-center justify-between">
-                                <div class="text-[12px] font-semibold text-gray-900 dark:text-gray-50">
-                                    {{ $attribute->display_name ?? $attribute->name }}
+                            <div class="flex items-center justify-between gap-3">
+                                <div>
+                                    <div class="text-[12px] font-semibold text-gray-900 dark:text-gray-50">
+                                        {{ $attribute->display_name ?? $attribute->name }}
+                                    </div>
+                                    <div class="text-[10px] text-gray-400">{{ ucfirst($attribute->frontend_type) }}</div>
                                 </div>
-                                <div class="text-[10px] text-gray-400">{{ ucfirst($attribute->frontend_type) }}</div>
+
+                                <div class="flex items-center gap-2 text-[10px]">
+                                    @if(\Illuminate\Support\Facades\Route::has('admin.variant-option-values.index'))
+                                        <a href="{{ route('admin.variant-option-values.index', ['attribute_id' => $attribute->id]) }}"
+                                           class="text-gray-500 underline hover:text-gray-800 dark:hover:text-gray-200">
+                                            Manage values
+                                        </a>
+                                    @elseif(\Illuminate\Support\Facades\Route::has('admin.attributes.values.index'))
+                                        <a href="{{ route('admin.attributes.values.index', $attribute) }}"
+                                           class="text-gray-500 underline hover:text-gray-800 dark:hover:text-gray-200">
+                                            Manage values
+                                        </a>
+                                    @endif
+                                </div>
                             </div>
 
                             @if($attribute->values->isEmpty())

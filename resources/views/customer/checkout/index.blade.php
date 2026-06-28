@@ -30,6 +30,20 @@
 
     $backLabel = 'Back to cart';
 
+    $cartRoute = function (string $name, $parameter = null) use ($isB2BCheckoutUser) {
+        $routeName = $isB2BCheckoutUser && \Illuminate\Support\Facades\Route::has('b2b.' . $name)
+            ? 'b2b.' . $name
+            : $name;
+
+        return $parameter === null ? route($routeName) : route($routeName, $parameter);
+    };
+
+    $checkoutReturnTo = request()->getRequestUri();
+    $cartBulkDestroyUrl = \Illuminate\Support\Facades\Route::has($isB2BCheckoutUser ? 'b2b.cart.bulk-destroy' : 'cart.bulk-destroy')
+        ? $cartRoute('cart.bulk-destroy')
+        : url('/cart/items');
+    $cartDestroyUrl = fn ($itemId) => $cartRoute('cart.destroy', $itemId);
+
     $bandaraCredit = $bandaraCreditRedemption ?? [];
     $bandaraCreditEnabled = (bool) ($bandaraCredit['enabled'] ?? false);
     $bandaraCreditAvailable = (int) ($bandaraCredit['available_points'] ?? 0);
@@ -181,16 +195,45 @@
 
         {{-- Items --}}
         <div class="lg:col-span-2 rounded-sm border border-gray-200 dark:border-gray-800 bg-white dark:bg-gray-900 overflow-hidden">
-            {{-- <div class="px-4 py-3 border-b border-gray-200 dark:border-gray-800">
-                <div class="font-semibold text-gray-900 dark:text-gray-50">Items</div>
-                <div class="text-[11px] text-gray-500 dark:text-gray-400">Qty + weight shown for every line</div>
-            </div> --}}
+            <form id="checkout-bulk-remove-form"
+                  method="POST"
+                  action="{{ $cartBulkDestroyUrl }}"
+                  data-bandara-confirm="Remove the selected item(s) from cart?"
+                  data-bandara-confirm-title="Remove selected items?"
+                  data-bandara-confirm-text="Remove selected"
+                  data-bandara-confirm-variant="danger">
+                @csrf
+                @method('DELETE')
+                <input type="hidden" name="return_to" value="{{ $checkoutReturnTo }}">
+            </form>
+
+            <div class="px-4 py-3 border-b border-gray-200 dark:border-gray-800 flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
+                <div>
+                    <div class="font-semibold text-gray-900 dark:text-gray-50">Items</div>
+                    <div class="text-[11px] text-gray-500 dark:text-gray-400">
+                        Review cart items before placing the order.
+                    </div>
+                </div>
+
+                <button type="submit"
+                        form="checkout-bulk-remove-form"
+                        data-checkout-bulk-remove-button
+                        disabled
+                        class="inline-flex items-center justify-center rounded-sm border border-red-200 dark:border-red-900 px-3 py-1 text-[10px] font-medium text-red-700 dark:text-red-300 hover:bg-red-50 dark:hover:bg-red-950/30 disabled:cursor-not-allowed disabled:opacity-50">
+                    Remove selected
+                </button>
+            </div>
 
             <div class="overflow-x-auto">
                 <table class="min-w-full text-[11px]">
                     <thead class="bg-gray-50 dark:bg-gray-950 border-b border-gray-200 dark:border-gray-800">
                     <tr class="text-left text-gray-600 dark:text-gray-300">
-                        <th class="px-4 py-2 font-medium">#</th>
+                        <th class="px-4 py-2 font-medium w-14">
+                            <input type="checkbox"
+                                   data-checkout-select-all
+                                   class="rounded border-gray-300 dark:border-gray-700"
+                                   aria-label="Select all checkout items">
+                        </th>
                         <th class="px-4 py-2 font-medium">Item</th>
                         <th class="px-4 py-2 font-medium">Qty</th>
                         @if(!$isB2BCheckoutUser)
@@ -198,6 +241,7 @@
                         @endif
                         <th class="px-4 py-2 font-medium">Unit</th>
                         <th class="px-4 py-2 font-medium text-right">Total</th>
+                        <th class="px-4 py-2 font-medium text-right">Remove</th>
                     </tr>
                     </thead>
                     <tbody class="divide-y divide-gray-100 dark:divide-gray-800">
@@ -250,7 +294,18 @@
                         @endphp
 
                         <tr class="text-gray-700 dark:text-gray-200">
-                            <td class="px-4 py-2 whitespace-nowrap align-top">{{ $loop->iteration }}</td>
+                            <td class="px-4 py-2 whitespace-nowrap align-top">
+                                <div class="flex items-center gap-2">
+                                    <input type="checkbox"
+                                           name="cart_item_ids[]"
+                                           value="{{ $it->id }}"
+                                           form="checkout-bulk-remove-form"
+                                           data-checkout-item-checkbox
+                                           class="rounded border-gray-300 dark:border-gray-700"
+                                           aria-label="Select {{ $p?->name ?? 'product' }} for removal">
+                                    <span class="text-[10px] text-gray-500 dark:text-gray-400">{{ $loop->iteration }}</span>
+                                </div>
+                            </td>
 
                             <td class="px-4 py-2">
                                 <div class="font-medium text-gray-900 dark:text-gray-50">
@@ -289,6 +344,23 @@
                             <td class="px-4 py-2 whitespace-nowrap text-right">
                                 ₹{{ number_format($displayLineTotal, 2) }}
                             </td>
+
+                            <td class="px-4 py-2 whitespace-nowrap text-right">
+                                <form method="POST"
+                                      action="{{ $cartDestroyUrl($it->id) }}"
+                                      data-bandara-confirm="Remove this item from cart?"
+                                      data-bandara-confirm-title="Remove item?"
+                                      data-bandara-confirm-text="Remove"
+                                      data-bandara-confirm-variant="danger">
+                                    @csrf
+                                    @method('DELETE')
+                                    <input type="hidden" name="return_to" value="{{ $checkoutReturnTo }}">
+                                    <button type="submit"
+                                            class="inline-flex items-center rounded-sm border border-gray-300 dark:border-gray-700 px-3 py-1 text-[10px] hover:bg-gray-100 dark:hover:bg-gray-800">
+                                        Remove
+                                    </button>
+                                </form>
+                            </td>
                         </tr>
                     @endforeach
                     </tbody>
@@ -308,7 +380,7 @@
                 <form method="POST" action="{{ $placeUrl }}" class="space-y-3" data-checkout-form>
                     @csrf
 
-                    <input type="hidden" name="return_to" value="{{ request()->fullUrl() }}">
+                    <input type="hidden" name="return_to" value="{{ $checkoutReturnTo }}">
 
                     <div class="rounded-2xl border border-gray-200 dark:border-gray-800 bg-white dark:bg-gray-900 p-4 sm:p-5">
     <div class="flex items-start justify-between gap-3">
@@ -663,6 +735,47 @@
 @push('scripts')
 <script>
 (function () {
+    const checkboxes = Array.from(document.querySelectorAll('[data-checkout-item-checkbox]'));
+    const selectAll = document.querySelector('[data-checkout-select-all]');
+    const bulkButton = document.querySelector('[data-checkout-bulk-remove-button]');
+
+    if (!checkboxes.length || !bulkButton) {
+        return;
+    }
+
+    const updateBulkState = function () {
+        const selectedCount = checkboxes.filter((checkbox) => checkbox.checked).length;
+
+        bulkButton.disabled = selectedCount === 0;
+        bulkButton.textContent = selectedCount > 0
+            ? 'Remove selected (' + selectedCount + ')'
+            : 'Remove selected';
+
+        if (selectAll) {
+            selectAll.checked = selectedCount === checkboxes.length;
+            selectAll.indeterminate = selectedCount > 0 && selectedCount < checkboxes.length;
+        }
+    };
+
+    checkboxes.forEach((checkbox) => {
+        checkbox.addEventListener('change', updateBulkState);
+    });
+
+    if (selectAll) {
+        selectAll.addEventListener('change', function () {
+            checkboxes.forEach((checkbox) => {
+                checkbox.checked = selectAll.checked;
+            });
+            updateBulkState();
+        });
+    }
+
+    updateBulkState();
+})();
+</script>
+
+<script>
+(function () {
     const form = document.querySelector('[data-checkout-form]');
     if (!form || !window.URL) {
         return;
@@ -708,10 +821,10 @@
     };
 
     const updateReturnUrl = function (url) {
-        const returnInput = form.querySelector('input[name="return_to"]');
-        if (returnInput) {
-            returnInput.value = url.toString();
-        }
+        const localReturnTo = url.pathname + url.search + url.hash;
+        document.querySelectorAll('input[name="return_to"]').forEach((returnInput) => {
+            returnInput.value = localReturnTo;
+        });
     };
 
     const replaceSection = function (selector, nextDocument) {
@@ -800,6 +913,7 @@
         refreshCheckoutForAddress(addressRadio.value);
     });
 })();
+
 </script>
 @endpush
 

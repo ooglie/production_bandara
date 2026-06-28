@@ -46,8 +46,8 @@ class ProductController extends Controller
         $hasTransformations = Schema::hasTable('product_transformations');
 
         $query = Product::query()
+            ->select('products.*')
             ->with(array_filter([
-                'vendor',
                 'categories',
                 $hasTransformations ? 'producedFromProducts:id,name,sku' : null,
                 $hasTransformations ? 'producesProducts:id,name,sku' : null,
@@ -58,6 +58,8 @@ class ProductController extends Controller
                 $hasTransformations ? 'producesProducts as produces_count' : null,
             ]))
             ->latest();
+
+        $this->addProductIndexStockSummaries($query);
 
         // Search by name / SKU
         if ($request->filled('q')) {
@@ -129,6 +131,85 @@ class ProductController extends Controller
             ->withQueryString();
 
         return view('admin.products.index', compact('products'));
+    }
+
+    protected function addProductIndexStockSummaries(\Illuminate\Database\Eloquent\Builder $query): void
+    {
+        if (Schema::hasTable('inventory_lots')) {
+            $inventoryLotColumns = collect(Schema::getColumnListing('inventory_lots'));
+
+            if ($inventoryLotColumns->contains('available_weight_kg')) {
+                $query->selectSub(function ($subQuery) use ($inventoryLotColumns) {
+                    $subQuery
+                        ->from('inventory_lots')
+                        ->selectRaw('COALESCE(SUM(COALESCE(available_weight_kg, 0)), 0)')
+                        ->whereColumn('inventory_lots.product_id', 'products.id');
+
+                    if ($inventoryLotColumns->contains('lot_status')) {
+                        $subQuery->where('inventory_lots.lot_status', 'available');
+                    }
+                }, 'inventory_stock_weight_kg');
+            }
+
+            $quantityColumns = collect(['available_pack_count', 'available_piece_count', 'available_quantity'])
+                ->filter(fn (string $column) => $inventoryLotColumns->contains($column))
+                ->values();
+
+            if ($quantityColumns->isNotEmpty()) {
+                $coalesceColumns = $quantityColumns
+                    ->map(fn (string $column) => "inventory_lots.{$column}")
+                    ->implode(', ');
+
+                $query->selectSub(function ($subQuery) use ($inventoryLotColumns, $coalesceColumns) {
+                    $subQuery
+                        ->from('inventory_lots')
+                        ->selectRaw("COALESCE(SUM(COALESCE({$coalesceColumns}, 0)), 0)")
+                        ->whereColumn('inventory_lots.product_id', 'products.id');
+
+                    if ($inventoryLotColumns->contains('lot_status')) {
+                        $subQuery->where('inventory_lots.lot_status', 'available');
+                    }
+                }, 'inventory_stock_qty');
+            }
+        }
+
+        if (Schema::hasTable('product_variants')) {
+            $variantColumns = collect(Schema::getColumnListing('product_variants'));
+
+            if ($variantColumns->contains('stock_quantity')) {
+                $query->selectSub(function ($subQuery) use ($variantColumns) {
+                    $subQuery
+                        ->from('product_variants')
+                        ->selectRaw('COALESCE(SUM(COALESCE(stock_quantity, 0)), 0)')
+                        ->whereColumn('product_variants.product_id', 'products.id');
+
+                    if ($variantColumns->contains('is_active')) {
+                        $subQuery->where('product_variants.is_active', true);
+                    }
+
+                    if ($variantColumns->contains('deleted_at')) {
+                        $subQuery->whereNull('product_variants.deleted_at');
+                    }
+                }, 'variant_stock_qty');
+            }
+
+            if ($variantColumns->contains('stock_quantity') && $variantColumns->contains('product_weight')) {
+                $query->selectSub(function ($subQuery) use ($variantColumns) {
+                    $subQuery
+                        ->from('product_variants')
+                        ->selectRaw('COALESCE(SUM(COALESCE(stock_quantity, 0) * COALESCE(product_weight, 0)), 0)')
+                        ->whereColumn('product_variants.product_id', 'products.id');
+
+                    if ($variantColumns->contains('is_active')) {
+                        $subQuery->where('product_variants.is_active', true);
+                    }
+
+                    if ($variantColumns->contains('deleted_at')) {
+                        $subQuery->whereNull('product_variants.deleted_at');
+                    }
+                }, 'variant_stock_weight_kg');
+            }
+        }
     }
 
     public function create(): View

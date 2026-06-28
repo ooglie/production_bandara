@@ -5,16 +5,23 @@ namespace App\Http\Controllers\Auth;
 use App\Http\Controllers\Controller;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Auth;
+use Illuminate\Support\Str;
 
 class LoginController extends Controller
 {
-    public function showLoginForm()
+    public function showLoginForm(Request $request)
     {
-        return view('auth.login');
+        $this->storeIntendedUrlFromRequest($request);
+
+        return view('auth.login', [
+            'intendedRedirect' => $request->session()->get('url.intended'),
+        ]);
     }
 
     public function login(Request $request)
     {
+        $this->storeIntendedUrlFromRequest($request);
+
         $credentials = $request->validate([
             'email'    => ['required', 'email'],
             'password' => ['required', 'string'],
@@ -27,7 +34,7 @@ class LoginController extends Controller
                 ->withErrors([
                     'email' => 'The provided credentials do not match our records.',
                 ])
-                ->onlyInput('email');
+                ->onlyInput(['email', 'redirect']);
         }
 
         // ✅ Regenerate session (prevents fixation) — intended URL is preserved
@@ -81,6 +88,61 @@ class LoginController extends Controller
         // storefront customers. The storefront is unified and prices are
         // resolved by account type after login.
         return redirect()->intended($fallback);
+    }
+
+
+    /**
+     * Persist an explicit safe return URL through the custom login form.
+     *
+     * Laravel's auth middleware normally stores url.intended when a guest hits
+     * a protected page. The cart checkout CTA now also passes a redirect query
+     * so the checkout target survives direct login-page visits and failed login
+     * attempts without allowing open redirects to external sites.
+     */
+    protected function storeIntendedUrlFromRequest(Request $request): void
+    {
+        $intendedUrl = $this->safeLocalRedirectUrl($request, $request->input('redirect'));
+
+        if ($intendedUrl) {
+            $request->session()->put('url.intended', $intendedUrl);
+        }
+    }
+
+    protected function safeLocalRedirectUrl(Request $request, mixed $candidate): ?string
+    {
+        if (! is_string($candidate)) {
+            return null;
+        }
+
+        $candidate = trim($candidate);
+
+        if ($candidate === '' || str_contains($candidate, "\r") || str_contains($candidate, "\n")) {
+            return null;
+        }
+
+        if (Str::startsWith($candidate, ['//', '\\\\'])) {
+            return null;
+        }
+
+        if (Str::startsWith($candidate, '/')) {
+            return $candidate;
+        }
+
+        $parts = parse_url($candidate);
+
+        if (! is_array($parts) || empty($parts['host'])) {
+            return null;
+        }
+
+        if (strcasecmp((string) $parts['host'], $request->getHost()) !== 0) {
+            return null;
+        }
+
+        $path = $parts['path'] ?? '/';
+        $query = isset($parts['query']) && $parts['query'] !== '' ? '?' . $parts['query'] : '';
+        $fragment = isset($parts['fragment']) && $parts['fragment'] !== '' ? '#' . $parts['fragment'] : '';
+
+        return $path . $query . $fragment;
     }
 
     protected function redirectPathFor($user): string

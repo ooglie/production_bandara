@@ -26,7 +26,7 @@ class AttributeValueController extends Controller
 
     public function store(Request $request, Attribute $attribute)
     {
-        $data = $this->validatedData($request);
+        $data = $this->normalizedData($this->validatedData($request));
 
         $data['attribute_id'] = $attribute->id;
 
@@ -46,7 +46,7 @@ class AttributeValueController extends Controller
 
     public function update(Request $request, AttributeValue $value)
     {
-        $data = $this->validatedData($request);
+        $data = $this->normalizedData($this->validatedData($request));
 
         $value->update($data);
 
@@ -58,6 +58,18 @@ class AttributeValueController extends Controller
     public function destroy(AttributeValue $value)
     {
         $attribute = $value->attribute;
+        $usage = $value->usageCounts();
+
+        if (($usage['products'] ?? 0) > 0 || ($usage['variants'] ?? 0) > 0) {
+            return redirect()
+                ->route('admin.attributes.values.index', $attribute)
+                ->with('error', sprintf(
+                    'Cannot delete "%s" because it is used by %d product(s) and %d variant(s). Remove it from products/variants first.',
+                    $value->name,
+                    $usage['products'] ?? 0,
+                    $usage['variants'] ?? 0
+                ));
+        }
 
         $value->delete();
 
@@ -74,4 +86,16 @@ class AttributeValueController extends Controller
             'position' => ['nullable', 'integer'],
         ]);
     }
+
+    protected function normalizedData(array $data): array
+    {
+        $data['name'] = trim((string) ($data['name'] ?? ''));
+        $data['value'] = isset($data['value']) && trim((string) $data['value']) !== ''
+            ? trim((string) $data['value'])
+            : null;
+        $data['position'] = (int) ($data['position'] ?? 0);
+
+        return $data;
+    }
 }
+

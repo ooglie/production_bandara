@@ -537,9 +537,76 @@ class CartController extends Controller
             ->firstOrFail();
 
         $this->removeSessionPieceMeta($item->id);
-
         $item->delete();
 
+        return $this->finishCartRemoval($request, $cart, $cartService, 'Item removed from cart.');
+    }
+
+    public function bulkDestroy(Request $request, CartService $cartService)
+    {
+        $cart = $cartService->currentCart(false);
+        if (! $cart) {
+            return redirect()
+                ->route($this->cartIndexRouteName($request))
+                ->with('status', 'Your cart is already empty.');
+        }
+
+        $ids = $this->cartItemIdsFromBulkRequest($request);
+
+        if (empty($ids)) {
+            return back()->withErrors([
+                'cart_items' => 'Please select at least one item to remove.',
+            ]);
+        }
+
+        $items = CartItem::query()
+            ->where('cart_id', $cart->id)
+            ->whereIn('id', $ids)
+            ->get();
+
+        if ($items->isEmpty()) {
+            return back()->withErrors([
+                'cart_items' => 'The selected cart items could not be found.',
+            ]);
+        }
+
+        foreach ($items as $item) {
+            $this->removeSessionPieceMeta($item->id);
+            $item->delete();
+        }
+
+        $removedCount = $items->count();
+        $message = $removedCount === 1
+            ? 'Selected item removed from cart.'
+            : $removedCount . ' selected items removed from cart.';
+
+        return $this->finishCartRemoval($request, $cart, $cartService, $message);
+    }
+
+    private function cartItemIdsFromBulkRequest(Request $request): array
+    {
+        $rawValues = array_merge(
+            (array) $request->input('cart_item_ids', []),
+            (array) $request->input('item_ids', []),
+            (array) $request->input('cart_item_keys', [])
+        );
+
+        $ids = [];
+
+        foreach ($rawValues as $value) {
+            foreach (explode(',', (string) $value) as $candidate) {
+                $candidate = trim($candidate);
+                if ($candidate !== '' && ctype_digit($candidate)) {
+                    $ids[] = (int) $candidate;
+                }
+            }
+        }
+
+        return array_values(array_unique(array_filter($ids, fn (int $id) => $id > 0)));
+    }
+
+    private function finishCartRemoval(Request $request, $cart, CartService $cartService, string $message)
+    {
         $remaining = (int) CartItem::where('cart_id', $cart->id)->count();
 
         if ($remaining === 0) {
@@ -549,20 +616,50 @@ class CartController extends Controller
 
             return redirect()
                 ->route($this->cartIndexRouteName($request))
-                ->with('status', 'Item removed. Your cart is now empty.');
+                ->with('status', $message . ' Your cart is now empty.');
         }
 
         $cart->touch();
+        $this->reapplySelectedPiecePricing($cart);
 
         $subtotal = $cartService->subtotal($cart);
         $couponNotice = $cartService->ensureCouponStillValid($cart, $subtotal, $request->user());
 
-        $msg = 'Item removed from cart.';
-        if ($couponNotice) $msg .= ' ' . $couponNotice;
+        if ($couponNotice) {
+            $message .= ' ' . $couponNotice;
+        }
 
-        return redirect()
-            ->route($this->cartIndexRouteName($request))
-            ->with('status', $msg);
+        return $this->redirectAfterCartMutation($request, $message);
+    }
+
+    private function redirectAfterCartMutation(Request $request, string $message)
+    {
+        $returnTo = $this->safeCartReturnUrl($request);
+
+        if ($returnTo) {
+            return redirect()->to($returnTo)->with('status', $message);
+        }
+
+        return back()->with('status', $message);
+    }
+
+    private function safeCartReturnUrl(Request $request): ?string
+    {
+        $returnTo = trim((string) $request->input('return_to', ''));
+
+        if ($returnTo === '') {
+            return null;
+        }
+
+        if (preg_match('/^[a-z][a-z0-9+\-.]*:/i', $returnTo) || str_starts_with($returnTo, '//')) {
+            return null;
+        }
+
+        if (! str_starts_with($returnTo, '/')) {
+            return null;
+        }
+
+        return $returnTo;
     }
 
 
@@ -587,8 +684,6 @@ class CartController extends Controller
     {
         return 'cart.index';
     }
-
-
 
     private function productHasVariants(Product $product): bool
     {

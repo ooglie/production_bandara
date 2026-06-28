@@ -3,6 +3,10 @@
 @section('title', 'Sign in')
 
 @section('content')
+@php
+    $loginRedirect = old('redirect', $intendedRedirect ?? null);
+    $loginRedirect = is_string($loginRedirect) ? $loginRedirect : null;
+@endphp
 <div class="max-w-5xl mx-auto px-4 py-8 sm:py-10">
     <div class="grid gap-4 lg:grid-cols-[1.05fr,0.95fr] items-stretch">
 
@@ -63,6 +67,10 @@
 
             <form method="POST" action="{{ route('login') }}" class="space-y-4">
                 @csrf
+
+                @if(!empty($loginRedirect))
+                    <input type="hidden" name="redirect" value="{{ $loginRedirect }}">
+                @endif
 
                 <div>
                     <label class="block text-xs font-medium text-gray-700 dark:text-gray-300">

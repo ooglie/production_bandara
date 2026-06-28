@@ -17,6 +17,7 @@ use App\Services\B2BPayLaterService;
 use App\Services\BandaraCreditService;
 use App\Services\CartService;
 use App\Services\DeliveryChargeService;
+use App\Services\DocumentNumberService;
 use App\Services\InvoicePdfService;
 use App\Services\OrderInventoryService;
 use Illuminate\Http\Request;
@@ -24,7 +25,6 @@ use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Route;
 use Illuminate\Support\Facades\Schema;
 use Illuminate\Support\Facades\Log;
-use Illuminate\Support\Str;
 
 use App\Models\Product;
 use App\Models\ProductVariant;
@@ -35,7 +35,7 @@ class CheckoutController extends Controller
     {
         $user = $request->user();
         if (! $user) {
-            return redirect()->guest(route('login'));
+            return redirect()->guest(route('login', ['redirect' => $this->checkoutIndexUrl($request)]));
         }
 
         if ($request->routeIs('b2b.*') && ! $this->isB2BRequest($request)) {
@@ -157,7 +157,7 @@ class CheckoutController extends Controller
     {
         $user = $request->user();
         if (! $user) {
-            return redirect()->guest(route('login'));
+            return redirect()->guest(route('login', ['redirect' => $this->checkoutIndexUrl($request)]));
         }
 
         if ($request->routeIs('b2b.*') && ! $this->isB2BRequest($request)) {
@@ -381,8 +381,10 @@ class CheckoutController extends Controller
             $payLaterOption,
             &$order
         ) {
+            $documentNumbers = app(DocumentNumberService::class)->nextOrderInvoicePair();
+
             $order = new Order();
-            $order->order_number = 'ORD-' . now()->format('dmy') . '-' . Str::upper(Str::random(6));
+            $order->order_number = $documentNumbers['order_number'];
             $order->user_id = $user->id;
 
             $order->status = 'processing';
@@ -410,6 +412,12 @@ class CheckoutController extends Controller
             ] as $deliveryColumn) {
                 if (Schema::hasColumn('orders', $deliveryColumn)) {
                     $order->{$deliveryColumn} = round((float) ($deliveryQuote[$deliveryColumn] ?? 0), 2);
+                }
+            }
+
+            foreach (['delivery_sac_code', 'handling_sac_code'] as $deliveryCodeColumn) {
+                if (Schema::hasColumn('orders', $deliveryCodeColumn)) {
+                    $order->{$deliveryCodeColumn} = $deliveryQuote[$deliveryCodeColumn] ?? null;
                 }
             }
 
@@ -558,6 +566,8 @@ class CheckoutController extends Controller
                 $oi->pricing_unit = $getpriceUnit;
                 $oi->sell_unit = $sellUnit;
                 $oi->sku = $variant?->sku ?? $product?->sku;
+                $oi->hsn_sac_code = trim((string) ($product?->hsnCode?->code ?? '')) ?: null;
+                $oi->gst_rate = $line['gst_rate'];
 
                 $snapshot = [];
                 if ($variant) {
@@ -603,7 +613,7 @@ class CheckoutController extends Controller
 
             $invoice = new Invoice();
             $invoice->order_id = $order->id;
-            $invoice->invoice_number = 'BA-' . now()->format('dmy') . '-' . Str::upper(Str::random(6));
+            $invoice->invoice_number = $documentNumbers['invoice_number'];
             $invoice->status = $paymentMethod === 'pay_later' ? 'due' : 'pending';
             $invoice->invoice_date = now()->toDateString();
             $invoice->due_date = $paymentMethod === 'pay_later'
@@ -613,6 +623,18 @@ class CheckoutController extends Controller
             $invoice->subtotal = round($order->subtotal, 2);
             $invoice->tax_total = round($order->tax_total, 2);
             $invoice->discount_total = round($order->discount_total, 2);
+            if (Schema::hasColumn('invoices', 'gst_type')) {
+                $invoice->gst_type = $order->gst_type;
+            }
+            if (Schema::hasColumn('invoices', 'cgst_amount')) {
+                $invoice->cgst_amount = $order->cgst_amount;
+            }
+            if (Schema::hasColumn('invoices', 'sgst_amount')) {
+                $invoice->sgst_amount = $order->sgst_amount;
+            }
+            if (Schema::hasColumn('invoices', 'igst_amount')) {
+                $invoice->igst_amount = $order->igst_amount;
+            }
             if (Schema::hasColumn('invoices', 'delivery_zone_id')) {
                 $invoice->delivery_zone_id = $order->delivery_zone_id ?? null;
             }
@@ -630,6 +652,11 @@ class CheckoutController extends Controller
             ] as $deliveryColumn) {
                 if (Schema::hasColumn('invoices', $deliveryColumn)) {
                     $invoice->{$deliveryColumn} = $order->{$deliveryColumn} ?? 0;
+                }
+            }
+            foreach (['delivery_sac_code', 'handling_sac_code'] as $deliveryCodeColumn) {
+                if (Schema::hasColumn('invoices', $deliveryCodeColumn)) {
+                    $invoice->{$deliveryCodeColumn} = $order->{$deliveryCodeColumn} ?? null;
                 }
             }
             foreach (['delivery_duration_minutes', 'delivery_distance_provider', 'delivery_distance_calculated_at', 'delivery_fee_source'] as $deliveryMetaColumn) {
@@ -657,6 +684,8 @@ class CheckoutController extends Controller
                     'invoice_id'    => $invoice->id,
                     'order_item_id' => $oi->id,
                     'description'   => $oi->product_name,
+                    'hsn_sac_code'  => $oi->hsn_sac_code,
+                    'gst_rate'      => $oi->gst_rate,
                     'quantity'      => $oi->quantity,
                     'item_weight'   => $oi->item_weight,
                     'unit_price'    => $oi->unit_price,
@@ -664,6 +693,9 @@ class CheckoutController extends Controller
                     'pricing_unit'  => $oi->pricing_unit,
                     'subtotal'      => $oi->subtotal,
                     'tax_amount'    => $oi->tax_amount,
+                    'cgst_amount'   => $oi->cgst_amount,
+                    'sgst_amount'   => $oi->sgst_amount,
+                    'igst_amount'   => $oi->igst_amount,
                     'total'         => $oi->total,
                 ]);
             }
@@ -727,7 +759,7 @@ class CheckoutController extends Controller
     {
         $user = $request->user();
         if (! $user) {
-            return redirect()->guest(route('login'));
+            return redirect()->guest(route('login', ['redirect' => $this->checkoutIndexUrl($request)]));
         }
 
         if (($user->customer_type ?? 'b2c') === 'b2b') {
@@ -1363,6 +1395,7 @@ class CheckoutController extends Controller
                 'subtotal'        => round($sub, 2),
                 'discount_amount' => round($disc, 2),
                 'tax_amount'      => round($taxLine, 2),
+                'gst_rate'        => round((float) ($lineTaxMap[$id]['rate_percent'] ?? 0), 2),
                 'total'           => $totalLine,
                 'cgst_amount'     => $cgst,
                 'sgst_amount'     => $sgst,

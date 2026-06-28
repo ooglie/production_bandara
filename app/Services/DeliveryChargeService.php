@@ -37,7 +37,8 @@ class DeliveryChargeService
         $deliveryRule = null;
         $deliveryFeeSource = 'none';
         $deliveryFee = 0.0;
-        $deliveryTaxRate = (float) config('delivery.default_delivery_tax_rate', 0);
+        $taxSettings = app(DeliveryTaxSettingsService::class);
+        $deliveryTaxRate = $taxSettings->deliveryTaxRate();
         $distanceFeeDetails = [];
 
         // B2B accounts do not pay delivery fees. Keep handling rules independent,
@@ -63,7 +64,7 @@ class DeliveryChargeService
                 if ($distanceRule) {
                     $distanceFeeDetails = $this->distanceFeeDetails($distanceRule, $orderValue, (float) $distanceQuote['distance_km']);
                     $deliveryFee = (float) $distanceFeeDetails['delivery_fee'];
-                    $deliveryTaxRate = (float) ($distanceRule->tax_rate ?? config('delivery.default_delivery_tax_rate', 0));
+                    $deliveryTaxRate = $taxSettings->deliveryTaxRate((float) ($distanceRule->tax_rate ?? 0));
                     $deliveryFeeSource = 'distance';
                 } else {
                     $messages[] = 'No distance-based delivery fee rule matched this address distance.';
@@ -80,7 +81,7 @@ class DeliveryChargeService
 
             if ($deliveryRule) {
                 $deliveryFee = $this->feeForRule($deliveryRule, $orderValue, 'delivery_fee', 'free_delivery_above');
-                $deliveryTaxRate = (float) ($deliveryRule->tax_rate ?? config('delivery.default_delivery_tax_rate', 0));
+                $deliveryTaxRate = $taxSettings->deliveryTaxRate((float) ($deliveryRule->tax_rate ?? 0));
                 $deliveryFeeSource = 'zone';
             }
         }
@@ -117,7 +118,7 @@ class DeliveryChargeService
             || ($handlingFreeAbove !== null && (float) $handlingFreeAbove === 0.0)
         );
         $handlingFee = $handlingRule ? $this->feeForRule($handlingRule, $orderValue, 'handling_fee', 'free_handling_above') : 0.0;
-        $handlingTaxRate = (float) ($handlingRule?->tax_rate ?? config('delivery.default_handling_tax_rate', 0));
+        $handlingTaxRate = $taxSettings->handlingTaxRate((float) ($handlingRule?->tax_rate ?? 0));
 
         $deliveryTax = round($deliveryFee * max($deliveryTaxRate, 0) / 100, 2);
         $handlingTax = round($handlingFee * max($handlingTaxRate, 0) / 100, 2);
@@ -153,6 +154,8 @@ class DeliveryChargeService
             'handling_free_handling_applied' => $handlingFreeApplied,
             'delivery_tax_rate' => round(max($deliveryTaxRate, 0), 2),
             'handling_tax_rate' => round(max($handlingTaxRate, 0), 2),
+            'delivery_sac_code' => $taxSettings->deliverySacCode(),
+            'handling_sac_code' => $taxSettings->handlingSacCode(),
             'delivery_tax_amount' => $deliveryTax,
             'handling_tax_amount' => $handlingTax,
             'fee_total' => round($deliveryFee + $handlingFee, 2),

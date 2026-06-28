@@ -182,6 +182,13 @@
                     </a>
                 @endif
 
+                @if($has('admin.variant-option-values.index'))
+                    <a href="{{ route('admin.variant-option-values.index') }}"
+                       class="block px-2 py-1.5 rounded-md hover:bg-gray-100 dark:hover:bg-gray-800">
+                        Variant Option Values
+                    </a>
+                @endif
+
                 @if($has('admin.recipes.index'))
                     <a href="{{ route('admin.recipes.index') }}"
                        class="block px-2 py-1.5 rounded-md hover:bg-gray-100 dark:hover:bg-gray-800">

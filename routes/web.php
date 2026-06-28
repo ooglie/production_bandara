@@ -52,6 +52,7 @@ use App\Http\Controllers\Admin\{
     ProductVariantController,
     AttributeController,
     AttributeValueController,
+    VariantOptionValueController,
     ProductImageController,
     CouponController,
     InvoiceController as AdminInvoiceController,
@@ -144,12 +145,14 @@ Route::post('/impersonation/stop', [AdminUserController::class, 'stopImpersonati
 Route::get('/cart', [CartController::class, 'index'])->name('cart.index');
 Route::post('/cart', [CartController::class, 'store'])->name('cart.store');
 Route::post('/cart/add', [CartController::class, 'add'])->name('cart.add');
-Route::patch('/cart/{key}', [CartController::class, 'update'])->name('cart.update');
-Route::delete('/cart/{key}', [CartController::class, 'destroy'])->name('cart.destroy');
 
-// CART COUPON
+// CART COUPON / BULK ACTIONS
+// Keep specific cart sub-routes before /cart/{key}, otherwise "coupon"/"items" can be captured as a cart item key.
 Route::post('/cart/coupon', [CartController::class, 'applyCoupon'])->name('cart.coupon.apply');
 Route::delete('/cart/coupon', [CartController::class, 'removeCoupon'])->name('cart.coupon.remove');
+Route::delete('/cart/items', [CartController::class, 'bulkDestroy'])->name('cart.bulk-destroy');
+Route::patch('/cart/{key}', [CartController::class, 'update'])->name('cart.update');
+Route::delete('/cart/{key}', [CartController::class, 'destroy'])->name('cart.destroy');
 
 // CUSTOMER
 Route::middleware(['auth', 'role:Customer'])->group(function () {
@@ -178,6 +181,7 @@ Route::middleware(['auth', 'role:Customer', 'verified'])
         // Keep old B2B route names as aliases while navigation is unified.
         Route::get('/cart', [CartController::class, 'index'])->name('cart.index');
         Route::post('/cart/add', [CartController::class, 'add'])->name('cart.add');
+        Route::delete('/cart/items', [CartController::class, 'bulkDestroy'])->name('cart.bulk-destroy');
         Route::patch('/cart/{key}', [CartController::class, 'update'])->name('cart.update');
         Route::delete('/cart/{key}', [CartController::class, 'destroy'])->name('cart.destroy');
         Route::get('/wishlist', [WishlistController::class, 'index'])->name('wishlist.index');
@@ -357,6 +361,7 @@ Route::middleware(['auth', 'role:Admin|Manager|Accountant|CAAccountant|Stores'])
         Route::resource('announcements', AnnouncementController::class)->except('show');
         Route::get('/home-sections', [HomeSectionController::class, 'index'])->name('home-sections.index');
         Route::get('/delivery-settings', [DeliverySettingsController::class, 'index'])->name('delivery.index');
+        Route::put('/delivery-settings/tax-settings', [DeliverySettingsController::class, 'updateTaxSettings'])->name('delivery.tax-settings.update');
         Route::post('/delivery-settings/zones', [DeliverySettingsController::class, 'storeZone'])->name('delivery.zones.store');
         Route::put('/delivery-settings/zones/{zone}', [DeliverySettingsController::class, 'updateZone'])->name('delivery.zones.update');
         Route::post('/delivery-settings/zones/{zone}/pincodes', [DeliverySettingsController::class, 'storePincode'])->name('delivery.zones.pincodes.store');
@@ -426,6 +431,15 @@ Route::middleware(['auth', 'role:Admin|Manager|Accountant|CAAccountant|Stores'])
         Route::post('vendor-payments', [VendorPaymentController::class, 'store'])->name('vendor-payments.store');
 
         Route::resource('attributes', AttributeController::class)->except(['show']);
+
+        Route::get('variant-option-values', [VariantOptionValueController::class, 'index'])
+            ->name('variant-option-values.index');
+        Route::post('variant-option-values', [VariantOptionValueController::class, 'store'])
+            ->name('variant-option-values.store');
+        Route::put('variant-option-values/{value}', [VariantOptionValueController::class, 'update'])
+            ->name('variant-option-values.update');
+        Route::delete('variant-option-values/{value}', [VariantOptionValueController::class, 'destroy'])
+            ->name('variant-option-values.destroy');
 
         Route::resource('attributes.values', AttributeValueController::class)
             ->except(['show'])

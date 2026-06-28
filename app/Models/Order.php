@@ -28,6 +28,8 @@ class Order extends Model
         'handling_tax_amount' => 'float',
         'delivery_tax_rate' => 'float',
         'handling_tax_rate' => 'float',
+        'delivery_sac_code' => 'string',
+        'handling_sac_code' => 'string',
         'delivery_distance_km' => 'float',
         'delivery_duration_minutes' => 'integer',
         'delivery_distance_calculated_at' => 'datetime',

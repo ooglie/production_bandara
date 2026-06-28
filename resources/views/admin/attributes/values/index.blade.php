@@ -26,6 +26,13 @@
                     Back to variant options
                 </a>
 
+                @if(\Illuminate\Support\Facades\Route::has('admin.variant-option-values.index'))
+                    <a href="{{ route('admin.variant-option-values.index', ['attribute_id' => $attribute->id]) }}"
+                       class="text-[11px] text-gray-500 hover:text-gray-800 dark:hover:text-gray-200">
+                        All values screen
+                    </a>
+                @endif
+
                 <a href="{{ route('admin.attributes.values.create', $attribute) }}"
                    class="inline-flex items-center px-3 py-1.5 text-xs rounded border border-gray-300 dark:border-gray-700 bg-gray-900 text-white dark:bg-gray-100 dark:text-gray-900 hover:bg-gray-800 dark:hover:bg-gray-200">
                     + New option value
@@ -36,6 +43,12 @@
         @if(session('status'))
             <div class="rounded border border-emerald-300 bg-emerald-50 px-3 py-2 text-[11px] text-emerald-800">
                 {{ session('status') }}
+            </div>
+        @endif
+
+        @if(session('error'))
+            <div class="rounded border border-red-300 bg-red-50 px-3 py-2 text-[11px] text-red-800">
+                {{ session('error') }}
             </div>
         @endif
 
