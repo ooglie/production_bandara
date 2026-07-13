@@ -131,6 +131,11 @@ class ProductVariantController extends Controller
             ? ['required', 'numeric', 'gt:0']
             : ['nullable', 'numeric', 'min:0'];
 
+        $isActiveVariant = $request->boolean('is_active', $variant?->is_active ?? true);
+        $priceRules = $isActiveVariant
+            ? ['required', 'numeric', 'gt:0']
+            : ['nullable', 'numeric', 'min:0'];
+
         return $request->validate([
             'barcode' => [
                 'nullable',
@@ -153,8 +158,8 @@ class ProductVariantController extends Controller
             'name' => ['nullable', 'string', 'max:255'],
             'pack_type' => ['required', Rule::in(['quantity', 'fixed_weight_pack', 'fixed_piece_pack'])],
 
-            'mrp_price' => ['nullable', 'numeric', 'min:0'],
-            'price' => ['required', 'numeric', 'min:0'],
+            'mrp_price' => $priceRules,
+            'price' => $priceRules,
             'stock_quantity' => ['nullable', 'numeric', 'min:0'],
             'low_stock_threshold' => ['nullable', 'numeric', 'min:0'],
             'min_order_quantity' => ['nullable', 'numeric', 'min:0'],
@@ -167,10 +172,16 @@ class ProductVariantController extends Controller
             'pricing_unit' => ['nullable', Rule::in(['pack', 'kg'])],
 
             'manage_stock' => ['nullable', 'boolean'],
+            'inventory_can_repack' => ['nullable', 'boolean'],
             'is_active' => ['nullable', 'boolean'],
 
             'variant_attributes' => ['nullable', 'array'],
             'variant_attributes.*' => ['nullable', 'integer'],
+        ], [
+            'mrp_price.required' => 'Variant MRP is required for active variants. Keep the variant inactive if pricing is still pending.',
+            'mrp_price.gt' => 'Variant MRP must be greater than zero for active variants.',
+            'price.required' => 'Variant sell price is required for active variants. Keep the variant inactive if pricing is still pending.',
+            'price.gt' => 'Variant sell price must be greater than zero for active variants.',
         ]);
     }
 
@@ -200,7 +211,7 @@ class ProductVariantController extends Controller
             'standard_b2b_min_order_quantity' => $this->nullableNumber($data['standard_b2b_min_order_quantity'] ?? null),
 
             'product_weight' => $productWeight ?? 0.0,
-            'price' => $this->normalizeStoredPrice(round((float) $data['price'], 2), (bool) ($product->b2c_price_includes_gst ?? true), $product) ?? 0.0,
+            'price' => $this->normalizeStoredPrice($this->nullableNumber($data['price'] ?? null), (bool) ($product->b2c_price_includes_gst ?? true), $product) ?? 0.0,
             'pricing_unit' => $pricingUnit,
 
             'is_active' => (bool) ($data['is_active'] ?? false),
@@ -209,6 +220,10 @@ class ProductVariantController extends Controller
         if ($this->tableHasColumn('product_variants', 'customer_visibility')) {
             $visibility = (string) ($data['customer_visibility'] ?? 'all');
             $payload['customer_visibility'] = in_array($visibility, ['all', 'b2c', 'b2b'], true) ? $visibility : 'all';
+        }
+
+        if ($this->tableHasColumn('product_variants', 'inventory_can_repack')) {
+            $payload['inventory_can_repack'] = (bool) ($data['inventory_can_repack'] ?? false);
         }
 
         if ($this->tableHasColumn('product_variants', 'pack_type')) {
@@ -239,7 +254,8 @@ class ProductVariantController extends Controller
 
         if ($activeVariants->isEmpty()) {
             if ((string) ($product->type ?? 'simple') === 'variable') {
-                $product->type = 'simple';
+                $product->manage_stock = true;
+                $product->stock_quantity = 0.0;
                 $product->save();
             }
 

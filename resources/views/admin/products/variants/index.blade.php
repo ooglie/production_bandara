@@ -14,7 +14,7 @@
                     Variants for: {{ $product->name }}
                 </h1>
                 <p class="text-[11px] text-gray-500 dark:text-gray-400">
-                    Base SKU: {{ $product->sku ?: '—' }} · Base price: ₹{{ number_format($product->base_price, 2) }}
+                    Base SKU: {{ $product->sku ?: '—' }} · Parent price is optional for variant products; set MRP and sell price on each active variant.
                 </p>
             </div>
 
@@ -90,6 +90,11 @@
                                 <span class="inline-flex items-center rounded-full bg-gray-100 dark:bg-gray-800 px-2 py-0.5 text-[10px] text-gray-600 dark:text-gray-300">
                                     {{ $visibilityLabel }}
                                 </span>
+                                @if($variant->inventory_can_repack ?? false)
+                                    <span class="ml-1 inline-flex items-center rounded-full bg-amber-50 dark:bg-amber-900/30 px-2 py-0.5 text-[10px] text-amber-700 dark:text-amber-300">
+                                        Transform source
+                                    </span>
+                                @endif
                                 @if($attributeLabels->isNotEmpty())
                                     <div class="mt-1 text-[10px] text-gray-500 dark:text-gray-400">
                                         {{ $attributeLabels->implode(' · ') }}

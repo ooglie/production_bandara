@@ -126,11 +126,18 @@ class ProductController extends Controller
             }
         }
 
+        $allowedPerPage = [20, 50, 100];
+        $perPage = (int) $request->input('per_page', 20);
+
+        if (! in_array($perPage, $allowedPerPage, true)) {
+            $perPage = 20;
+        }
+
         $products = $query
-            ->paginate(20)
+            ->paginate($perPage)
             ->withQueryString();
 
-        return view('admin.products.index', compact('products'));
+        return view('admin.products.index', compact('products', 'perPage', 'allowedPerPage'));
     }
 
     protected function addProductIndexStockSummaries(\Illuminate\Database\Eloquent\Builder $query): void
@@ -175,6 +182,38 @@ class ProductController extends Controller
 
         if (Schema::hasTable('product_variants')) {
             $variantColumns = collect(Schema::getColumnListing('product_variants'));
+
+            if ($variantColumns->contains('price')) {
+                $query->selectSub(function ($subQuery) use ($variantColumns) {
+                    $subQuery
+                        ->from('product_variants')
+                        ->selectRaw('MIN(NULLIF(price, 0))')
+                        ->whereColumn('product_variants.product_id', 'products.id');
+
+                    if ($variantColumns->contains('is_active')) {
+                        $subQuery->where('product_variants.is_active', true);
+                    }
+
+                    if ($variantColumns->contains('deleted_at')) {
+                        $subQuery->whereNull('product_variants.deleted_at');
+                    }
+                }, 'variant_min_price');
+
+                $query->selectSub(function ($subQuery) use ($variantColumns) {
+                    $subQuery
+                        ->from('product_variants')
+                        ->selectRaw('MAX(NULLIF(price, 0))')
+                        ->whereColumn('product_variants.product_id', 'products.id');
+
+                    if ($variantColumns->contains('is_active')) {
+                        $subQuery->where('product_variants.is_active', true);
+                    }
+
+                    if ($variantColumns->contains('deleted_at')) {
+                        $subQuery->whereNull('product_variants.deleted_at');
+                    }
+                }, 'variant_max_price');
+            }
 
             if ($variantColumns->contains('stock_quantity')) {
                 $query->selectSub(function ($subQuery) use ($variantColumns) {
@@ -228,7 +267,7 @@ class ProductController extends Controller
         return redirect()
             ->route('admin.products.edit', $product)
             ->with('status', $request->isDraftSave()
-                ? 'Product draft saved. It remains inactive until price and weight are completed.'
+                ? 'Product draft saved. It remains inactive until pricing, variant and weight details are completed.'
                 : 'Product created successfully.');
     }
 
@@ -244,7 +283,7 @@ class ProductController extends Controller
         return redirect()
             ->route('admin.products.edit', $product)
             ->with('status', $request->isDraftSave()
-                ? 'Product draft updated. It remains inactive until price and weight are completed.'
+                ? 'Product draft updated. It remains inactive until pricing, variant and weight details are completed.'
                 : 'Product updated successfully.');
     }
 
@@ -375,14 +414,20 @@ class ProductController extends Controller
         $enteredStandardB2B = $this->toDecimal($validated['standard_b2b_price'] ?? null);
         $specialAudience = $validated['special_audience'] ?? 'b2c';
         $inventoryRole = $validated['inventory_role'] ?? 'saleable';
+        $isVariableProduct = (string) ($validated['type'] ?? 'simple') === 'variable';
+        $packType = $validated['pack_type'] ?? $this->inferPackTypeFromProductInput($validated);
+        $sellUnit = (string) ($validated['sell_unit'] ?? 'piece');
+        $isPhysicalChoice = ! $isVariableProduct && ((string) $packType === 'variable_weight' || $sellUnit === 'kg');
         $specialPriceIncludesGst = $specialAudience === 'b2b' ? $b2bPriceIncludesGst : $b2cPriceIncludesGst;
+        $storageProfile = Product::normalizeStorageProfile($validated['storage_profile'] ?? Product::DEFAULT_STORAGE_PROFILE);
 
         $payload = [
             'name' => $name,
             'short_description' => $validated['short_description'],
             'description' => $validated['description'],
-            'storage_guidance' => $this->nullableTrim($validated['storage_guidance'] ?? null) ?? Product::defaultStorageGuidanceText(),
-            'delivery_support' => $this->nullableTrim($validated['delivery_support'] ?? null) ?? Product::defaultDeliverySupportText(),
+            'storage_profile' => $storageProfile,
+            'storage_guidance' => $this->nullableTrim($validated['storage_guidance'] ?? null) ?? Product::storageGuidanceTextForProfile($storageProfile),
+            'delivery_support' => $this->nullableTrim($validated['delivery_support'] ?? null) ?? Product::deliverySupportTextForProfile($storageProfile),
             'slug' => $slug,
             'sku' => $validated['sku'],
             'type' => $validated['type'],
@@ -393,8 +438,8 @@ class ProductController extends Controller
 
             // Stored in DB as EXCL GST. B2C input defaults to GST-inclusive;
             // B2B input defaults to GST-exclusive.
-            'base_price' => $this->normalizeStoredPrice($enteredSell, $b2cPriceIncludesGst, $factor) ?? 0.0,
-            'mrp_price' => $this->normalizeStoredPrice($enteredMrp, $b2cPriceIncludesGst, $factor) ?? 0.0,
+            'base_price' => $this->parentProductPriceValue($enteredSell, $b2cPriceIncludesGst, $factor, $isVariableProduct, 'base_price'),
+            'mrp_price' => $this->parentProductPriceValue($enteredMrp, $b2cPriceIncludesGst, $factor, $isVariableProduct || $isPhysicalChoice, 'mrp_price'),
             'special_price' => $this->normalizeStoredPrice($enteredSpecial, $specialPriceIncludesGst, $factor),
             'standard_b2b_price' => $this->normalizeStoredPrice($enteredStandardB2B, $b2bPriceIncludesGst, $factor),
             'standard_b2b_min_order_quantity' => $this->toDecimal($validated['standard_b2b_min_order_quantity'] ?? null),
@@ -405,7 +450,7 @@ class ProductController extends Controller
             'gst_rate' => round($gstRate, 2),
 
             'sell_unit' => $validated['sell_unit'] ?? 'piece',
-            'pack_type' => $validated['pack_type'] ?? $this->inferPackTypeFromProductInput($validated),
+            'pack_type' => $packType,
             'product_weight' => $this->toDecimal($validated['product_weight'] ?? null),
             'pieces_per_pack' => $this->toDecimal($validated['pieces_per_pack'] ?? null),
 
@@ -437,6 +482,47 @@ class ProductController extends Controller
         ];
 
         return $this->filterProductPayloadForSchema($payload);
+    }
+
+    protected function parentProductPriceValue(?float $enteredPrice, bool $inputIncludesGst, float $factor, bool $keepNullableWhenBlank, string $column): ?float
+    {
+        $stored = $this->normalizeStoredPrice($enteredPrice, $inputIncludesGst, $factor);
+
+        if ($stored !== null) {
+            return $stored;
+        }
+
+        // Variant-choice products such as prawns/dimsum take commercial prices
+        // from their variants. Physical-choice products such as cheese blocks
+        // still require a sell price per kg, but MRP is optional. Keep optional
+        // parent values free of fake zeroes when the database column can hold
+        // NULL; otherwise fall back to zero for older schemas until the
+        // nullable-price migration is applied.
+        if ($keepNullableWhenBlank && $this->productColumnAllowsNull($column)) {
+            return null;
+        }
+
+        return 0.0;
+    }
+
+    protected function productColumnAllowsNull(string $column): bool
+    {
+        if (! Schema::hasTable('products') || ! Schema::hasColumn('products', $column)) {
+            return true;
+        }
+
+        try {
+            foreach (Schema::getColumns('products') as $definition) {
+                if (($definition['name'] ?? null) === $column) {
+                    return (bool) ($definition['nullable'] ?? false);
+                }
+            }
+        } catch (\Throwable $e) {
+            // Safe fallback for framework/driver combinations that do not expose
+            // column metadata. Existing non-null schemas can still store zero.
+        }
+
+        return false;
     }
 
     protected function inferPackTypeFromProductInput(array $validated): string

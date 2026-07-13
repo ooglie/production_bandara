@@ -10,6 +10,9 @@
 
     $invoiceStatus = strtolower((string) ($invoice->status ?? 'pending'));
 
+    $stockHoldSeconds = (int) ($reservationTimeoutSeconds ?? 300);
+    $stockHoldMinutesLabel = max(1, (int) ceil($stockHoldSeconds / 60));
+
     $invoiceStatusMeta = match ($invoiceStatus) {
         'paid' => [
             'label' => 'Paid',
@@ -71,6 +74,15 @@
                 </div>
                 <p class="mt-1 text-[11px] leading-relaxed text-amber-700 dark:text-amber-300">
                     Once your payment succeeds, we will verify it, finalize the invoice, and then redirect you back to your order page automatically.
+                </p>
+            </div>
+
+            <div class="rounded-sm border border-sky-200 dark:border-sky-900/40 bg-sky-50/80 dark:bg-sky-950/20 px-4 py-4">
+                <div class="text-sm font-medium text-sky-800 dark:text-sky-200">
+                    Stock hold: about {{ $stockHoldMinutesLabel }} minute{{ $stockHoldMinutesLabel === 1 ? '' : 's' }}
+                </div>
+                <p class="mt-1 text-[11px] leading-relaxed text-sky-700 dark:text-sky-300">
+                    Your selected stock is held only while you complete this payment. If the payment window is left open too long, the hold may expire and the order will need to be placed again.
                 </p>
             </div>
 
@@ -237,6 +249,7 @@
             name: "Frozen - Bandara",
             description: "Order {{ $order->order_number }}",
             order_id: "{{ $razorpayOrderId }}",
+            timeout: {{ max(60, min((int) ($reservationTimeoutSeconds ?? 300), 600)) }},
             prefill: {
                 name: "{{ $user->name }}",
                 email: "{{ $user->email }}",
@@ -332,6 +345,34 @@
             }, 1000);
 
             var rzp = new Razorpay(options);
+
+            rzp.on('payment.failed', function (response) {
+                isVerifying = false;
+                setButtonBusy(true);
+                setInlineStatus('Payment failed. Releasing stock hold…', true);
+
+                fetch("{{ route('payment.razorpay.failed') }}", {
+                    method: "POST",
+                    headers: {
+                        "Content-Type": "application/json",
+                        "Accept": "application/json",
+                        "X-CSRF-TOKEN": "{{ csrf_token() }}"
+                    },
+                    body: JSON.stringify({
+                        razorpay_order_id: "{{ $razorpayOrderId }}",
+                        error: response && response.error ? response.error : {}
+                    })
+                }).catch(function () {
+                    // The stock hold will still expire automatically even if this
+                    // client-side notification cannot reach the server.
+                }).finally(function () {
+                    if (window.BandaraToast) {
+                        BandaraToast.error('Payment failed. No stock has been deducted. You can retry if stock is still available.', 'Payment failed');
+                    }
+                    window.location.href = "{{ route('orders.show', $order) }}";
+                });
+            });
+
             rzp.open();
         }
 

@@ -371,8 +371,8 @@ class OrderController extends Controller
         $period = (string) $request->input('period', '');
         $unprintedOnly = $request->boolean('unprinted');
 
-        $allowedStatuses = ['processing', 'shipped', 'delivered', 'cancelled'];
-        $allowedPaymentStatuses = ['pending', 'paid', 'failed', 'refunded'];
+        $allowedStatuses = ['pending_payment', 'processing', 'shipped', 'delivered', 'cancelled', 'payment_failed', 'payment_expired'];
+        $allowedPaymentStatuses = ['pending', 'paid', 'failed', 'expired', 'refunded'];
 
         $query = Order::query()->with(['user', 'printedBy']);
 

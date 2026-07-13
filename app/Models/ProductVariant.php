@@ -29,6 +29,7 @@ class ProductVariant extends Model
         'standard_b2b_price',
         'standard_b2b_min_order_quantity',
         'customer_visibility',
+        'inventory_can_repack',
         'pricing_unit',
         'is_active',
     ];
@@ -36,6 +37,7 @@ class ProductVariant extends Model
     protected $casts = [
         'manage_stock' => 'boolean',
         'is_active' => 'boolean',
+        'inventory_can_repack' => 'boolean',
         'stock_quantity' => 'float',
         'low_stock_threshold' => 'float',
         'min_order_quantity' => 'float',

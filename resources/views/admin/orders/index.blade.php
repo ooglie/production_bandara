@@ -22,10 +22,13 @@
 
     $statusOptions = [
         '' => 'All statuses',
+        'pending_payment' => 'Pending Payment',
         'processing' => 'Processing',
         'shipped' => 'Shipped',
         'delivered' => 'Delivered',
         'cancelled' => 'Cancelled',
+        'payment_failed' => 'Payment Failed',
+        'payment_expired' => 'Payment Expired',
     ];
 @endphp
 
@@ -192,6 +195,9 @@
                         $stBadge = match($st) {
                             'delivered' => 'border-emerald-300 bg-emerald-50 text-emerald-800',
                             'shipped' => 'border-blue-300 bg-blue-50 text-blue-800',
+                            'pending_payment' => 'border-amber-300 bg-amber-50 text-amber-800',
+                            'payment_failed' => 'border-red-300 bg-red-50 text-red-800',
+                            'payment_expired' => 'border-orange-300 bg-orange-50 text-orange-800',
                             'cancelled' => 'border-red-300 bg-red-50 text-red-800',
                             default => 'border-gray-300 bg-gray-50 text-gray-800',
                         };
@@ -199,6 +205,7 @@
                         $payBadge = match($pay) {
                             'paid' => 'border-emerald-300 bg-emerald-50 text-emerald-800',
                             'failed' => 'border-red-300 bg-red-50 text-red-800',
+                            'expired' => 'border-orange-300 bg-orange-50 text-orange-800',
                             'refunded' => 'border-gray-300 bg-gray-50 text-gray-700',
                             default => 'border-yellow-300 bg-yellow-50 text-yellow-800',
                         };

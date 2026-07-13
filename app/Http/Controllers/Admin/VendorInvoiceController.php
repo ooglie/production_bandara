@@ -102,6 +102,7 @@ class VendorInvoiceController extends Controller
             'mrp_price',
             'manage_stock',
             'stock_quantity',
+            'inventory_can_repack',
             'is_active',
         ]);
 
@@ -544,7 +545,15 @@ class VendorInvoiceController extends Controller
         $batchCode = trim((string) ($row['batch_code'] ?? '')) ?: null;
         $isPiecesWeight = $inwardMode === self::INWARD_PIECES_WEIGHT;
         $productRole = (string) ($product->inventory_role ?? (($product->is_active ?? false) ? 'saleable' : 'internal'));
-        $isSaleable = (bool) ($product->is_active ?? false) && $productRole !== 'internal';
+        $variantIsActive = ! $variant || (bool) ($variant->is_active ?? false);
+        $isSaleable = (bool) ($product->is_active ?? false) && $variantIsActive && $productRole !== 'internal';
+        // Variant stock must use the variant-level source flag. Otherwise every
+        // finished pack variant (10pc, 20pc, etc.) inherits the parent product's
+        // repack setting and incorrectly appears as a source lot.
+        $isRepackSource = ($variant
+                ? (bool) ($variant->inventory_can_repack ?? false)
+                : (bool) ($product->inventory_can_repack ?? false))
+            || $productRole === 'internal';
         $productWeight = $this->targetWeightKg($product, $variant);
         $piecesPerPack = $this->targetPiecesPerPack($product, $variant);
 
@@ -555,10 +564,10 @@ class VendorInvoiceController extends Controller
         $lot->vendor_id = $vendorId;
         $lot->vendor_invoice_id = $invoiceId;
         $this->assignIfColumn($lot, 'inventory_lots', 'vendor_invoice_item_id', $item->id);
-        $lot->lot_stage = $isPiecesWeight ? 'raw' : ($isSaleable ? 'pack' : 'raw');
+        $lot->lot_stage = $isPiecesWeight ? 'raw' : (($isSaleable || $isRepackSource) ? 'pack' : 'raw');
         $lot->inward_mode = $this->inventoryLotInwardMode($inwardMode);
         $lot->is_saleable = $isSaleable;
-        $lot->can_repack = $isPiecesWeight || (bool) ($product->inventory_can_repack ?? false) || $productRole === 'internal';
+        $lot->can_repack = $isPiecesWeight || $isRepackSource;
         $lot->lot_status = 'available';
         $lot->batch_code = $batchCode;
         $lot->mfg_date = $row['mfg_date'] ?? null;
@@ -653,11 +662,18 @@ class VendorInvoiceController extends Controller
     private function createInventoryPacksForSaleableQuantityLot(InventoryLot $lot, Product $product, ?ProductVariant $variant, float $quantity, float $unitCost, array $row, ?int $userId): void
     {
         $productRole = (string) ($product->inventory_role ?? (($product->is_active ?? false) ? 'saleable' : 'internal'));
-        if (! (bool) ($product->is_active ?? false) || $productRole === 'internal' || ! $this->isPackLikeTarget($product, $variant)) {
-            return;
-        }
+        // Variant stock must use the variant-level source flag. Otherwise every
+        // finished pack variant (10pc, 20pc, etc.) inherits the parent product's
+        // repack setting and incorrectly appears as a source lot.
+        $isRepackSource = ($variant
+                ? (bool) ($variant->inventory_can_repack ?? false)
+                : (bool) ($product->inventory_can_repack ?? false))
+            || $productRole === 'internal';
+        $isCustomerSaleable = (bool) ($product->is_active ?? false)
+            && $productRole !== 'internal'
+            && (! $variant || (bool) ($variant->is_active ?? false));
 
-        if ($variant && isset($variant->is_active) && ! (bool) $variant->is_active) {
+        if ((! $isCustomerSaleable && ! $isRepackSource) || ! $this->isPackLikeTarget($product, $variant)) {
             return;
         }
 
@@ -705,7 +721,9 @@ class VendorInvoiceController extends Controller
                 'expiry_date' => $row['expiry_date'] ?? $lot->expiry_date,
                 'batch_code' => $batchCode,
                 'status' => 'available',
-                'notes' => 'Created directly from vendor invoice quantity inward.',
+                'notes' => $isRepackSource
+                    ? 'Created from vendor invoice quantity inward as a physical source carton for Transform Stock.'
+                    : 'Created directly from vendor invoice quantity inward.',
                 'created_by_id' => $userId,
                 'updated_by_id' => $userId,
             ]);
@@ -786,10 +804,48 @@ class VendorInvoiceController extends Controller
     private function targetPiecesPerPack(Product $product, ?ProductVariant $variant): ?float
     {
         if ($variant && Schema::hasColumn('product_variants', 'pieces_per_pack')) {
-            return $this->positiveOrNull($variant->pieces_per_pack ?? null);
+            $configured = $this->positiveOrNull($variant->pieces_per_pack ?? null);
+            if ($configured !== null) {
+                return $configured;
+            }
         }
 
-        return $this->positiveOrNull($product->pieces_per_pack ?? null);
+        if (! $variant) {
+            $configured = $this->positiveOrNull($product->pieces_per_pack ?? null);
+            if ($configured !== null) {
+                return $configured;
+            }
+        }
+
+        foreach ([$variant?->name, $variant?->sku, $product->name, $product->sku] as $label) {
+            $inferred = $this->inferPiecesPerPackFromLabel($label);
+            if ($inferred !== null) {
+                return $inferred;
+            }
+        }
+
+        return null;
+    }
+
+    private function inferPiecesPerPackFromLabel(?string $label): ?float
+    {
+        $label = trim((string) $label);
+        if ($label === '') {
+            return null;
+        }
+
+        foreach ([
+            '/(?<!\d)(\d+(?:\.\d+)?)\s*(?:pc|pcs|piece|pieces)\b/i',
+            '/\b(?:box|carton|pack)\s*(?:of\s*)?(\d+(?:\.\d+)?)\b/i',
+            '/\b(\d+(?:\.\d+)?)\s*(?:count|ct)\b/i',
+            '/[-_](\d+(?:\.\d+)?)$/',
+        ] as $pattern) {
+            if (preg_match($pattern, $label, $matches) === 1) {
+                return $this->positiveOrNull($matches[1] ?? null);
+            }
+        }
+
+        return null;
     }
 
     private function syncProductStockFromVariants(Product $product): void

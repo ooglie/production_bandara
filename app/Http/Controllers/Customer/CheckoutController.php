@@ -20,11 +20,13 @@ use App\Services\DeliveryChargeService;
 use App\Services\DocumentNumberService;
 use App\Services\InvoicePdfService;
 use App\Services\OrderInventoryService;
+use App\Services\StockReservationService;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Route;
 use Illuminate\Support\Facades\Schema;
 use Illuminate\Support\Facades\Log;
+use Illuminate\Validation\ValidationException;
 
 use App\Models\Product;
 use App\Models\ProductVariant;
@@ -387,7 +389,9 @@ class CheckoutController extends Controller
             $order->order_number = $documentNumbers['order_number'];
             $order->user_id = $user->id;
 
-            $order->status = 'processing';
+            // Online-payment orders are not fulfillment-ready yet. They become
+            // processing only after Razorpay payment is verified and stock is committed.
+            $order->status = $paymentMethod === 'pay_later' ? 'processing' : 'pending_payment';
 
             $order->subtotal = round($subtotal, 2);
             $order->discount_total = round($discountTotal, 2);
@@ -698,6 +702,16 @@ class CheckoutController extends Controller
                     'igst_amount'   => $oi->igst_amount,
                     'total'         => $oi->total,
                 ]);
+            }
+
+            if ($paymentMethod !== 'pay_later') {
+                try {
+                    app(StockReservationService::class)->reserveOrder($order);
+                } catch (\Throwable $e) {
+                    throw ValidationException::withMessages([
+                        'checkout' => $e->getMessage() ?: 'Stock is no longer available for one or more cart items. Please update your cart and try again.',
+                    ]);
+                }
             }
 
             if ($paymentMethod === 'pay_later') {

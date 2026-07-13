@@ -27,6 +27,12 @@
     $b2bIncludesGst = (int) $oldB2BIncludes === 1 || $oldB2BIncludes === true || $oldB2BIncludes === '1';
 
     $specialAudience = old('special_audience', $product->special_audience ?? 'b2c');
+    $selectedProductType = old('type', $product->type ?? 'simple');
+    $selectedPackType = old('pack_type', $product->pack_type ?? 'quantity');
+    $selectedSellUnit = old('sell_unit', $product->sell_unit ?? 'piece');
+    $isSelectedVariableProduct = (string) $selectedProductType === 'variable';
+    $isSelectedPhysicalChoice = ! $isSelectedVariableProduct
+        && ((string) $selectedPackType === 'variable_weight' || (string) $selectedSellUnit === 'kg');
 
     $selectedHsnId    = old('hsn_code_id', $product->hsn_code_id ?? '');
     $selectedHsnIdInt = $selectedHsnId !== '' ? (int) $selectedHsnId : null;
@@ -38,11 +44,15 @@
     // SELL PRICE (admin input) - stored in DB as base_price EXCL GST
     $sellInput = old('base_price');
     if ($sellInput === null) {
-        $storedSellExcl = (float) ($product->base_price ?? 0);
-        if ($b2cIncludesGst) {
-            $sellInput = $divisor > 0 ? round($storedSellExcl * $divisor, 2) : round($storedSellExcl, 2);
+        if (($product->base_price ?? null) === null || ($isSelectedVariableProduct && (float) ($product->base_price ?? 0) <= 0)) {
+            $sellInput = '';
         } else {
-            $sellInput = round($storedSellExcl, 2);
+            $storedSellExcl = (float) ($product->base_price ?? 0);
+            if ($b2cIncludesGst) {
+                $sellInput = $divisor > 0 ? round($storedSellExcl * $divisor, 2) : round($storedSellExcl, 2);
+            } else {
+                $sellInput = round($storedSellExcl, 2);
+            }
         }
     }
 
@@ -51,7 +61,7 @@
     if ($mrpInput === null) {
         $storedMrpExcl = (float) ($product->mrp_price ?? 0);
 
-        if (($product->mrp_price ?? null) === null) {
+        if (($product->mrp_price ?? null) === null || (($isSelectedVariableProduct || $isSelectedPhysicalChoice) && (float) ($product->mrp_price ?? 0) <= 0)) {
             $mrpInput = '';
         } else {
             if ($b2cIncludesGst) {
@@ -94,7 +104,23 @@
     $weight = old('product_weight', $product->product_weight ?? '');
     $piecesPerPack = old('pieces_per_pack', $product->pieces_per_pack ?? '');
     $inventoryRole = old('inventory_role', $product->inventory_role ?? (($product->is_active ?? true) ? 'saleable' : 'internal'));
-    $packType = old('pack_type', $product->pack_type ?? 'quantity');
+    $packType = $selectedPackType;
+
+    $storageProfileOptions = \App\Models\Product::storageProfileOptions();
+    $storageProfileTemplates = \App\Models\Product::storageProfileTemplates();
+    $selectedStorageProfile = \App\Models\Product::normalizeStorageProfile(
+        old('storage_profile', $product->storage_profile ?? \App\Models\Product::DEFAULT_STORAGE_PROFILE)
+    );
+    $storageGuidanceValue = old('storage_guidance');
+    if ($storageGuidanceValue === null) {
+        $storageGuidanceValue = $product->storage_guidance
+            ?? \App\Models\Product::storageGuidanceTextForProfile($selectedStorageProfile);
+    }
+    $deliverySupportValue = old('delivery_support');
+    if ($deliverySupportValue === null) {
+        $deliverySupportValue = $product->delivery_support
+            ?? \App\Models\Product::deliverySupportTextForProfile($selectedStorageProfile);
+    }
 
     $hsnManageUrl = \Illuminate\Support\Facades\Route::has('admin.hsn-codes.index')
         ? route('admin.hsn-codes.index')
@@ -152,7 +178,7 @@
                         Product setup
                     </h2>
                     <p class="text-[11px] text-gray-500 dark:text-gray-400">
-                        Save inactive drafts while price and weight are still pending; active products still require complete commercial data.
+                        Save inactive drafts while pricing, variants or weight are still pending. Active simple products need parent prices; variant products use variant prices.
                     </p>
                 </div>
 
@@ -229,6 +255,39 @@
                     @error('description') <p class="mt-1 text-[11px] text-red-600">{{ $message }}</p> @enderror
                 </div>
 
+                <div class="md:col-span-3">
+                    <div class="flex flex-col gap-2 rounded-lg border border-gray-200 bg-gray-50 p-3 dark:border-gray-800 dark:bg-gray-950/60 sm:flex-row sm:items-end sm:justify-between">
+                        <div class="flex-1">
+                            <label class="block text-[12px] font-medium text-gray-700 dark:text-gray-300">
+                                Storage profile <span class="text-red-500">*</span>
+                            </label>
+                            <select
+                                name="storage_profile"
+                                class="{{ $select }}"
+                                data-storage-profile
+                                required
+                            >
+                                @foreach($storageProfileOptions as $profileValue => $profileLabel)
+                                    <option value="{{ $profileValue }}" @selected($selectedStorageProfile === $profileValue)>
+                                        {{ $profileLabel }}
+                                    </option>
+                                @endforeach
+                            </select>
+                            <div class="{{ $hint }}">
+                                Frozen is selected by default. Changing the profile can auto-fill the guidance below; both text fields remain editable.
+                            </div>
+                            @error('storage_profile') <p class="mt-1 text-[11px] text-red-600">{{ $message }}</p> @enderror
+                        </div>
+                        <button
+                            type="button"
+                            class="rounded-sm border border-gray-300 bg-white px-3 py-2 text-[12px] font-medium text-gray-700 hover:bg-gray-100 disabled:cursor-not-allowed disabled:opacity-50 dark:border-gray-700 dark:bg-gray-900 dark:text-gray-200 dark:hover:bg-gray-800"
+                            data-storage-profile-apply
+                        >
+                            Use profile text
+                        </button>
+                    </div>
+                </div>
+
                 <div class="md:col-span-3 grid gap-4 md:grid-cols-2">
                     <div>
                         <label class="block text-[12px] font-medium text-gray-700 dark:text-gray-300">
@@ -239,7 +298,8 @@
                             rows="5"
                             class="{{ $input }}"
                             placeholder="One guidance point per line"
-                        >{{ old('storage_guidance', $product->storage_guidance ?? implode("\n", \App\Models\Product::DEFAULT_STORAGE_GUIDANCE)) }}</textarea>
+                            data-storage-guidance
+                        >{{ $storageGuidanceValue }}</textarea>
                         <div class="{{ $hint }}">Shown in the product page Storage &amp; Delivery tab. Add one bullet point per line.</div>
                         @error('storage_guidance') <p class="mt-1 text-[11px] text-red-600">{{ $message }}</p> @enderror
                     </div>
@@ -253,7 +313,8 @@
                             rows="5"
                             class="{{ $input }}"
                             placeholder="One delivery/support point per line"
-                        >{{ old('delivery_support', $product->delivery_support ?? implode("\n", \App\Models\Product::DEFAULT_DELIVERY_SUPPORT)) }}</textarea>
+                            data-delivery-support
+                        >{{ $deliverySupportValue }}</textarea>
                         <div class="{{ $hint }}">Shown in the product page Storage &amp; Delivery tab. Add one bullet point per line.</div>
                         @error('delivery_support') <p class="mt-1 text-[11px] text-red-600">{{ $message }}</p> @enderror
                     </div>
@@ -316,7 +377,9 @@
             <div class="grid gap-4 md:grid-cols-3">
                 <div>
                     <label class="block text-[12px] font-medium text-gray-700 dark:text-gray-300">
-                        MRP (₹) <span class="text-red-500">*</span> <span class="text-[10px] font-normal text-gray-400">when active</span>
+                        <span data-mrp-label-text>{{ $isSelectedPhysicalChoice ? 'MRP / kg (₹)' : ($isSelectedVariableProduct ? 'Parent MRP (₹)' : 'MRP (₹)') }}</span>
+                        <span data-mrp-required-indicator class="text-red-500 {{ ($isSelectedVariableProduct || $isSelectedPhysicalChoice) ? 'hidden' : '' }}">*</span>
+                        <span data-mrp-mode-hint class="text-[10px] font-normal text-gray-400">{{ $isSelectedVariableProduct ? 'variant-level only' : ($isSelectedPhysicalChoice ? 'optional for physical choice' : 'active direct-buy products only') }}</span>
                     </label>
                     <input
                         id="mrp_input"
@@ -326,15 +389,17 @@
                         name="mrp_price"
                         value="{{ $mrpInput }}"
                         class="{{ $input }}"
-                        placeholder="Maximum retail price"
+                        placeholder="{{ $isSelectedPhysicalChoice ? 'Optional MRP per kg' : 'Maximum retail price' }}"
                     >
-                    <div class="{{ $hint }}">Leave blank only while the product is an inactive draft.</div>
+                    <div class="{{ $hint }}" data-mrp-hint>{{ $isSelectedPhysicalChoice ? 'Optional for physical-choice products such as cheese blocks. Enter only if you want to show a per-kg MRP; exact block weights come from inward stock.' : 'Required for active direct-buy products. For variant-choice products such as prawns, leave blank here and enter MRP on each variant.' }}</div>
                     @error('mrp_price') <p class="mt-1 text-[11px] text-red-600">{{ $message }}</p> @enderror
                 </div>
 
                 <div>
                     <label class="block text-[12px] font-medium text-gray-700 dark:text-gray-300">
-                        Sell price (₹) <span class="text-red-500">*</span> <span class="text-[10px] font-normal text-gray-400">when active</span>
+                        <span data-sell-label-text>{{ $isSelectedPhysicalChoice ? 'Sell price / kg (₹)' : ($isSelectedVariableProduct ? 'Parent sell price (₹)' : 'Sell price (₹)') }}</span>
+                        <span data-sell-required-indicator class="text-red-500 {{ $isSelectedVariableProduct ? 'hidden' : '' }}">*</span>
+                        <span data-sell-mode-hint class="text-[10px] font-normal text-gray-400">{{ $isSelectedVariableProduct ? 'variant-level only' : ($isSelectedPhysicalChoice ? 'required per kg' : 'active direct-buy products only') }}</span>
                     </label>
                     <input
                         id="price_input"
@@ -344,9 +409,9 @@
                         name="base_price"
                         value="{{ $sellInput }}"
                         class="{{ $input }}"
-                        placeholder="Actual selling price"
+                        placeholder="{{ $isSelectedPhysicalChoice ? 'Selling rate per kg' : 'Actual selling price' }}"
                     >
-                    <div class="{{ $hint }}">Leave blank only while the product is an inactive draft.</div>
+                    <div class="{{ $hint }}" data-sell-hint>{{ $isSelectedPhysicalChoice ? 'Required per kg for active physical-choice products. Individual cheese block/slab weights are entered later from vendor inward stock.' : 'Required for active direct-buy products. Variant-choice products use the sell price saved on each variant.' }}</div>
                     @error('base_price') <p class="mt-1 text-[11px] text-red-600">{{ $message }}</p> @enderror
                 </div>
 
@@ -757,8 +822,8 @@
                             Storefront experience <span class="text-red-500">*</span>
                         </label>
                         <select name="type" class="{{ $select }}" required data-storefront-type>
-                            <option value="simple" @selected(old('type', $product->type ?? 'simple') === 'simple')>Direct buy / physical choice product</option>
-                            <option value="variable" @selected(old('type', $product->type ?? 'simple') === 'variable')>Variant choice product</option>
+                            <option value="simple" @selected($selectedProductType === 'simple')>Direct buy / physical choice product</option>
+                            <option value="variable" @selected($selectedProductType === 'variable')>Variant choice product</option>
                         </select>
                         <p class="{{ $hint }}">Variant choice is for Dimsum/Prawns. Direct buy also covers physical-choice products such as Pork Belly, Salmon, Tuna and cheese blocks.</p>
                         @error('type') <p class="mt-1 text-[11px] text-red-600">{{ $message }}</p> @enderror
@@ -793,9 +858,9 @@
                     <div>
                         <label class="block text-[12px] font-medium text-gray-700 dark:text-gray-300">Pricing unit</label>
                         <select name="sell_unit" class="{{ $select }}" data-sell-unit>
-                            <option value="piece" @selected(old('sell_unit', $product->sell_unit ?? 'piece') === 'piece')>Quantity / piece</option>
-                            <option value="pack" @selected(old('sell_unit', $product->sell_unit ?? 'piece') === 'pack')>Pack</option>
-                            <option value="kg" @selected(old('sell_unit', $product->sell_unit ?? 'piece') === 'kg')>Weight / kg</option>
+                            <option value="piece" @selected($selectedSellUnit === 'piece')>Quantity / piece</option>
+                            <option value="pack" @selected($selectedSellUnit === 'pack')>Pack</option>
+                            <option value="kg" @selected($selectedSellUnit === 'kg')>Weight / kg</option>
                         </select>
                         <div class="{{ $hint }}">Controls ₹/unit labels and kg-based slab pricing.</div>
                         @error('sell_unit') <p class="mt-1 text-[11px] text-red-600">{{ $message }}</p> @enderror
@@ -814,7 +879,7 @@
                             class="{{ $input }}"
                             placeholder="e.g. 0.500 for 500g pack"
                         >
-                        <div class="{{ $hint }}">Use for fixed-weight packs or a direct-buy catchweight item with one known weight. Slab-selector products can leave this blank and use inventory-piece weights.</div>
+                        <div class="{{ $hint }}" data-product-weight-hint>{{ $isSelectedPhysicalChoice ? 'For physical-choice products such as cheese blocks, leave this blank. Enter each real block/slab weight from vendor inward stock.' : 'Use for fixed-weight packs or a direct-buy catchweight item with one known weight. Slab-selector products can leave this blank and use inventory-piece weights.' }}</div>
                         @error('product_weight') <p class="mt-1 text-[11px] text-red-600">{{ $message }}</p> @enderror
                     </div>
 
@@ -957,7 +1022,7 @@
     <div class="sticky bottom-3 z-10">
         <div class="rounded-lg border border-gray-200 dark:border-gray-800 bg-white/95 dark:bg-gray-900/95 backdrop-blur px-4 py-3 flex items-center justify-between gap-3">
             <div class="text-[11px] text-gray-500 dark:text-gray-400">
-                {{ $isEdit ? 'Editing existing product.' : 'Create a saleable product or save an inactive draft while pricing/weight are pending.' }}
+                {{ $isEdit ? 'Editing existing product.' : 'Create a saleable product or save an inactive draft while pricing, variants or weight are pending.' }}
             </div>
 
             <div class="flex items-center gap-2">
@@ -1017,6 +1082,72 @@
     const inventoryRepackEl = document.querySelector('[data-inventory-repack]');
     const manageStockEl = document.querySelector('[data-manage-stock]');
     const behaviourGuide = document.getElementById('product-behaviour-guide');
+    const storageProfileEl = document.querySelector('[data-storage-profile]');
+    const storageGuidanceEl = document.querySelector('[data-storage-guidance]');
+    const deliverySupportEl = document.querySelector('[data-delivery-support]');
+    const storageProfileApplyEl = document.querySelector('[data-storage-profile-apply]');
+    const storageProfileTemplates = @json($storageProfileTemplates);
+    const mrpLabelTextEl = document.querySelector('[data-mrp-label-text]');
+    const mrpRequiredEl = document.querySelector('[data-mrp-required-indicator]');
+    const mrpModeHintEl = document.querySelector('[data-mrp-mode-hint]');
+    const mrpHintEl = document.querySelector('[data-mrp-hint]');
+    const sellLabelTextEl = document.querySelector('[data-sell-label-text]');
+    const sellRequiredEl = document.querySelector('[data-sell-required-indicator]');
+    const sellModeHintEl = document.querySelector('[data-sell-mode-hint]');
+    const sellHintEl = document.querySelector('[data-sell-hint]');
+    const productWeightHintEl = document.querySelector('[data-product-weight-hint]');
+
+    function normalizeTemplateText(value) {
+        return String(value || '')
+            .replace(/\r\n|\r/g, '\n')
+            .split('\n')
+            .map(line => line.trim())
+            .filter(Boolean)
+            .join('\n');
+    }
+
+    function matchesKnownStorageTemplate(value, key) {
+        const normalized = normalizeTemplateText(value);
+        if (!normalized) return true;
+
+        return Object.values(storageProfileTemplates).some(template => {
+            return normalizeTemplateText(template[key] || '') === normalized;
+        });
+    }
+
+    function applyStorageProfileTemplate(force) {
+        if (!storageProfileEl) return;
+
+        const template = storageProfileTemplates[storageProfileEl.value];
+        const hasTemplate = !!template;
+
+        if (storageProfileApplyEl) {
+            storageProfileApplyEl.disabled = !hasTemplate;
+        }
+
+        if (!hasTemplate) return;
+
+        if (storageGuidanceEl && (force || matchesKnownStorageTemplate(storageGuidanceEl.value, 'storage_guidance'))) {
+            storageGuidanceEl.value = template.storage_guidance || '';
+        }
+
+        if (deliverySupportEl && (force || matchesKnownStorageTemplate(deliverySupportEl.value, 'delivery_support'))) {
+            deliverySupportEl.value = template.delivery_support || '';
+        }
+    }
+
+    if (storageProfileEl) {
+        storageProfileEl.addEventListener('change', function () {
+            applyStorageProfileTemplate(false);
+        });
+        applyStorageProfileTemplate(false);
+    }
+
+    if (storageProfileApplyEl) {
+        storageProfileApplyEl.addEventListener('click', function () {
+            applyStorageProfileTemplate(true);
+        });
+    }
 
     function setSelectValue(el, value) {
         if (!el) return;
@@ -1073,13 +1204,79 @@
         });
     });
 
-    function updateProductBehaviourGuide() {
-        if (!behaviourGuide) return;
+    function pricingBasisSuffix(sellUnit) {
+        if (sellUnit === 'kg') return '/ kg';
+        if (sellUnit === 'piece') return '/ pc';
+        return '/ pack';
+    }
 
+    function updatePricingFieldGuidance() {
+        const storefrontType = storefrontTypeEl ? storefrontTypeEl.value : 'simple';
+        const packType = packTypeEl ? packTypeEl.value : 'quantity';
+        const sellUnit = sellUnitEl ? sellUnitEl.value : 'piece';
+        const isVariable = storefrontType === 'variable';
+        const isPhysicalChoice = !isVariable && (packType === 'variable_weight' || sellUnit === 'kg');
+        const suffix = pricingBasisSuffix(sellUnit);
+
+        if (mrpLabelTextEl) {
+            mrpLabelTextEl.textContent = isVariable
+                ? 'Parent MRP (₹)'
+                : (isPhysicalChoice ? 'MRP / kg (₹)' : `MRP ${suffix} (₹)`);
+        }
+        if (sellLabelTextEl) {
+            sellLabelTextEl.textContent = isVariable
+                ? 'Parent sell price (₹)'
+                : (isPhysicalChoice ? 'Sell price / kg (₹)' : `Sell price ${suffix} (₹)`);
+        }
+
+        if (mrpRequiredEl) {
+            mrpRequiredEl.classList.toggle('hidden', isVariable || isPhysicalChoice);
+        }
+        if (sellRequiredEl) {
+            sellRequiredEl.classList.toggle('hidden', isVariable);
+        }
+
+        if (mrpModeHintEl) {
+            mrpModeHintEl.textContent = isVariable
+                ? 'variant-level only'
+                : (isPhysicalChoice ? 'optional for physical choice' : 'active direct-buy products only');
+        }
+        if (sellModeHintEl) {
+            sellModeHintEl.textContent = isVariable
+                ? 'variant-level only'
+                : (isPhysicalChoice ? 'required per kg' : 'active direct-buy products only');
+        }
+
+        if (mrpHintEl) {
+            mrpHintEl.textContent = isVariable
+                ? 'Variant-choice products such as prawns use variant-level MRP. Leave this blank on the parent product.'
+                : (isPhysicalChoice
+                    ? 'Optional for physical-choice products such as cheese blocks. Enter only if you want to show a per-kg MRP; exact block weights come from inward stock.'
+                    : 'Required for active direct-buy products. For variant-choice products such as prawns, leave blank here and enter MRP on each variant.');
+        }
+        if (sellHintEl) {
+            sellHintEl.textContent = isVariable
+                ? 'Variant-choice products use the sell price saved on each variant.'
+                : (isPhysicalChoice
+                    ? 'Required per kg for active physical-choice products. Individual cheese block/slab weights are entered later from vendor inward stock.'
+                    : 'Required for active direct-buy products. Variant-choice products use the sell price saved on each variant.');
+        }
+        if (productWeightHintEl) {
+            productWeightHintEl.textContent = isPhysicalChoice
+                ? 'For physical-choice products such as cheese blocks, leave this blank. Enter each real block/slab weight from vendor inward stock.'
+                : 'Use for fixed-weight packs or a direct-buy catchweight item with one known weight. Slab-selector products can leave this blank and use inventory-piece weights.';
+        }
+    }
+
+    function updateProductBehaviourGuide() {
         const storefrontType = storefrontTypeEl ? storefrontTypeEl.value : 'simple';
         const packType = packTypeEl ? packTypeEl.value : 'quantity';
         const inventoryRole = inventoryRoleEl ? inventoryRoleEl.value : 'saleable';
         const sellUnit = sellUnitEl ? sellUnitEl.value : 'piece';
+
+        updatePricingFieldGuidance();
+
+        if (!behaviourGuide) return;
 
         let title = 'Direct buy / simple product';
         let body = 'Use this for one product, one price and normal add-to-cart stock.';
@@ -1092,7 +1289,7 @@
             body = 'Use this for Dimsum, dumplings, buns, rolls and Prawns. Parent stock can be zero; price, stock, pack size and B2B/B2C visibility are managed on variants.';
         } else if (packType === 'variable_weight' || sellUnit === 'kg') {
             title = 'Physical choice / catchweight product';
-            body = 'Use this for Pork Belly, Salmon, Tuna, Black Cod, Hamachi and cheese blocks. Customer chooses exact inventory pieces; price is calculated per kg.';
+            body = 'Use this for Pork Belly, Salmon, Tuna, Black Cod, Hamachi and cheese blocks. Customer chooses exact inventory pieces; price is calculated per kg. Enter the per-kg sell price here; enter actual block/slab weights in inward stock.';
         } else if (packType === 'fixed_weight_pack') {
             title = 'Fixed weight finished pack';
             body = 'Use this for same-size packs such as Pork Slice 500g or cheese portion packs. Enter product/pack weight and manage stock as pack count.';

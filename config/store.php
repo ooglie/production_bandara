@@ -1,6 +1,10 @@
 <?php
 
 return [
+    // Online checkout stock is held only after the customer starts checkout/payment.
+    // Keep this short so abandoned payment attempts do not block stock for long.
+    'stock_reservation_ttl_minutes' => (int) env('STOCK_RESERVATION_TTL_MINUTES', 5),
+
     // Where invoice copies go for accounting
     'accountant_email' => env('STORE_ACCOUNTANT_EMAIL', null),
 

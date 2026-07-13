@@ -84,6 +84,7 @@ use App\Http\Controllers\Admin\{
     DeliverySettingsController,
     AdminBandaraCreditPreviewController,
     BandaraCreditController,
+    ReportController,
 };
 
 use App\Http\Controllers\Stores\DashboardController as StoresDashboardController;
@@ -280,6 +281,9 @@ Route::middleware(['auth', 'role:Customer'])->group(function () {
         Route::post('/payment/razorpay/callback', [PaymentController::class, 'handleRazorpayCallback'])
             ->name('payment.razorpay.callback');
 
+        Route::post('/payment/razorpay/failed', [PaymentController::class, 'handleRazorpayFailure'])
+            ->name('payment.razorpay.failed');
+
         Route::post('/payment/razorpay/invoice-callback', [PaymentController::class, 'handleInvoiceRazorpayCallback'])
             ->name('payment.razorpay.invoice-callback');
     });
@@ -391,6 +395,21 @@ Route::middleware(['auth', 'role:Admin|Manager|Accountant|CAAccountant|Stores'])
         Route::get('/dashboard', [AdminDashboardController::class, 'index'])
             ->name('dashboard');
 
+        Route::prefix('reports')
+            ->name('reports.')
+            ->group(function () {
+                Route::get('/', [ReportController::class, 'index'])->name('index');
+
+                Route::get('/sales-summary', [ReportController::class, 'salesSummary'])->name('sales-summary');
+                Route::get('/sales-summary/export', [ReportController::class, 'exportSalesSummary'])->name('sales-summary.export');
+
+                Route::get('/product-sales', [ReportController::class, 'productSales'])->name('product-sales');
+                Route::get('/product-sales/export', [ReportController::class, 'exportProductSales'])->name('product-sales.export');
+
+                Route::get('/inventory-stock', [ReportController::class, 'inventoryStock'])->name('inventory-stock');
+                Route::get('/inventory-stock/export', [ReportController::class, 'exportInventoryStock'])->name('inventory-stock.export');
+            });
+
         Route::middleware(['role:Stores|Admin'])
             ->prefix('stores')
             ->name('stores.')
@@ -415,6 +434,10 @@ Route::middleware(['auth', 'role:Admin|Manager|Accountant|CAAccountant|Stores'])
         Route::get('products/{product}/barcode-label', [ProductController::class, 'barcodeLabel'])
             ->name('products.barcodeLabel');
 
+        Route::post('categories/{category}/collage', [CategoryController::class, 'generateCollage'])
+            ->name('categories.collage.generate');
+        Route::delete('categories/{category}/collage', [CategoryController::class, 'removeCollage'])
+            ->name('categories.collage.destroy');
         Route::resource('categories', CategoryController::class);
         Route::resource('vendors', VendorController::class);
 
@@ -444,6 +467,9 @@ Route::middleware(['auth', 'role:Admin|Manager|Accountant|CAAccountant|Stores'])
         Route::resource('attributes.values', AttributeValueController::class)
             ->except(['show'])
             ->shallow();
+
+        Route::post('images/{image}/primary', [ProductImageController::class, 'makePrimary'])
+            ->name('images.primary');
 
         Route::resource('products.images', ProductImageController::class)
             ->except(['show'])
@@ -500,6 +526,9 @@ Route::middleware(['auth', 'role:Admin|Manager|Accountant|CAAccountant|Stores'])
 
             Route::get('/inventory/packs', [InventoryPackController::class, 'index'])
                 ->name('inventory.packs.index');
+
+            Route::get('/inventory/packs/output-options', [InventoryPackController::class, 'outputOptions'])
+                ->name('inventory.packs.output-options');
 
             Route::get('/inventory/packs/create', [InventoryPackController::class, 'create'])
                 ->name('inventory.packs.create');

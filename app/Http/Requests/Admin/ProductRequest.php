@@ -50,6 +50,7 @@ class ProductRequest extends FormRequest
             'barcode' => trim((string) $this->input('barcode', '')),
             'short_description' => trim((string) $this->input('short_description', '')),
             'description' => trim((string) $this->input('description', '')),
+            'storage_profile' => Product::normalizeStorageProfile($this->input('storage_profile', Product::DEFAULT_STORAGE_PROFILE)),
             'storage_guidance' => $normalizeMultiline($this->input('storage_guidance')),
             'delivery_support' => $normalizeMultiline($this->input('delivery_support')),
 
@@ -91,6 +92,10 @@ class ProductRequest extends FormRequest
         $isDraft = $this->isDraftSave();
         $isVariable = (string) $this->input('type', 'simple') === 'variable';
         $packType = (string) $this->input('pack_type', 'quantity');
+        $sellUnit = (string) $this->input('sell_unit', 'piece');
+        $isPhysicalChoice = ! $isVariable && ($packType === 'variable_weight' || $sellUnit === 'kg');
+        $requiresParentSellPrice = ! $isDraft && ! $isVariable;
+        $requiresParentMrpPrice = ! $isDraft && ! $isVariable && ! $isPhysicalChoice;
         // Product weight is only mandatory when the product itself is a fixed-weight finished pack.
         // Catchweight/physical-choice products use the exact weights saved on inventory pieces/lots,
         // and variable products keep pack weight on their variants.
@@ -108,6 +113,7 @@ class ProductRequest extends FormRequest
             'name' => ['required', 'string', 'max:255'],
             'short_description' => ['required', 'string', 'max:255'],
             'description' => ['required', 'string'],
+            'storage_profile' => ['required', Rule::in(array_keys(Product::storageProfileOptions()))],
             'storage_guidance' => ['nullable', 'string', 'max:5000'],
             'delivery_support' => ['nullable', 'string', 'max:5000'],
 
@@ -131,12 +137,12 @@ class ProductRequest extends FormRequest
             'vendor_id' => ['nullable', 'integer', 'exists:vendors,id'],
             'barcode' => ['nullable', 'string', 'max:191'],
 
-            'mrp_price' => ($isDraft || $isVariable)
-                ? ['nullable', 'numeric', 'min:0']
-                : ['required', 'numeric', 'gt:0'],
-            'base_price' => ($isDraft || $isVariable)
-                ? ['nullable', 'numeric', 'min:0']
-                : ['required', 'numeric', 'gt:0'],
+            'mrp_price' => $requiresParentMrpPrice
+                ? ['required', 'numeric', 'gt:0']
+                : ['nullable', 'numeric', 'min:0'],
+            'base_price' => $requiresParentSellPrice
+                ? ['required', 'numeric', 'gt:0']
+                : ['nullable', 'numeric', 'min:0'],
             'b2c_price_includes_gst' => ['required', Rule::in(['0', '1', 0, 1, true, false])],
             'b2b_price_includes_gst' => ['required', Rule::in(['0', '1', 0, 1, true, false])],
 
@@ -191,16 +197,18 @@ class ProductRequest extends FormRequest
             'name.required' => 'Product name is required.',
             'short_description.required' => 'Short description is required.',
             'description.required' => 'Full description is required.',
+            'storage_profile.required' => 'Please select a storage profile.',
+
 
             'sku.required' => 'SKU is required.',
             'sku.unique' => 'This SKU has already been taken.',
 
             'type.required' => 'Type is required.',
 
-            'mrp_price.required' => 'MRP is required before activating/publishing the product.',
-            'base_price.required' => 'Sell price is required before activating/publishing the product.',
-            'mrp_price.gt' => 'MRP must be greater than zero before activation.',
-            'base_price.gt' => 'Sell price must be greater than zero before activation.',
+            'mrp_price.required' => 'MRP is required for active direct-buy products. Physical-choice products can leave MRP blank; variant products use variant-level MRP.',
+            'base_price.required' => 'Sell price is required for active direct-buy and physical-choice products. Variant products use variant-level sell price.',
+            'mrp_price.gt' => 'MRP must be greater than zero for active direct-buy products.',
+            'base_price.gt' => 'Sell price must be greater than zero for active direct-buy and physical-choice products.',
             'b2c_price_includes_gst.required' => 'B2C price mode is required.',
             'b2b_price_includes_gst.required' => 'B2B price mode is required.',
 

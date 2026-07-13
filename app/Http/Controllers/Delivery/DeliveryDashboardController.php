@@ -27,7 +27,7 @@ class DeliveryDashboardController extends Controller
             $query->where('delivery_status', 'failed');
         } else {
             $query->whereIn('delivery_status', ['assigned', 'out_for_delivery', 'failed'])
-                ->whereNotIn('status', ['delivered', 'cancelled']);
+                ->whereNotIn('status', ['pending_payment', 'payment_failed', 'payment_expired', 'delivered', 'cancelled']);
         }
 
         $orders = $query->paginate(20)->withQueryString();
@@ -35,7 +35,7 @@ class DeliveryDashboardController extends Controller
         $stats = [
             'active' => Order::where('delivery_agent_id', $user->id)
                 ->whereIn('delivery_status', ['assigned', 'out_for_delivery', 'failed'])
-                ->whereNotIn('status', ['delivered', 'cancelled'])
+                ->whereNotIn('status', ['pending_payment', 'payment_failed', 'payment_expired', 'delivered', 'cancelled'])
                 ->count(),
             'delivered_today' => Order::where('delivery_agent_id', $user->id)
                 ->where('delivery_status', 'delivered')

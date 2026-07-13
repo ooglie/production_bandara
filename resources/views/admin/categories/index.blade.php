@@ -7,9 +7,14 @@
 @section('content')
     <div class="space-y-4">
         <div class="flex items-center justify-between gap-3">
-            <h1 class="text-lg font-semibold text-gray-900 dark:text-gray-50">
-                Categories
-            </h1>
+            <div>
+                <h1 class="text-lg font-semibold text-gray-900 dark:text-gray-50">
+                    Categories
+                </h1>
+                <p class="mt-1 text-[11px] text-gray-500 dark:text-gray-400">
+                    Manage category hierarchy, manual images, and generated product-image collages.
+                </p>
+            </div>
 
             <a href="{{ route('admin.categories.create') }}"
                class="inline-flex items-center px-3 py-1.5 text-xs rounded border border-gray-300 dark:border-gray-700 bg-gray-900 text-white dark:bg-gray-100 dark:text-gray-900 hover:bg-gray-800 dark:hover:bg-gray-200">
@@ -21,6 +26,12 @@
         @if(session('status'))
             <div class="rounded border border-emerald-300 bg-emerald-50 px-3 py-2 text-[11px] text-emerald-800">
                 {{ session('status') }}
+            </div>
+        @endif
+
+        @if(session('error'))
+            <div class="rounded border border-red-300 bg-red-50 px-3 py-2 text-[11px] text-red-800">
+                {{ session('error') }}
             </div>
         @endif
 
@@ -68,9 +79,11 @@
             <table class="min-w-full divide-y divide-gray-200 dark:divide-gray-800">
                 <thead class="bg-gray-50 dark:bg-gray-900">
                     <tr class="text-[11px] uppercase text-gray-500 dark:text-gray-400">
+                        <th class="px-3 py-2 text-left">Image</th>
                         <th class="px-3 py-2 text-left">Name</th>
                         <th class="px-3 py-2 text-left">Slug</th>
                         <th class="px-3 py-2 text-left">Parent</th>
+                        <th class="px-3 py-2 text-right">Products</th>
                         <th class="px-3 py-2 text-right">Position</th>
                         <th class="px-3 py-2 text-center">Status</th>
                         <th class="px-3 py-2 text-right">Actions</th>
@@ -78,7 +91,23 @@
                 </thead>
                 <tbody class="divide-y divide-gray-200 dark:divide-gray-800 bg-white dark:bg-gray-950">
                     @forelse($categories as $category)
+                        @php
+                            $displayImageUrl = $category->display_image_url;
+                            $imageSourceLabel = $category->image_path ? 'Manual' : ($category->collage_image_path ? 'Collage' : null);
+                        @endphp
                         <tr>
+                            <td class="px-3 py-2 align-top">
+                                <div class="h-14 w-20 overflow-hidden rounded border border-gray-200 dark:border-gray-800 bg-gray-100 dark:bg-gray-900 flex items-center justify-center">
+                                    @if($displayImageUrl)
+                                        <img src="{{ $displayImageUrl }}" alt="{{ $category->name }}" class="h-full w-full object-cover">
+                                    @else
+                                        <span class="text-sm font-semibold text-gray-400">{{ mb_substr($category->name, 0, 1) }}</span>
+                                    @endif
+                                </div>
+                                @if($imageSourceLabel)
+                                    <div class="mt-1 text-[10px] text-gray-400">{{ $imageSourceLabel }}</div>
+                                @endif
+                            </td>
                             <td class="px-3 py-2 align-top">
                                 <div class="font-medium text-gray-900 dark:text-gray-50">
                                     {{ $category->name }}
@@ -88,12 +117,20 @@
                                         {{ $category->description }}
                                     </div>
                                 @endif
+                                @if($category->collage_updated_at)
+                                    <div class="mt-1 text-[10px] text-gray-400">
+                                        Collage: {{ $category->collage_updated_at->format('d M Y, H:i') }}
+                                    </div>
+                                @endif
                             </td>
                             <td class="px-3 py-2 align-top text-gray-700 dark:text-gray-300">
                                 {{ $category->slug ?? '—' }}
                             </td>
                             <td class="px-3 py-2 align-top text-gray-700 dark:text-gray-300">
                                 {{ $category->parent->name ?? '—' }}
+                            </td>
+                            <td class="px-3 py-2 align-top text-right text-gray-700 dark:text-gray-300">
+                                {{ $category->products_count ?? 0 }}
                             </td>
                             <td class="px-3 py-2 align-top text-right text-gray-700 dark:text-gray-300">
                                 {{ $category->position ?? 0 }}
@@ -110,20 +147,30 @@
                                 @endif
                             </td>
                             <td class="px-3 py-2 align-top text-right">
-                                <div class="inline-flex items-center gap-2">
-                                    <a href="{{ route('admin.categories.edit', $category) }}"
-                                       class="text-[11px] text-gray-600 dark:text-gray-300 hover:text-gray-900 dark:hover:text-gray-100">
-                                        Edit
-                                    </a>
-                                    <form method="POST"
-                                          action="{{ route('admin.categories.destroy', $category) }}"
-                                          onsubmit="return confirm('Delete this category?');"
-                                    >
+                                <div class="inline-flex flex-col items-end gap-1">
+                                    <div class="inline-flex items-center gap-2">
+                                        <a href="{{ route('admin.categories.edit', $category) }}"
+                                           class="text-[11px] text-gray-600 dark:text-gray-300 hover:text-gray-900 dark:hover:text-gray-100">
+                                            Edit
+                                        </a>
+                                        <form method="POST"
+                                              action="{{ route('admin.categories.destroy', $category) }}"
+                                              onsubmit="return confirm('Delete this category?');"
+                                        >
+                                            @csrf
+                                            @method('DELETE')
+                                            <button type="submit"
+                                                    class="text-[11px] text-red-600 hover:text-red-700">
+                                                Delete
+                                            </button>
+                                        </form>
+                                    </div>
+
+                                    <form method="POST" action="{{ route('admin.categories.collage.generate', $category) }}" class="inline-flex items-center gap-1">
                                         @csrf
-                                        @method('DELETE')
-                                        <button type="submit"
-                                                class="text-[11px] text-red-600 hover:text-red-700">
-                                            Delete
+                                        <input type="hidden" name="limit" value="6">
+                                        <button type="submit" class="text-[11px] text-gray-500 hover:text-gray-900 dark:text-gray-400 dark:hover:text-gray-100">
+                                            {{ $category->collage_image_path ? 'Regenerate collage' : 'Generate collage' }}
                                         </button>
                                     </form>
                                 </div>
@@ -131,7 +178,7 @@
                         </tr>
                     @empty
                         <tr>
-                            <td colspan="6" class="px-3 py-6 text-center text-xs text-gray-500 dark:text-gray-400">
+                            <td colspan="8" class="px-3 py-6 text-center text-xs text-gray-500 dark:text-gray-400">
                                 No categories found.
                                 <a href="{{ route('admin.categories.create') }}" class="underline">
                                     Create the first one

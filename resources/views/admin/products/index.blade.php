@@ -116,14 +116,37 @@
                 </select>
             </div>
 
-
             <div>
+                <label class="block text-[10px] font-medium text-gray-600 dark:text-gray-300">
+                    Rows
+                </label>
+                <select
+                    name="per_page"
+                    onchange="this.form.submit()"
+                    class="mt-1 w-24 rounded border border-gray-300 dark:border-gray-700 bg-white dark:bg-gray-900 px-2 py-1.5 text-xs focus:outline-none focus:ring-1 focus:ring-gray-400 dark:focus:ring-gray-500"
+                >
+                    @foreach(($allowedPerPage ?? [20, 50, 100]) as $option)
+                        <option value="{{ $option }}" @selected((int) request('per_page', $perPage ?? 20) === (int) $option)>
+                            {{ $option }}
+                        </option>
+                    @endforeach
+                </select>
+            </div>
+
+            <div class="flex items-center gap-2">
                 <button
                     type="submit"
                     class="mt-5 inline-flex items-center px-3 py-1.5 rounded border border-gray-300 dark:border-gray-700 text-xs hover:bg-gray-100 dark:hover:bg-gray-800"
                 >
                     Apply
                 </button>
+
+                @if(request()->hasAny(['q', 'status', 'type', 'model', 'flag', 'per_page']))
+                    <a href="{{ route('admin.products.index') }}"
+                       class="mt-5 inline-flex items-center px-3 py-1.5 rounded border border-transparent text-xs text-gray-500 hover:text-gray-800 dark:text-gray-400 dark:hover:text-gray-100">
+                        Reset
+                    </a>
+                @endif
             </div>
         </form>
         {{-- Table --}}
@@ -138,6 +161,28 @@
                 return rtrim(rtrim($formatted, '0'), '.') ?: '0';
             };
         @endphp
+
+        <div class="flex flex-wrap items-center justify-between gap-3 rounded-lg border border-gray-200 bg-white px-3 py-2 text-xs text-gray-600 dark:border-gray-800 dark:bg-gray-950 dark:text-gray-300">
+            <div>
+                @if($products->total() > 0)
+                    Showing
+                    <span class="font-medium text-gray-900 dark:text-gray-50">{{ $products->firstItem() }}</span>
+                    –
+                    <span class="font-medium text-gray-900 dark:text-gray-50">{{ $products->lastItem() }}</span>
+                    of
+                    <span class="font-medium text-gray-900 dark:text-gray-50">{{ $products->total() }}</span>
+                    products
+                @else
+                    No products match the current filters.
+                @endif
+            </div>
+
+            @if($products->hasPages())
+                <div class="product-pagination product-pagination-top">
+                    {{ $products->onEachSide(1)->links() }}
+                </div>
+            @endif
+        </div>
 
         <div class="overflow-x-auto border border-gray-200 dark:border-gray-800 rounded-lg text-xs">
             <table class="min-w-full divide-y divide-gray-200 dark:divide-gray-800">
@@ -253,7 +298,29 @@
                                 </span>
                             </td>
                             <td class="px-3 py-2 align-top text-right">
-                                ₹{{ number_format($product->base_price, 2) }}
+                                @php
+                                    $isVariablePriceProduct = (string) ($product->type ?? 'simple') === 'variable';
+                                    $variantMinPrice = $product->variant_min_price !== null ? (float) $product->variant_min_price : null;
+                                    $variantMaxPrice = $product->variant_max_price !== null ? (float) $product->variant_max_price : null;
+                                @endphp
+
+                                @if($isVariablePriceProduct)
+                                    @if($variantMinPrice !== null && $variantMinPrice > 0)
+                                        <div class="font-medium text-gray-900 dark:text-gray-50">
+                                            ₹{{ number_format($variantMinPrice, 2) }}
+                                            @if($variantMaxPrice !== null && $variantMaxPrice > $variantMinPrice)
+                                                – ₹{{ number_format($variantMaxPrice, 2) }}
+                                            @endif
+                                        </div>
+                                        <div class="text-[10px] text-gray-400">Variant prices</div>
+                                    @else
+                                        <span class="text-[11px] text-amber-600 dark:text-amber-300">Set on variants</span>
+                                    @endif
+                                @elseif($product->base_price !== null)
+                                    ₹{{ number_format((float) $product->base_price, 2) }}
+                                @else
+                                    <span class="text-[11px] text-gray-400">—</span>
+                                @endif
                             </td>
                             @php
                                 $storedStock = $product->stock_quantity !== null ? (float) $product->stock_quantity : null;
@@ -350,9 +417,11 @@
             </table>
         </div>
 
-        <div>
-            {{ $products->links() }}
-        </div>
+        @if($products->hasPages())
+            <div class="product-pagination product-pagination-bottom">
+                {{ $products->onEachSide(1)->links() }}
+            </div>
+        @endif
     </div>
 @endsection
 

@@ -10,6 +10,7 @@ use App\Models\OrderItem;
 use App\Models\Product;
 use App\Models\ProductVariant;
 use App\Models\StockMovement;
+use App\Models\StockReservation;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Schema;
 use RuntimeException;
@@ -136,6 +137,10 @@ class OrderInventoryService
             throw new RuntimeException("Selected inventory piece {$pieceId} is currently {$pieceStatus} and cannot be sold.");
         }
 
+        if ($this->activeReservedQuantityForPiece($pieceId, (int) $item->order_id) > 0) {
+            throw new RuntimeException("Selected inventory piece {$pieceId} is reserved for another checkout.");
+        }
+
         $lot = $piece->inventoryLot;
         $lotVariantId = (int) ($lot?->product_variant_id ?? 0);
 
@@ -208,10 +213,12 @@ class OrderInventoryService
         }
 
         $available = round((float) ($fresh->stock_quantity ?? 0), 3);
+        $reservedForOthers = $this->activeReservedQuantityForTarget($fresh, (int) $item->order_id);
+        $availableForThisOrder = round(max(0, $available - $reservedForOthers), 3);
 
-        if ($available < $qtyToDeduct) {
+        if ($availableForThisOrder < $qtyToDeduct) {
             throw new RuntimeException(
-                "Insufficient stock for order item {$item->id}. Available {$available}, required {$qtyToDeduct}."
+                "Insufficient stock for order item {$item->id}. Available {$availableForThisOrder}, required {$qtyToDeduct}."
             );
         }
 
@@ -561,7 +568,7 @@ class OrderInventoryService
 
     protected function availableProductionPieceQuery(OrderItem $item)
     {
-        return InventoryPiece::query()
+        $query = InventoryPiece::query()
             ->whereNull('sold_order_item_id')
             ->where(function ($q) {
                 $q->whereNull('status')
@@ -579,6 +586,25 @@ class OrderInventoryService
                             ->orWhere('available_weight_kg', '>', 0);
                     });
             });
+
+        if (Schema::hasTable('stock_reservations')) {
+            $query->whereNotExists(function ($sub) use ($item) {
+                $sub->selectRaw('1')
+                    ->from('stock_reservations')
+                    ->whereColumn('stock_reservations.inventory_piece_id', 'inventory_pieces.id')
+                    ->where('stock_reservations.status', 'reserved')
+                    ->where(function ($expiry) {
+                        $expiry->whereNull('stock_reservations.expires_at')
+                            ->orWhere('stock_reservations.expires_at', '>', now());
+                    })
+                    ->where(function ($orderScope) use ($item) {
+                        $orderScope->whereNull('stock_reservations.order_id')
+                            ->orWhere('stock_reservations.order_id', '!=', (int) $item->order_id);
+                    });
+            });
+        }
+
+        return $query;
     }
 
     protected function availableProductionLotQuery(OrderItem $item)
@@ -614,6 +640,59 @@ class OrderInventoryService
             ->sum('stock_quantity'), 3);
 
         $product->save();
+    }
+
+
+    protected function activeReservedQuantityForTarget($target, int $excludeOrderId = 0): float
+    {
+        if (! Schema::hasTable('stock_reservations')) {
+            return 0.0;
+        }
+
+        $query = StockReservation::query()
+            ->where('status', 'reserved')
+            ->where(function ($query) {
+                $query->whereNull('expires_at')->orWhere('expires_at', '>', now());
+            })
+            ->whereNull('inventory_piece_id');
+
+        if ($target instanceof ProductVariant) {
+            $query->where('product_variant_id', $target->id);
+        } elseif ($target instanceof Product) {
+            $query->where('product_id', $target->id)->whereNull('product_variant_id');
+        } else {
+            return 0.0;
+        }
+
+        if ($excludeOrderId > 0) {
+            $query->where(function ($query) use ($excludeOrderId) {
+                $query->whereNull('order_id')->orWhere('order_id', '!=', $excludeOrderId);
+            });
+        }
+
+        return round((float) $query->sum('quantity'), 3);
+    }
+
+    protected function activeReservedQuantityForPiece(int $pieceId, int $excludeOrderId = 0): float
+    {
+        if (! Schema::hasTable('stock_reservations')) {
+            return 0.0;
+        }
+
+        $query = StockReservation::query()
+            ->where('status', 'reserved')
+            ->where('inventory_piece_id', $pieceId)
+            ->where(function ($query) {
+                $query->whereNull('expires_at')->orWhere('expires_at', '>', now());
+            });
+
+        if ($excludeOrderId > 0) {
+            $query->where(function ($query) use ($excludeOrderId) {
+                $query->whereNull('order_id')->orWhere('order_id', '!=', $excludeOrderId);
+            });
+        }
+
+        return round((float) $query->sum('quantity'), 3);
     }
 
     protected function recordSaleMovement(OrderItem $item, float $movementQty, string $notes): void

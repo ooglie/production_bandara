@@ -131,7 +131,7 @@
 
             <div>
                 <label class="block text-xs font-medium text-gray-700 dark:text-gray-300">
-                    MRP (₹{{ $b2cIncludesGst ? ', incl GST' : ', excl GST' }})
+                    MRP (₹{{ $b2cIncludesGst ? ', incl GST' : ', excl GST' }}) <span class="text-red-500">*</span> <span class="text-[10px] font-normal text-gray-400">when active</span>
                 </label>
                 <input
                     type="number"
@@ -139,7 +139,7 @@
                     min="0"
                     name="mrp_price"
                     value="{{ $variantMrpInput }}"
-                    placeholder="Optional MRP for this pack"
+                    placeholder="Required for active variants"
                     class="mt-1 w-full rounded-sm border border-gray-300 dark:border-gray-700 bg-white dark:bg-gray-900 px-2 py-1.5 text-sm focus:outline-none focus:ring-1 focus:ring-gray-400 dark:focus:ring-gray-500"
                 >
                 @error('mrp_price')
@@ -149,16 +149,16 @@
 
             <div>
                 <label class="block text-xs font-medium text-gray-700 dark:text-gray-300">
-                    B2C variant price (₹{{ $b2cIncludesGst ? ', incl GST' : ', excl GST' }})
+                    B2C variant price (₹{{ $b2cIncludesGst ? ', incl GST' : ', excl GST' }}) <span class="text-red-500">*</span> <span class="text-[10px] font-normal text-gray-400">when active</span>
                 </label>
                 <input
                     type="number"
                     step="0.01"
                     name="price"
                     value="{{ $variantPriceInput }}"
-                    required
                     class="mt-1 w-full rounded-sm border border-gray-300 dark:border-gray-700 bg-white dark:bg-gray-900 px-2 py-1.5 text-sm focus:outline-none focus:ring-1 focus:ring-gray-400 dark:focus:ring-gray-500"
                 >
+                <p class="mt-1 text-[11px] text-gray-500 dark:text-gray-400">Active variants need their own MRP and sell price; parent product pricing can stay blank.</p>
                 @error('price')
                     <p class="mt-1 text-[11px] text-red-600">{{ $message }}</p>
                 @enderror
@@ -317,6 +317,17 @@
             </label>
 
             <label class="inline-flex items-center gap-2">
+                <input type="hidden" name="inventory_can_repack" value="0">
+                <input
+                    type="checkbox"
+                    name="inventory_can_repack"
+                    value="1"
+                    @checked(old('inventory_can_repack', $variant->inventory_can_repack ?? false))
+                >
+                <span>Can be used as source in Transform Stock</span>
+            </label>
+
+            <label class="inline-flex items-center gap-2">
                 <input type="hidden" name="is_active" value="0">
                 <input
                     type="checkbox"
@@ -327,6 +338,10 @@
                 <span>Active</span>
             </label>
         </div>
+
+        <p class="text-[10px] text-gray-500 dark:text-gray-400">
+            Enable this only for inward/master-carton variants such as Dimsum 100 pcs or Cheese box of 12. It does not change customer visibility or storefront behaviour.
+        </p>
 
         <div>
             <label class="block text-xs font-medium text-gray-700 dark:text-gray-300 mb-1">

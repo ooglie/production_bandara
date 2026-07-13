@@ -4,15 +4,19 @@ namespace App\Http\Controllers\Admin;
 
 use App\Http\Controllers\Controller;
 use App\Models\Category;
+use App\Services\CategoryCollageService;
 use Illuminate\Http\Request;
-use Illuminate\Validation\Rule;
+use Illuminate\Support\Facades\Storage;
 use Illuminate\Support\Str;
+use Illuminate\Validation\Rule;
 
 class CategoryController extends Controller
 {
     public function index(Request $request)
     {
-        $query = Category::query()->with('parent');
+        $query = Category::query()
+            ->with('parent')
+            ->withCount('products');
 
         if ($search = $request->get('q')) {
             $query->where('name', 'like', "%{$search}%");
@@ -45,7 +49,7 @@ class CategoryController extends Controller
     public function store(Request $request)
     {
         $data = $this->validatedData($request);
-        $statusmessage = '';
+        unset($data['category_image'], $data['remove_category_image']);
 
         if (empty($data['slug'])) {
             $data['slug'] = Str::slug($data['name']);
@@ -53,26 +57,15 @@ class CategoryController extends Controller
 
         $data['is_active'] = $request->boolean('is_active');
 
-        $category = Category::withTrashed()
-            ->where('slug', $data['name'])
-            ->first();
+        if ($request->hasFile('category_image')) {
+            $data['image_path'] = $request->file('category_image')->store('category-images', 'public');
+        }
 
-        // if ($category) {
-        //     if ($category->trashed()) {
-        //         $category->restore(); // undelete
-        //         $statusmessage = 'Existing Category restored.';
-        //     } else {
-        //         $statusmessage = 'Category already exists. No action taken.';
-        //     }
-        // } else {
-        //     Category::create($data);
-        //     $statusmessage = 'Category created';
-        // }
         Category::create($data);
 
         return redirect()
             ->route('admin.categories.index')
-            ->with('status', $statusmessage);
+            ->with('status', 'Category created.');
     }
 
     public function edit(Category $category)
@@ -87,12 +80,25 @@ class CategoryController extends Controller
     public function update(Request $request, Category $category)
     {
         $data = $this->validatedData($request, $category->id);
+        unset($data['category_image']);
+        $removeCategoryImage = (bool) ($data['remove_category_image'] ?? false);
+        unset($data['remove_category_image']);
 
         if (empty($data['slug'])) {
             $data['slug'] = Str::slug($data['name']);
         }
 
         $data['is_active'] = $request->boolean('is_active');
+
+        if ($removeCategoryImage) {
+            $this->deletePublicFile($category->image_path);
+            $data['image_path'] = null;
+        }
+
+        if ($request->hasFile('category_image')) {
+            $this->deletePublicFile($category->image_path);
+            $data['image_path'] = $request->file('category_image')->store('category-images', 'public');
+        }
 
         $category->update($data);
 
@@ -103,11 +109,36 @@ class CategoryController extends Controller
 
     public function destroy(Category $category)
     {
+        $this->deletePublicFile($category->image_path);
+        $this->deletePublicFile($category->collage_image_path);
+
         $category->delete();
 
         return redirect()
             ->route('admin.categories.index')
             ->with('status', 'Category deleted.');
+    }
+
+    public function generateCollage(Request $request, Category $category, CategoryCollageService $collages)
+    {
+        $data = $request->validate([
+            'limit' => ['nullable', 'integer', 'min:1', 'max:9'],
+        ]);
+
+        try {
+            $result = $collages->generate($category, (int) ($data['limit'] ?? CategoryCollageService::DEFAULT_LIMIT), true);
+        } catch (\Throwable $e) {
+            return back()->with('error', $e->getMessage());
+        }
+
+        return back()->with('status', $result['message'] ?? 'Category collage generated.');
+    }
+
+    public function removeCollage(Category $category, CategoryCollageService $collages)
+    {
+        $collages->clear($category);
+
+        return back()->with('status', 'Generated category collage removed.');
     }
 
     protected function validatedData(Request $request, ?int $categoryId = null): array
@@ -120,11 +151,20 @@ class CategoryController extends Controller
         }
 
         return $request->validate([
-            'name'        => ['required', 'string', 'max:255'],
-            'slug'        => ['nullable', 'string', 'max:255', $slugRule],
-            'parent_id'   => ['nullable', 'exists:categories,id'],
-            'description' => ['nullable', 'string'],
-            'position'    => ['nullable', 'integer'],
+            'name'                  => ['required', 'string', 'max:255'],
+            'slug'                  => ['nullable', 'string', 'max:255', $slugRule],
+            'parent_id'             => ['nullable', 'exists:categories,id'],
+            'description'           => ['nullable', 'string'],
+            'position'              => ['nullable', 'integer'],
+            'category_image'        => ['nullable', 'image', 'max:10240'],
+            'remove_category_image' => ['nullable', 'boolean'],
         ]);
+    }
+
+    protected function deletePublicFile(?string $path): void
+    {
+        if (filled($path) && Storage::disk('public')->exists($path)) {
+            Storage::disk('public')->delete($path);
+        }
     }
 }
