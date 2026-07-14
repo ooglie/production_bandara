@@ -71,7 +71,7 @@
 
     try {
         $bandaraCreditUser = auth()->user();
-        if ($bandaraCreditUser) {
+        if ($bandaraCreditUser && ! $isB2BCheckoutUser) {
             $bandaraCreditService = app(\App\Services\BandaraCreditService::class);
             $bandaraCreditStatus = method_exists($bandaraCreditService, 'redemptionStatusForUser')
                 ? (array) $bandaraCreditService->redemptionStatusForUser($bandaraCreditUser)
@@ -123,6 +123,10 @@
         $bandaraCreditState = is_array($bandaraCreditState) ? $bandaraCreditState : [];
     }
 
+    if ($isB2BCheckoutUser) {
+        $bandaraCreditState = [];
+    }
+
     $bandaraCredit = $bandaraCreditRedemption = $bandaraCreditQuote = $bandaraCreditState;
     $bandaraCreditProgramEnabled = (bool) ($bandaraCreditState['program_enabled'] ?? ($bandaraCreditState['enabled'] ?? false));
     $bandaraCreditEligibleUser = (bool) ($bandaraCreditState['eligible_user'] ?? false);
@@ -171,7 +175,7 @@
 
     @if(!empty($pricingUpdatedCount) && $pricingUpdatedCount > 0)
         <div class="rounded-sm border border-gray-200 dark:border-gray-800 bg-white dark:bg-gray-900 px-3 py-2 text-[11px] text-gray-700 dark:text-gray-200">
-            Prices were updated for {{ $pricingUpdatedCount }} item(s) based on latest product pricing.
+            Your cart was updated for {{ $pricingUpdatedCount }} item(s) based on current availability and pricing.
         </div>
     @endif
 
@@ -679,7 +683,7 @@
                             </div>
                         @endif
 
-                        @if(!empty($bandaraCredit['applied_points']))
+                        @if(! $isB2BCheckoutUser && !empty($bandaraCredit['applied_points']))
                             <div class="flex items-center justify-between text-[11px] text-emerald-700 dark:text-emerald-300">
                                 <span>Bandara Credit preview</span>
                                 <span>-₹{{ number_format((float) ($bandaraCredit['applied_amount'] ?? 0), 2) }}</span>
@@ -691,7 +695,7 @@
                             <span class="text-gray-900 dark:text-gray-50">₹{{ number_format($grandTotal, 2) }}</span>
                         </div>
                     
-                        @if(!empty($bandaraCredit['applied_points']))
+                        @if(! $isB2BCheckoutUser && !empty($bandaraCredit['applied_points']))
                             <div class="flex items-center justify-between text-[12px] font-semibold text-emerald-700 dark:text-emerald-300">
                                 <span>Payable after Bandara Credit</span>
                                 <span>₹{{ number_format((float) ($bandaraCredit['remaining_payable'] ?? $grandTotal), 2) }}</span>

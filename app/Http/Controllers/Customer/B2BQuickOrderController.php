@@ -7,14 +7,14 @@ use App\Models\Product;
 use App\Models\ProductVariant;
 use App\Services\B2BTermsService;
 use App\Services\CartService;
+use App\Services\PricingService;
 use Illuminate\Http\Request;
 
 class B2BQuickOrderController extends Controller
 {
     /**
      * Handle "quick order" add-to-cart from the customer dashboard.
-     * B2B users may buy any active product that resolves to a B2B/base price;
-     * customer-specific rows only override price/MOQ, not catalogue visibility.
+     * B2B users may buy only products with an explicit B2B/customer price.
      */
     public function quickAdd(Request $request, CartService $cartService, B2BTermsService $terms)
     {
@@ -48,10 +48,14 @@ class B2BQuickOrderController extends Controller
             ->values()
             ->all();
 
-        $products = Product::query()
+        $productsQuery = Product::query()
             ->whereIn('id', $productIds)
-            ->where('is_active', true)
-            ->get(['id', 'name', 'type', 'standard_b2b_min_order_quantity', 'base_price', 'standard_b2b_price', 'b2b_price_includes_gst', 'b2c_price_includes_gst', 'gst_rate', 'hsn_code_id'])
+            ->where('is_active', true);
+
+        app(PricingService::class)->applyProductAvailabilityFilter($productsQuery, $user);
+
+        $products = $productsQuery
+            ->get()
             ->keyBy('id');
 
         $added = 0;

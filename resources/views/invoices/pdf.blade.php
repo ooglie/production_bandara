@@ -121,7 +121,10 @@
     $deliveryFee = (float) ($invoice->delivery_fee ?? 0);
     $coldChainFee = (float) ($invoice->handling_fee ?? 0);
     $discountTotal = (float) ($invoice->discount_total ?? 0);
-    $bandaraCreditRedeemed = (float) (($invoice->bandara_credit_redeemed_amount ?? 0) ?: ($invoice->bandara_credit_discount_total ?? 0));
+    $invoiceCustomerType = strtolower((string) ($invoice->order?->user?->customer_type ?? $order?->user?->customer_type ?? 'b2c'));
+    $bandaraCreditRedeemed = $invoiceCustomerType === 'b2b'
+        ? 0.0
+        : (float) (($invoice->bandara_credit_redeemed_amount ?? 0) ?: ($invoice->bandara_credit_discount_total ?? 0));
 
     $grossSubtotal = round($productSubtotal + max(0, $deliveryFee) + max(0, $coldChainFee), 2);
     $taxableSubtotal = round(max($grossSubtotal - max(0, $discountTotal), 0), 2);

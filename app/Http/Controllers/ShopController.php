@@ -5,6 +5,7 @@ namespace App\Http\Controllers;
 use App\Models\Category;
 use App\Models\InventoryPiece;
 use App\Models\Product;
+use App\Services\PricingService;
 use Illuminate\Http\Request;
 use Illuminate\Support\Collection;
 use Illuminate\Support\Facades\Schema;
@@ -28,6 +29,8 @@ class ShopController extends Controller
             ->when(Schema::hasColumn('products', 'is_active'), function ($q) {
                 $q->where('is_active', true);
             });
+
+        app(PricingService::class)->applyProductAvailabilityFilter($productsQuery, $request->user());
 
         $search = trim((string) $request->input('q', ''));
 
@@ -89,7 +92,7 @@ class ShopController extends Controller
         ));
     }
 
-    public function show(Product $product)
+    public function show(Request $request, Product $product)
     {
         // Only show active products
         if (! $product->is_active) {
@@ -102,6 +105,20 @@ class ShopController extends Controller
             },
             'variants.attributeValues.attribute',
         ]);
+
+        $pricing = app(PricingService::class);
+        if (! $pricing->productIsAvailableToUser($request->user(), $product)) {
+            abort(404);
+        }
+
+        if (($request->user()?->customer_type ?? 'b2c') === 'b2b') {
+            $product->setRelation(
+                'variants',
+                $product->variants
+                    ->filter(fn ($variant) => $pricing->variantIsAvailableToUser($request->user(), $product, $variant))
+                    ->values()
+            );
+        }
 
         $variants = $product->variants ?? collect();
 

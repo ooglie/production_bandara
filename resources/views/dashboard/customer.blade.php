@@ -297,6 +297,7 @@
         @include('dashboard.partials.b2b_quick_order')
     @endif
 
+    @if(! $isB2b)
     {{-- Rewards --}}
     <section class="rounded-lg border border-gray-200 dark:border-gray-800 bg-white dark:bg-gray-900 px-4 py-4 space-y-4">
         <div class="flex items-start justify-between gap-3">
@@ -400,6 +401,7 @@
             </div>
         </div>
     </section>
+    @endif
 
     {{-- Main summary cards --}}
     <div class="grid gap-3 lg:grid-cols-4">

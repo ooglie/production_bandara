@@ -28,6 +28,20 @@ class ProductController extends Controller
             'activeRecipes',
         ]);
 
+        $pricing = app(PricingService::class);
+        if (! $pricing->productIsAvailableToUser($request->user(), $product)) {
+            abort(404);
+        }
+
+        if (($request->user()?->customer_type ?? 'b2c') === 'b2b') {
+            $product->setRelation(
+                'variants',
+                $product->variants
+                    ->filter(fn ($variant) => $pricing->variantIsAvailableToUser($request->user(), $product, $variant))
+                    ->values()
+            );
+        }
+
         $variants = $product->variants ?? collect();
         $pieceSelector = $this->buildPieceSelector($product, $request);
 
@@ -47,8 +61,13 @@ class ProductController extends Controller
 
         $pricing = app(PricingService::class);
 
+        if (! $pricing->productIsAvailableToUser($request->user(), $product)) {
+            abort(404);
+        }
+
         $variants = ($product->variants ?? collect())
             ->filter(fn ($variant) => $this->variantIsVisibleToCustomer($variant, $request->user()))
+            ->filter(fn ($variant) => $pricing->variantIsAvailableToUser($request->user(), $product, $variant))
             ->filter(fn ($variant) => $this->variantIsSelectable($variant))
             ->map(function ($variant) use ($product, $request, $pricing) {
                 $displayPrice = $this->displayPriceForSellUnit(

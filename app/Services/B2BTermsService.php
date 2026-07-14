@@ -10,8 +10,8 @@ use App\Models\User;
 class B2BTermsService
 {
     /**
-     * B2B users can browse the active catalog. Buying is allowed when a B2B
-     * price can be resolved for either the selected variant or the product.
+     * B2B buying is allowed only when an explicit B2B/customer price can be
+     * resolved for the selected product option.
      */
     public function canBuy(?User $user, Product $product, ?ProductVariant $variant = null): bool
     {
@@ -24,7 +24,7 @@ class B2BTermsService
 
     public function hasAnyPortfolioAccess(?User $user, Product $product): bool
     {
-        return $this->canBuy($user, $product);
+        return app(PricingService::class)->productIsAvailableToUser($user, $product);
     }
 
     public function minOrderQty(?User $user, Product $product, ?ProductVariant $variant = null): float

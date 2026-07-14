@@ -7,6 +7,7 @@
     use Illuminate\Support\Str;
 
     $invoice = $order->invoice ?? null;
+    $isB2BOrderCustomer = (auth()->user()?->customer_type ?? 'b2c') === 'b2b';
 
     $invoiceStatus = strtolower((string) ($invoice->status ?? 'pending'));
     $orderPaymentMethod = strtolower((string) ($order->payment_method ?? 'razorpay'));
@@ -382,7 +383,7 @@
                     </div>
                 @endif
 
-                @if((float) ($order->bandara_credit_redeemed_amount ?? 0) > 0)
+                @if(! $isB2BOrderCustomer && (float) ($order->bandara_credit_redeemed_amount ?? 0) > 0)
                     <div class="flex justify-between text-emerald-700 dark:text-emerald-300">
                         <span>Bandara Credit redeemed ({{ number_format((int) ($order->bandara_credit_redeemed_points ?? 0)) }} pts)</span>
                         <span>- ₹{{ number_format($order->bandara_credit_redeemed_amount, 2) }}</span>

@@ -172,9 +172,7 @@ class ProfileController extends Controller
     public function rewards(Request $request, BandaraCreditService $bandaraCreditService)
     {
         if (($request->user()?->customer_type ?? 'b2c') === 'b2b') {
-            return redirect()
-                ->route('dashboard.customer')
-                ->with('status', 'Rewards are available for B2C accounts. Your B2B account pricing is used automatically in the storefront.');
+            return redirect()->route('dashboard.customer');
         }
 
         $snapshot = $bandaraCreditService->snapshotForUser($request->user()->id);
@@ -195,6 +193,10 @@ class ProfileController extends Controller
 
     public function rewardTerms(Request $request, BandaraCreditService $bandaraCreditService)
     {
+        if (($request->user()?->customer_type ?? 'b2c') === 'b2b') {
+            return redirect()->route('dashboard.customer');
+        }
+
         return view('customer.account.reward-terms', [
             'programEnabled' => (bool) config('bandara_credit.enabled'),
             'eligibleUser' => $bandaraCreditService->isEligibleUserForBandaraCredit($request->user()),

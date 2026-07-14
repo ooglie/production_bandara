@@ -242,6 +242,8 @@ class CartService
         if ($items->isEmpty()) return 0;
 
         $updated = 0;
+        $user = Auth::user();
+        $pricing = app(PricingService::class);
 
         foreach ($items as $it) {
             $product = Product::query()->find($it->product_id);
@@ -250,6 +252,18 @@ class CartService
             $variant = null;
             if ($it->product_variant_id) {
                 $variant = ProductVariant::query()->find($it->product_variant_id);
+            }
+
+            if ($user && (($user->customer_type ?? 'b2c') === 'b2b')) {
+                $available = $variant
+                    ? $pricing->variantIsAvailableToUser($user, $product, $variant)
+                    : $pricing->productIsAvailableToUser($user, $product);
+
+                if (! $available) {
+                    $it->delete();
+                    $updated++;
+                    continue;
+                }
             }
 
             $newUnit = $this->resolveUnitPrice($product, $variant);

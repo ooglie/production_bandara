@@ -66,7 +66,7 @@
 
     @if(!empty($pricingUpdatedCount) && $pricingUpdatedCount > 0)
         <div class="rounded-sm border border-gray-200 dark:border-gray-800 bg-white dark:bg-gray-900 px-3 py-2 text-[11px] text-gray-700 dark:text-gray-200">
-            Prices were updated for {{ $pricingUpdatedCount }} item(s) based on latest product pricing.
+            Your cart was updated for {{ $pricingUpdatedCount }} item(s) based on current availability and pricing.
         </div>
     @endif
 

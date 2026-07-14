@@ -1,81 +1,46 @@
-# Production Run Reversal
-
-This update adds a controlled **full reversal** for completed Production / Repack runs.
+# B2B catalogue visibility and rewards cleanup
 
 ## Behaviour
 
-An Admin or Manager can open a completed Production Run and review:
+- A signed-in B2B customer sees a product only when at least one explicit B2B price is available through:
+  - product-level standard B2B price;
+  - an active, B2B-visible variant B2B price;
+  - a valid customer-specific product/variant price;
+  - an active B2B or all-customer special price.
+- Retail/base pricing is never used as a B2B fallback.
+- Products without B2B pricing are excluded from Shop, homepage product sections, collections, B2B Quick Order and wishlist.
+- Direct product and variant-option URLs return 404 for unavailable B2B products.
+- Add-to-cart remains server protected. Old retail-only cart lines are removed when a B2B cart is next synchronised.
+- B2C catalogue and pricing behaviour is unchanged.
 
-- source stock that will be restored;
-- output lots that will be cancelled;
-- quantity, weight, and piece balances involved.
+## B2B rewards UI
 
-A mandatory reason and confirmation are required.
+Bandara Credit/rewards are not rendered or initialised for B2B customers on:
 
-The reversal is performed in one database transaction. It:
+- customer dashboard;
+- checkout and checkout totals;
+- order details;
+- customer invoice details;
+- invoice PDF.
 
-1. restores consumed quantity, weight, and selected source pieces;
-2. marks generated output lots as `cancelled` and sets their available balances to zero;
-3. marks generated output pieces as `cancelled`;
-4. reverses the corresponding product-level stock balances;
-5. writes `production_run_reversal` stock movement audit rows;
-6. marks the Production Run as `reversed`;
-7. stores reversal timestamp, user, reason, and a JSON snapshot.
-
-The original Production Run, inputs, outputs, lots, and pieces are not deleted.
-
-## Reversal blockers
-
-A run cannot be reversed when:
-
-- it is not `completed`, or it was already reversed;
-- an output lot quantity, weight, piece count, totals, or status changed;
-- an output piece was sold, consumed, reserved, or modified;
-- an output product/variant has an active checkout reservation;
-- an output lot was used by another active Production Run;
-- an output lot was used by Transform Stock / repack;
-- legacy direct pack records are linked to the run;
-- restoring the source would exceed the source lot's original balances;
-- current product stock is insufficient to cancel the recorded output.
-
-Downstream Production Runs should be reversed in reverse order. Once a downstream run is reversed, its cancelled child lots no longer block reversal of the upstream run.
-
-## Access
-
-- View Production Runs: unchanged (`Admin`, `Manager`, `Stores`).
-- Reverse Production Runs: `Admin` and `Manager` only.
+Direct customer reward and reward-terms URLs redirect silently to the customer dashboard.
 
 ## Installation
 
-Extract this package directly into the Laravel project root, preserving the `app/`, `database/`, `resources/`, `routes/`, and `tests/` directories.
-
-Run:
+Extract the ZIP directly into the Laravel project root, then run:
 
 ```bash
-php artisan migrate
 php artisan optimize:clear
-php artisan route:clear
+php artisan config:clear
 php artisan view:clear
 ```
 
-Confirm the route:
-
-```bash
-php artisan route:list --name=production.reverse
-```
-
-Expected route name:
-
-```text
-admin.production.reverse
-```
+No database migration is required.
 
 ## Validation
 
-The changed PHP files and migration were checked with `php -l`. Blade directive pairs were checked for balance. A Feature test is included at:
-
-```text
-tests/Feature/Services/ProductionRunReversalServiceTest.php
-```
-
-The supplied source archive does not include `vendor/`, so a full Laravel test run could not be executed in the review environment.
+- PHP syntax checks passed for every modified PHP file.
+- Blade directive balance and patch whitespace checks passed.
+- The patch applies cleanly to the supplied July 12, 2026 source baseline.
+- Feature tests are included in `tests/Feature/B2BStorefrontVisibilityTest.php`.
+- A full Laravel test run was not executed because the supplied source archive excludes `vendor/` and the validation container runs PHP 8.4 rather than the project's PHP 8.5.

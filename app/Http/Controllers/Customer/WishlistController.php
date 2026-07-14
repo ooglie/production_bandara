@@ -6,6 +6,7 @@ use App\Http\Controllers\Controller;
 use App\Models\Product;
 use App\Models\ProductVariant;
 use App\Models\WishlistItem;
+use App\Services\PricingService;
 use Illuminate\Http\Request;
 use Symfony\Component\HttpKernel\Exception\NotFoundHttpException;
 
@@ -28,6 +29,21 @@ class WishlistController extends Controller
             || (($user->customer_type ?? 'b2c') === 'b2b')
         );
 
+        if ($isB2BWishlist) {
+            $pricing = app(PricingService::class);
+            $items = $items
+                ->filter(function (WishlistItem $item) use ($pricing, $user) {
+                    if (! $item->product) {
+                        return false;
+                    }
+
+                    return $item->variant
+                        ? $pricing->variantIsAvailableToUser($user, $item->product, $item->variant)
+                        : $pricing->productIsAvailableToUser($user, $item->product);
+                })
+                ->values();
+        }
+
         return view('customer.wishlist.index', compact('items', 'isB2BWishlist'));
     }
 
@@ -39,6 +55,24 @@ class WishlistController extends Controller
         ]);
 
         $user = $request->user();
+
+        $product = Product::query()->with('variants')->findOrFail((int) $data['product_id']);
+        $variant = null;
+
+        if (! empty($data['product_variant_id'])) {
+            $variant = ProductVariant::query()
+                ->where('product_id', $product->id)
+                ->findOrFail((int) $data['product_variant_id']);
+        }
+
+        $pricing = app(PricingService::class);
+        $available = $variant
+            ? $pricing->variantIsAvailableToUser($user, $product, $variant)
+            : $pricing->productIsAvailableToUser($user, $product);
+
+        if (! $available) {
+            abort(404);
+        }
 
         // Prevent duplicates
         WishlistItem::firstOrCreate([

@@ -9,6 +9,7 @@
     use Illuminate\Support\Str;
 
     $order = $invoice->order;
+    $isB2BInvoiceCustomer = (auth()->user()?->customer_type ?? 'b2c') === 'b2b';
     $shipping = $order?->addresses?->firstWhere('type', 'shipping');
     $billing  = $order?->addresses?->firstWhere('type', 'billing');
 
@@ -318,7 +319,7 @@
                         <span>₹{{ number_format($invoice->tax_total, 2) }}</span>
                     </div>
 
-                    @if((float) ($invoice->bandara_credit_redeemed_amount ?? 0) > 0)
+                    @if(! $isB2BInvoiceCustomer && (float) ($invoice->bandara_credit_redeemed_amount ?? 0) > 0)
                         <div class="flex justify-between text-emerald-700 dark:text-emerald-300">
                             <span>Bandara Credit redeemed ({{ number_format((int) ($invoice->bandara_credit_redeemed_points ?? 0)) }} pts)</span>
                             <span>- ₹{{ number_format($invoice->bandara_credit_redeemed_amount, 2) }}</span>

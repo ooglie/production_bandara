@@ -777,8 +777,7 @@ class CheckoutController extends Controller
         }
 
         if (($user->customer_type ?? 'b2c') === 'b2b') {
-            return redirect()->route('checkout.index')
-                ->withErrors(['bandara_credit_points' => 'Bandara Credit redemption is not available for B2B checkout.']);
+            return redirect()->route('checkout.index');
         }
 
         $data = $request->validate([
@@ -799,6 +798,10 @@ class CheckoutController extends Controller
 
     public function removeBandaraCredit(Request $request)
     {
+        if (($request->user()?->customer_type ?? 'b2c') === 'b2b') {
+            return redirect()->route('checkout.index');
+        }
+
         $params = [];
         if ($request->filled('address_id')) {
             $params['address_id'] = (int) $request->input('address_id');

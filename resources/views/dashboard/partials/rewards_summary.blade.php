@@ -1,4 +1,5 @@
 @php
+    $isB2BRewardsCustomer = (auth()->user()?->customer_type ?? 'b2c') === 'b2b';
     $availablePoints = (int) ($availablePoints ?? 0);
     $pendingPoints = (int) ($pendingPoints ?? 0);
     $redemptionEnabled = (bool) ($redemptionEnabled ?? ($redeemEnabled ?? false));
@@ -21,6 +22,7 @@
     $rewardsUrl = $rewardsUrl ?? (Route::has('account.rewards') ? route('account.rewards') : '#');
 @endphp
 
+@if(! $isB2BRewardsCustomer)
 <div class="rounded-lg border border-gray-200 dark:border-gray-800 bg-white dark:bg-gray-900 px-4 py-4 space-y-4">
     <div class="flex items-start justify-between gap-3">
         <div>
@@ -117,3 +119,4 @@
         </div>
     </div>
 </div>
+@endif
