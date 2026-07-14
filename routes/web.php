@@ -550,6 +550,9 @@ Route::middleware(['auth', 'role:Admin|Manager|Accountant|CAAccountant|Stores'])
         });
 
         Route::middleware('role:Admin|Manager')->group(function () {
+            Route::post('/production/{run}/reverse', [\App\Http\Controllers\Admin\ProductionRunController::class, 'reverse'])
+                ->name('production.reverse');
+
             Route::resource('pages', PageController::class)->except(['show']);
             Route::resource('product-collections', ProductCollectionController::class)
                 ->parameters(['product-collections' => 'productCollection'])

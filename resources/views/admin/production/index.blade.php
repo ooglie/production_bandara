@@ -40,9 +40,20 @@
                 </thead>
                 <tbody class="divide-y divide-gray-100 dark:divide-gray-800">
                     @forelse($runs as $run)
+                        @php
+                            $runStatusClass = match ((string) $run->status) {
+                                'completed' => 'border-emerald-200 bg-emerald-50 text-emerald-700 dark:border-emerald-800 dark:bg-emerald-900/25 dark:text-emerald-200',
+                                'reversed' => 'border-amber-200 bg-amber-50 text-amber-700 dark:border-amber-800 dark:bg-amber-900/25 dark:text-amber-200',
+                                'cancelled' => 'border-red-200 bg-red-50 text-red-700 dark:border-red-800 dark:bg-red-900/25 dark:text-red-200',
+                                default => 'border-gray-200 bg-gray-50 text-gray-600 dark:border-gray-700 dark:bg-gray-950/30 dark:text-gray-300',
+                            };
+                        @endphp
                         <tr>
                             <td class="px-4 py-3 text-gray-900 dark:text-gray-50 font-medium">
-                                {{ $run->run_number ?? ('Run #' . $run->id) }}
+                                <div>{{ $run->run_number ?? ('Run #' . $run->id) }}</div>
+                                <span class="mt-1 inline-flex rounded-full border px-2 py-0.5 text-[10px] font-normal {{ $runStatusClass }}">
+                                    {{ ucfirst((string) $run->status) }}
+                                </span>
                             </td>
                             <td class="px-4 py-3 text-gray-700 dark:text-gray-200">
                                 {{ $run->run_date ? $run->run_date->format('d M Y') : '—' }}

@@ -18,6 +18,7 @@
 
     $statusClass = match ($status) {
         'completed' => 'border-emerald-200 bg-emerald-50 text-emerald-700 dark:border-emerald-800 dark:bg-emerald-900/30 dark:text-emerald-200',
+        'reversed' => 'border-amber-200 bg-amber-50 text-amber-700 dark:border-amber-800 dark:bg-amber-900/30 dark:text-amber-200',
         'cancelled' => 'border-red-200 bg-red-50 text-red-700 dark:border-red-800 dark:bg-red-900/30 dark:text-red-200',
         default => 'border-gray-200 bg-gray-50 text-gray-600 dark:border-gray-700 dark:bg-gray-900/40 dark:text-gray-300',
     };
@@ -27,6 +28,8 @@
     $fmtQty = fn ($v) => number_format((float) ($v ?? 0), 3);
     $fmtW   = fn ($v) => number_format((float) ($v ?? 0), 3) . ' kg';
     $fmtM   = fn ($v) => '₹' . number_format((float) ($v ?? 0), 2);
+    $canManageReversal = auth()->user()?->hasAnyRole(['Admin', 'Manager']) ?? false;
+    $reversal = $reversalAssessment ?? ['can_reverse' => false, 'blockers' => [], 'sources' => [], 'outputs' => []];
 @endphp
 
 <div class="max-w-7xl mx-auto px-4 py-6 space-y-4 text-xs">
@@ -55,6 +58,23 @@
             Back
         </a>
     </div>
+
+    @if(session('status'))
+        <div class="rounded-xl border border-emerald-200 bg-emerald-50 px-4 py-3 text-[12px] text-emerald-800 dark:border-emerald-800 dark:bg-emerald-900/25 dark:text-emerald-200">
+            {{ session('status') }}
+        </div>
+    @endif
+
+    @if($errors->any())
+        <div class="rounded-xl border border-red-200 bg-red-50 px-4 py-3 text-[12px] text-red-800 dark:border-red-800 dark:bg-red-900/25 dark:text-red-200">
+            <div class="font-medium">The production run was not reversed.</div>
+            <ul class="mt-2 list-disc space-y-1 pl-5">
+                @foreach($errors->all() as $error)
+                    <li>{{ $error }}</li>
+                @endforeach
+            </ul>
+        </div>
+    @endif
 
     {{-- Summary --}}
     <div class="grid gap-4 md:grid-cols-2 xl:grid-cols-5">
@@ -357,5 +377,146 @@
             @endforelse
         </div>
     </section>
+    {{-- Controlled production-run reversal --}}
+    @if($status === 'reversed')
+        <section class="rounded-2xl border border-amber-200 bg-amber-50/70 p-5 dark:border-amber-800 dark:bg-amber-900/20">
+            <div class="flex flex-col gap-4 md:flex-row md:items-start md:justify-between">
+                <div>
+                    <div class="text-[11px] uppercase tracking-wide text-amber-700 dark:text-amber-300">Reversal audit</div>
+                    <h2 class="mt-1 text-sm font-semibold text-gray-900 dark:text-gray-50">This production run was reversed</h2>
+                    <p class="mt-2 max-w-3xl text-[12px] leading-5 text-gray-700 dark:text-gray-200">
+                        The original run remains in the audit history. Its source stock was restored and its output lots were cancelled.
+                    </p>
+                </div>
+
+                <div class="text-[11px] text-gray-600 dark:text-gray-300 md:text-right">
+                    <div>{{ $run->reversed_at?->format('d M Y, H:i') ?? '—' }}</div>
+                    <div class="mt-1">By {{ $run->reversedBy?->name ?? 'Unknown user' }}</div>
+                </div>
+            </div>
+
+            <div class="mt-4 rounded-xl border border-amber-200 bg-white/70 px-4 py-3 text-[12px] text-gray-700 dark:border-amber-800 dark:bg-gray-950/30 dark:text-gray-200">
+                <div class="text-[11px] uppercase tracking-wide text-gray-500 dark:text-gray-400">Reason</div>
+                <div class="mt-2 whitespace-pre-line">{{ $run->reversal_reason ?: 'No reason recorded.' }}</div>
+            </div>
+        </section>
+    @elseif($canManageReversal)
+        <section class="rounded-2xl border border-gray-200 bg-white dark:border-gray-800 dark:bg-gray-900 overflow-hidden">
+            <div class="border-b border-gray-200 px-5 py-4 dark:border-gray-800">
+                <div class="text-[11px] uppercase tracking-wide text-gray-500 dark:text-gray-400">Correction control</div>
+                <h2 class="text-sm font-semibold text-gray-900 dark:text-gray-50">Reverse production run</h2>
+                <p class="mt-1 max-w-4xl text-[12px] leading-5 text-gray-500 dark:text-gray-400">
+                    A reversal restores the consumed source stock and cancels all output stock from this run. It does not delete the production record.
+                </p>
+            </div>
+
+            @if($reversal['can_reverse'])
+                <div class="grid gap-4 p-5 lg:grid-cols-2">
+                    <div class="rounded-xl border border-emerald-200 bg-emerald-50/60 p-4 dark:border-emerald-800 dark:bg-emerald-900/20">
+                        <div class="text-[11px] font-semibold text-emerald-800 dark:text-emerald-200">Source stock to restore</div>
+                        <div class="mt-3 space-y-3">
+                            @foreach($reversal['sources'] as $source)
+                                <div class="rounded-lg border border-emerald-100 bg-white/80 px-3 py-2.5 dark:border-emerald-900 dark:bg-gray-950/30">
+                                    <div class="font-medium text-gray-900 dark:text-gray-50">
+                                        {{ $source['product'] }}
+                                        @if(!empty($source['variant']))
+                                            <span class="font-normal text-gray-500 dark:text-gray-400">— {{ $source['variant'] }}</span>
+                                        @endif
+                                    </div>
+                                    <div class="mt-1 text-[11px] text-gray-500 dark:text-gray-400">
+                                        Lot {{ $source['lot_code'] ?: ('#' . $source['lot_id']) }}
+                                    </div>
+                                    <div class="mt-2 flex flex-wrap gap-x-4 gap-y-1 text-[11px] text-gray-700 dark:text-gray-200">
+                                        @if((float) $source['restore_quantity'] > 0)
+                                            <span>+{{ number_format((float) $source['restore_quantity'], 3) }} qty</span>
+                                        @endif
+                                        @if((float) $source['restore_weight_kg'] > 0)
+                                            <span>+{{ number_format((float) $source['restore_weight_kg'], 3) }} kg</span>
+                                        @endif
+                                        @if((int) $source['restore_piece_count'] > 0)
+                                            <span>+{{ (int) $source['restore_piece_count'] }} piece(s)</span>
+                                        @endif
+                                    </div>
+                                </div>
+                            @endforeach
+                        </div>
+                    </div>
+
+                    <div class="rounded-xl border border-amber-200 bg-amber-50/60 p-4 dark:border-amber-800 dark:bg-amber-900/20">
+                        <div class="text-[11px] font-semibold text-amber-800 dark:text-amber-200">Output stock to cancel</div>
+                        <div class="mt-3 space-y-3">
+                            @foreach($reversal['outputs'] as $output)
+                                <div class="rounded-lg border border-amber-100 bg-white/80 px-3 py-2.5 dark:border-amber-900 dark:bg-gray-950/30">
+                                    <div class="font-medium text-gray-900 dark:text-gray-50">
+                                        {{ $output['product'] }}
+                                        @if(!empty($output['variant']))
+                                            <span class="font-normal text-gray-500 dark:text-gray-400">— {{ $output['variant'] }}</span>
+                                        @endif
+                                    </div>
+                                    <div class="mt-1 text-[11px] text-gray-500 dark:text-gray-400">
+                                        Lot {{ $output['lot_code'] ?: ('#' . $output['lot_id']) }}
+                                    </div>
+                                    <div class="mt-2 flex flex-wrap gap-x-4 gap-y-1 text-[11px] text-gray-700 dark:text-gray-200">
+                                        <span>{{ number_format((float) $output['cancel_quantity'], 3) }} qty</span>
+                                        <span>{{ number_format((float) $output['cancel_weight_kg'], 3) }} kg</span>
+                                        @if((int) $output['cancel_piece_count'] > 0)
+                                            <span>{{ (int) $output['cancel_piece_count'] }} piece(s)</span>
+                                        @endif
+                                    </div>
+                                </div>
+                            @endforeach
+                        </div>
+                    </div>
+                </div>
+
+                <form method="POST"
+                      action="{{ route('admin.production.reverse', $run) }}"
+                      class="border-t border-gray-200 p-5 dark:border-gray-800"
+                      onsubmit="return confirm('Reverse this production run? Source stock will be restored and all untouched output stock will be cancelled.');">
+                    @csrf
+
+                    <label for="reversal_reason" class="block text-[12px] font-medium text-gray-800 dark:text-gray-100">
+                        Reason for reversal <span class="text-red-500">*</span>
+                    </label>
+                    <textarea id="reversal_reason"
+                              name="reversal_reason"
+                              rows="3"
+                              required
+                              maxlength="1000"
+                              class="mt-2 w-full rounded-xl border border-gray-300 bg-white px-3 py-2 text-[12px] text-gray-900 outline-none focus:border-gray-500 dark:border-gray-700 dark:bg-gray-950 dark:text-gray-50"
+                              placeholder="Describe the mistake and why this run must be reversed.">{{ old('reversal_reason') }}</textarea>
+
+                    <label class="mt-4 flex items-start gap-2 text-[11px] text-gray-600 dark:text-gray-300">
+                        <input type="checkbox"
+                               name="confirm_reverse"
+                               value="1"
+                               required
+                               class="mt-0.5 rounded border-gray-300 dark:border-gray-700">
+                        <span>I confirm that this is a full reversal. The output stock shown above has not been sold, reserved, repacked, or used in another production run.</span>
+                    </label>
+
+                    <div class="mt-4 flex justify-end">
+                        <button type="submit"
+                                class="inline-flex items-center rounded-xl border border-red-300 bg-red-50 px-4 py-2 text-[12px] font-semibold text-red-700 hover:bg-red-100 dark:border-red-800 dark:bg-red-900/25 dark:text-red-200 dark:hover:bg-red-900/40">
+                            Reverse production run
+                        </button>
+                    </div>
+                </form>
+            @else
+                <div class="p-5">
+                    <div class="rounded-xl border border-red-200 bg-red-50 px-4 py-4 dark:border-red-800 dark:bg-red-900/20">
+                        <div class="text-[12px] font-semibold text-red-800 dark:text-red-200">This run cannot currently be reversed</div>
+                        <ul class="mt-3 list-disc space-y-1.5 pl-5 text-[11px] leading-5 text-red-700 dark:text-red-200">
+                            @forelse($reversal['blockers'] as $blocker)
+                                <li>{{ $blocker }}</li>
+                            @empty
+                                <li>The run is not eligible for reversal.</li>
+                            @endforelse
+                        </ul>
+                    </div>
+                </div>
+            @endif
+        </section>
+    @endif
 </div>
 @endsection
