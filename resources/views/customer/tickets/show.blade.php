@@ -45,7 +45,10 @@
 
             @if($status !== 'closed')
                 <form method="POST" action="{{ route('tickets.close', $ticket) }}"
-                    onsubmit="return confirm('Close this ticket? You can reopen it later if needed.');">
+                    data-bandara-confirm="Close this ticket? You can reopen it later if needed."
+                    data-bandara-confirm-title="Close ticket?"
+                    data-bandara-confirm-text="Close ticket"
+                    data-bandara-confirm-variant="warning">
                     @csrf
                     <button type="submit"
                             class="inline-flex items-center rounded-xl border border-gray-300 dark:border-gray-700 px-3 py-2 text-[12px] text-gray-700 dark:text-gray-200 hover:bg-gray-100 dark:hover:bg-gray-800">
@@ -55,7 +58,10 @@
             @else
                 @if(\Illuminate\Support\Facades\Route::has('tickets.reopen'))
                     <form method="POST" action="{{ route('tickets.reopen', $ticket) }}"
-                        onsubmit="return confirm('Reopen this ticket?');">
+                        data-bandara-confirm="Reopen this ticket?"
+                        data-bandara-confirm-title="Reopen ticket?"
+                        data-bandara-confirm-text="Reopen"
+                        data-bandara-confirm-variant="default">
                         @csrf
                         <button type="submit"
                                 class="inline-flex items-center rounded-xl border border-gray-900 dark:border-gray-100 bg-gray-900 text-white dark:bg-gray-100 dark:text-gray-900 px-3 py-2 text-[12px] font-semibold hover:bg-gray-800 dark:hover:bg-gray-200">
@@ -72,12 +78,6 @@
             ← Back to tickets
         </a>
     </div>
-
-    @if(session('status'))
-        <div class="rounded-xl border border-emerald-200 bg-emerald-50 px-4 py-3 text-[12px] text-emerald-800 dark:border-emerald-900/40 dark:bg-emerald-900/20 dark:text-emerald-200">
-            {{ session('status') }}
-        </div>
-    @endif
 
     {{-- Reply (if not closed) --}}
     @if($status !== 'closed' && \Illuminate\Support\Facades\Route::has('tickets.reply'))

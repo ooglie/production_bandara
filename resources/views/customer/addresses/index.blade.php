@@ -20,12 +20,6 @@
         </a>
     </div>
 
-    @if(session('status'))
-        <div class="rounded border border-emerald-300 bg-emerald-50 px-3 py-2 text-[11px] text-emerald-800">
-            {{ session('status') }}
-        </div>
-    @endif
-
     @if($addresses->isEmpty())
         <div class="rounded border border-gray-200 dark:border-gray-800 bg-white dark:bg-gray-900 px-4 py-4 text-xs text-gray-500 dark:text-gray-400">
             You don’t have any saved addresses yet.
@@ -84,7 +78,10 @@
                         </a>
 
                         <form method="POST" action="{{ route('account.addresses.destroy', $address) }}"
-                              onsubmit="return confirm('Remove this address?');">
+                              data-bandara-confirm="Remove this address?"
+                              data-bandara-confirm-title="Delete address?"
+                              data-bandara-confirm-text="Delete"
+                              data-bandara-confirm-variant="danger">
                             @csrf
                             @method('DELETE')
                             <button type="submit"

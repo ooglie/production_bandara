@@ -7,12 +7,23 @@
     use Illuminate\Support\Str;
 
     $invoice = $order->invoice ?? null;
+    $isB2BOrderCustomer = (auth()->user()?->customer_type ?? 'b2c') === 'b2b';
 
-    $razorpayEnabled =
-        config('services.razorpay.key')
+    $invoiceStatus = strtolower((string) ($invoice->status ?? 'pending'));
+    $orderPaymentMethod = strtolower((string) ($order->payment_method ?? 'razorpay'));
+    $orderPaymentStatus = strtolower((string) ($order->payment_status ?? 'pending'));
+    $orderStatusRaw = strtolower((string) ($order->status ?? 'processing'));
+    $isOnlineOrder = $orderPaymentMethod !== 'pay_later';
+
+    $canRetryOnlineOrderPayment = $isOnlineOrder
+        && config('services.razorpay.key')
         && config('services.razorpay.secret')
-        && ($invoice && in_array(strtolower((string) $invoice->status), ['pending', 'due'], true))
-        && strtolower((string) ($order->payment_status ?? 'pending')) === 'pending';
+        && $invoice
+        && in_array($invoiceStatus, ['pending', 'due'], true)
+        && in_array($orderPaymentStatus, ['pending', 'failed', 'expired'], true)
+        && in_array($orderStatusRaw, ['pending_payment', 'payment_failed', 'payment_expired', 'processing'], true);
+
+    $showInvoicePaymentWidget = ! $isOnlineOrder || $orderPaymentStatus === 'paid';
 
     $unitLabel = function (?string $u) {
         $u = strtolower((string) $u);
@@ -38,6 +49,18 @@
         $status = strtolower((string) $status);
 
         return match ($status) {
+            'pending_payment' => [
+                'label' => 'Pending Payment',
+                'class' => 'bg-amber-50 text-amber-700 border-amber-200 dark:bg-amber-900/20 dark:text-amber-300 dark:border-amber-800',
+            ],
+            'payment_failed' => [
+                'label' => 'Payment Failed',
+                'class' => 'bg-red-50 text-red-700 border-red-200 dark:bg-red-900/20 dark:text-red-300 dark:border-red-800',
+            ],
+            'payment_expired' => [
+                'label' => 'Payment Expired',
+                'class' => 'bg-orange-50 text-orange-700 border-orange-200 dark:bg-orange-900/20 dark:text-orange-300 dark:border-orange-800',
+            ],
             'processing' => [
                 'label' => 'Processing',
                 'class' => 'bg-sky-50 text-sky-700 border-sky-200 dark:bg-sky-900/20 dark:text-sky-300 dark:border-sky-800',
@@ -125,11 +148,7 @@
     };
 @endphp
 
-<div class="max-w-6xl mx-auto px-4 py-6 space-y-5">
-    @if(session('status'))
-        <div class="rounded border border-emerald-300 bg-emerald-50 px-3 py-2 text-[11px] text-emerald-800">{{ session('status') }}</div>
-    @endif
-    @if($errors->any())
+<div class="max-w-6xl mx-auto px-4 py-6 space-y-5">    @if($errors->any())
         <div class="rounded border border-red-300 bg-red-50 px-3 py-2 text-[11px] text-red-800">
             <ul class="list-disc list-inside space-y-0.5">
                 @foreach($errors->all() as $error)
@@ -364,7 +383,7 @@
                     </div>
                 @endif
 
-                @if((float) ($order->bandara_credit_redeemed_amount ?? 0) > 0)
+                @if(! $isB2BOrderCustomer && (float) ($order->bandara_credit_redeemed_amount ?? 0) > 0)
                     <div class="flex justify-between text-emerald-700 dark:text-emerald-300">
                         <span>Bandara Credit redeemed ({{ number_format((int) ($order->bandara_credit_redeemed_points ?? 0)) }} pts)</span>
                         <span>- ₹{{ number_format($order->bandara_credit_redeemed_amount, 2) }}</span>
@@ -427,14 +446,29 @@
                     </span>
                 </div>
 
-                @include('customer.invoices.partials.payment-widget', [
-                    'invoice' => $invoice,
-                    'balanceAmount' => $balanceAmount,
-                    'paymentTitle' => 'Pay this invoice',
-                    'paymentDescription' => (($order->payment_method ?? 'razorpay') === 'pay_later')
-                        ? 'This order was placed on Pay Later terms. Pay online by Razorpay or submit offline payment details for approval.'
-                        : 'Complete the pending invoice payment online or submit offline payment details for approval.',
-                ])
+                @if($canRetryOnlineOrderPayment)
+                    <div class="mt-3 rounded-sm border border-amber-200 dark:border-amber-900/40 bg-amber-50/80 dark:bg-amber-950/20 px-3 py-3">
+                        <div class="text-[11px] font-semibold text-amber-900 dark:text-amber-100">
+                            Complete online payment
+                        </div>
+                        <p class="mt-1 text-[10px] leading-relaxed text-amber-700 dark:text-amber-300">
+                            Stock is not held permanently for unpaid orders. We will check availability again and hold the stock briefly before opening Razorpay.
+                        </p>
+                        <a href="{{ route('orders.pay.razorpay', $order) }}"
+                           class="mt-3 inline-flex items-center justify-center rounded-sm border border-gray-900 dark:border-gray-100 bg-gray-900 text-white dark:bg-gray-100 dark:text-gray-900 px-3 py-1.5 text-[11px] font-medium hover:bg-gray-800 dark:hover:bg-gray-200">
+                            Retry payment
+                        </a>
+                    </div>
+                @elseif($showInvoicePaymentWidget)
+                    @include('customer.invoices.partials.payment-widget', [
+                        'invoice' => $invoice,
+                        'balanceAmount' => $balanceAmount,
+                        'paymentTitle' => 'Pay this invoice',
+                        'paymentDescription' => (($order->payment_method ?? 'razorpay') === 'pay_later')
+                            ? 'This order was placed on Pay Later terms. Pay online by Razorpay or submit offline payment details for approval.'
+                            : 'Complete the pending invoice payment online or submit offline payment details for approval.',
+                    ])
+                @endif
 
                 <div class="flex flex-wrap gap-2">
                     <a href="{{ route('orders.invoice', $order) }}"

@@ -1,6 +1,6 @@
 @extends('layouts.company')
 
-@section('title', 'Inventory Packs')
+@section('title', 'Transform Stock')
 
 @section('content')
 @php
@@ -10,14 +10,14 @@
 <div class="max-w-7xl mx-auto px-4 py-6 space-y-4 text-xs">
     <div class="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
         <div>
-            <h1 class="text-xl font-semibold text-gray-900 dark:text-gray-50">Inventory Packs</h1>
+            <h1 class="text-xl font-semibold text-gray-900 dark:text-gray-50">Transform Stock / Pack Stock</h1>
             <p class="mt-1 text-[12px] text-gray-500 dark:text-gray-400">
                 Convert repackable source stock such as bulk belly, fillets, boxes, or loose pieces into saleable finished packs/cuts. Output stock can belong to a different finished product when you make slices/slabs from a raw source lot.
             </p>
         </div>
         <div class="flex flex-wrap gap-2">
             <a href="{{ route('admin.inventory.lots.index') }}" class="rounded border border-gray-300 px-4 py-2 text-xs hover:bg-gray-50 dark:border-gray-700 dark:hover:bg-gray-800">Inventory lots</a>
-            <a href="{{ route('admin.inventory.packs.create') }}" class="rounded bg-gray-900 px-4 py-2 text-xs font-medium text-white hover:bg-gray-800 dark:bg-gray-100 dark:text-gray-900 dark:hover:bg-gray-200">+ New repack</a>
+            <a href="{{ route('admin.inventory.packs.create') }}" class="rounded bg-gray-900 px-4 py-2 text-xs font-medium text-white hover:bg-gray-800 dark:bg-gray-100 dark:text-gray-900 dark:hover:bg-gray-200">+ Transform stock</a>
         </div>
     </div>
 
@@ -28,7 +28,7 @@
     @endif
 
     <div class="rounded-xl border border-amber-200 bg-amber-50 px-4 py-3 text-xs text-amber-800 dark:border-amber-900/60 dark:bg-amber-950/30 dark:text-amber-200">
-        This screen updates backend pack stock and the output product stock. Frontend product display remains unchanged.
+        This screen transforms source lots into saleable product or variant stock. It updates backend inventory, output product/variant stock, and stock movements; storefront layout remains unchanged.
     </div>
 
     <div class="overflow-x-auto rounded-xl border border-gray-200 bg-white dark:border-gray-800 dark:bg-gray-950">
@@ -98,7 +98,7 @@
                 @empty
                     <tr>
                         <td colspan="7" class="px-3 py-8 text-center text-xs text-gray-500 dark:text-gray-400">
-                            No repacked pack stock yet.
+                            No transformed pack stock yet.
                         </td>
                     </tr>
                 @endforelse

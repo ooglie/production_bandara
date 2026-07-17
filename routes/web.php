@@ -47,12 +47,12 @@ use App\Http\Controllers\Support\{
 
 use App\Http\Controllers\Admin\{
     ProductController,
-    ProductSellUnitController,
     CategoryController,
     VendorController,
     ProductVariantController,
     AttributeController,
     AttributeValueController,
+    VariantOptionValueController,
     ProductImageController,
     CouponController,
     InvoiceController as AdminInvoiceController,
@@ -70,6 +70,7 @@ use App\Http\Controllers\Admin\{
     HsnCodeController,
     OrderPrintController,
     OrderDeliveryController,
+    PageController,
     B2BCustomerProductController,
     ProductVariantLookupController,
     B2BCustomerController,
@@ -83,6 +84,7 @@ use App\Http\Controllers\Admin\{
     DeliverySettingsController,
     AdminBandaraCreditPreviewController,
     BandaraCreditController,
+    ReportController,
 };
 
 use App\Http\Controllers\Stores\DashboardController as StoresDashboardController;
@@ -136,16 +138,22 @@ Route::post('logout', [LoginController::class, 'logout'])
     ->middleware('auth')
     ->name('logout');
 
+Route::post('/impersonation/stop', [AdminUserController::class, 'stopImpersonating'])
+    ->middleware('auth')
+    ->name('impersonation.stop');
+
 // CART ROUTES
 Route::get('/cart', [CartController::class, 'index'])->name('cart.index');
 Route::post('/cart', [CartController::class, 'store'])->name('cart.store');
 Route::post('/cart/add', [CartController::class, 'add'])->name('cart.add');
-Route::patch('/cart/{key}', [CartController::class, 'update'])->name('cart.update');
-Route::delete('/cart/{key}', [CartController::class, 'destroy'])->name('cart.destroy');
 
-// CART COUPON
+// CART COUPON / BULK ACTIONS
+// Keep specific cart sub-routes before /cart/{key}, otherwise "coupon"/"items" can be captured as a cart item key.
 Route::post('/cart/coupon', [CartController::class, 'applyCoupon'])->name('cart.coupon.apply');
 Route::delete('/cart/coupon', [CartController::class, 'removeCoupon'])->name('cart.coupon.remove');
+Route::delete('/cart/items', [CartController::class, 'bulkDestroy'])->name('cart.bulk-destroy');
+Route::patch('/cart/{key}', [CartController::class, 'update'])->name('cart.update');
+Route::delete('/cart/{key}', [CartController::class, 'destroy'])->name('cart.destroy');
 
 // CUSTOMER
 Route::middleware(['auth', 'role:Customer'])->group(function () {
@@ -174,6 +182,7 @@ Route::middleware(['auth', 'role:Customer', 'verified'])
         // Keep old B2B route names as aliases while navigation is unified.
         Route::get('/cart', [CartController::class, 'index'])->name('cart.index');
         Route::post('/cart/add', [CartController::class, 'add'])->name('cart.add');
+        Route::delete('/cart/items', [CartController::class, 'bulkDestroy'])->name('cart.bulk-destroy');
         Route::patch('/cart/{key}', [CartController::class, 'update'])->name('cart.update');
         Route::delete('/cart/{key}', [CartController::class, 'destroy'])->name('cart.destroy');
         Route::get('/wishlist', [WishlistController::class, 'index'])->name('wishlist.index');
@@ -248,6 +257,9 @@ Route::middleware(['auth', 'role:Customer'])->group(function () {
     Route::get('/account/rewards', [ProfileController::class, 'rewards'])
         ->name('account.rewards');
 
+    Route::get('/account/rewards/terms', [ProfileController::class, 'rewardTerms'])
+        ->name('account.rewards.terms');
+
     // kept as-is so nothing breaks
     Route::get('/invoices', [CustomerInvoiceController::class, 'index'])
         ->name('invoices.index');
@@ -268,6 +280,9 @@ Route::middleware(['auth', 'role:Customer'])->group(function () {
 
         Route::post('/payment/razorpay/callback', [PaymentController::class, 'handleRazorpayCallback'])
             ->name('payment.razorpay.callback');
+
+        Route::post('/payment/razorpay/failed', [PaymentController::class, 'handleRazorpayFailure'])
+            ->name('payment.razorpay.failed');
 
         Route::post('/payment/razorpay/invoice-callback', [PaymentController::class, 'handleInvoiceRazorpayCallback'])
             ->name('payment.razorpay.invoice-callback');
@@ -350,6 +365,7 @@ Route::middleware(['auth', 'role:Admin|Manager|Accountant|CAAccountant|Stores'])
         Route::resource('announcements', AnnouncementController::class)->except('show');
         Route::get('/home-sections', [HomeSectionController::class, 'index'])->name('home-sections.index');
         Route::get('/delivery-settings', [DeliverySettingsController::class, 'index'])->name('delivery.index');
+        Route::put('/delivery-settings/tax-settings', [DeliverySettingsController::class, 'updateTaxSettings'])->name('delivery.tax-settings.update');
         Route::post('/delivery-settings/zones', [DeliverySettingsController::class, 'storeZone'])->name('delivery.zones.store');
         Route::put('/delivery-settings/zones/{zone}', [DeliverySettingsController::class, 'updateZone'])->name('delivery.zones.update');
         Route::post('/delivery-settings/zones/{zone}/pincodes', [DeliverySettingsController::class, 'storePincode'])->name('delivery.zones.pincodes.store');
@@ -379,6 +395,21 @@ Route::middleware(['auth', 'role:Admin|Manager|Accountant|CAAccountant|Stores'])
         Route::get('/dashboard', [AdminDashboardController::class, 'index'])
             ->name('dashboard');
 
+        Route::prefix('reports')
+            ->name('reports.')
+            ->group(function () {
+                Route::get('/', [ReportController::class, 'index'])->name('index');
+
+                Route::get('/sales-summary', [ReportController::class, 'salesSummary'])->name('sales-summary');
+                Route::get('/sales-summary/export', [ReportController::class, 'exportSalesSummary'])->name('sales-summary.export');
+
+                Route::get('/product-sales', [ReportController::class, 'productSales'])->name('product-sales');
+                Route::get('/product-sales/export', [ReportController::class, 'exportProductSales'])->name('product-sales.export');
+
+                Route::get('/inventory-stock', [ReportController::class, 'inventoryStock'])->name('inventory-stock');
+                Route::get('/inventory-stock/export', [ReportController::class, 'exportInventoryStock'])->name('inventory-stock.export');
+            });
+
         Route::middleware(['role:Stores|Admin'])
             ->prefix('stores')
             ->name('stores.')
@@ -395,9 +426,6 @@ Route::middleware(['auth', 'role:Admin|Manager|Accountant|CAAccountant|Stores'])
             ->except(['show'])
             ->shallow();
 
-        Route::resource('products.sell-units', ProductSellUnitController::class)
-            ->except(['show'])
-            ->shallow();
 
         Route::get('products/barcode/lookup', [ProductController::class, 'barcodeLookup'])
             ->middleware('throttle:60,1')
@@ -423,9 +451,21 @@ Route::middleware(['auth', 'role:Admin|Manager|Accountant|CAAccountant|Stores'])
 
         Route::resource('attributes', AttributeController::class)->except(['show']);
 
+        Route::get('variant-option-values', [VariantOptionValueController::class, 'index'])
+            ->name('variant-option-values.index');
+        Route::post('variant-option-values', [VariantOptionValueController::class, 'store'])
+            ->name('variant-option-values.store');
+        Route::put('variant-option-values/{value}', [VariantOptionValueController::class, 'update'])
+            ->name('variant-option-values.update');
+        Route::delete('variant-option-values/{value}', [VariantOptionValueController::class, 'destroy'])
+            ->name('variant-option-values.destroy');
+
         Route::resource('attributes.values', AttributeValueController::class)
             ->except(['show'])
             ->shallow();
+
+        Route::post('images/{image}/primary', [ProductImageController::class, 'makePrimary'])
+            ->name('images.primary');
 
         Route::resource('products.images', ProductImageController::class)
             ->except(['show'])
@@ -483,6 +523,9 @@ Route::middleware(['auth', 'role:Admin|Manager|Accountant|CAAccountant|Stores'])
             Route::get('/inventory/packs', [InventoryPackController::class, 'index'])
                 ->name('inventory.packs.index');
 
+            Route::get('/inventory/packs/output-options', [InventoryPackController::class, 'outputOptions'])
+                ->name('inventory.packs.output-options');
+
             Route::get('/inventory/packs/create', [InventoryPackController::class, 'create'])
                 ->name('inventory.packs.create');
 
@@ -503,7 +546,10 @@ Route::middleware(['auth', 'role:Admin|Manager|Accountant|CAAccountant|Stores'])
         });
 
         Route::middleware('role:Admin|Manager')->group(function () {
-            // Route::resource('pages', AdminPageController::class)->except(['show']);
+            Route::post('/production/{run}/reverse', [\App\Http\Controllers\Admin\ProductionRunController::class, 'reverse'])
+                ->name('production.reverse');
+
+            Route::resource('pages', PageController::class)->except(['show']);
             Route::resource('product-collections', ProductCollectionController::class)
                 ->parameters(['product-collections' => 'productCollection'])
                 ->except('show');
@@ -667,6 +713,9 @@ Route::middleware(['auth', 'role:Admin|Manager|Accountant|CAAccountant|Stores'])
                     Route::delete('/campaigns/{campaign}', [BandaraCreditController::class, 'destroyCampaign'])->middleware('can:manage rewards')->name('campaigns.destroy');
                     Route::get('/customers', [BandaraCreditController::class, 'customers'])->name('customers');
                     Route::post('/adjustments', [BandaraCreditController::class, 'storeAdjustment'])->middleware('can:manage rewards')->name('adjustments.store');
+                    Route::get('/reports', [BandaraCreditController::class, 'reports'])->name('reports');
+                    Route::get('/reports/export', [BandaraCreditController::class, 'exportReport'])->middleware('can:manage rewards')->name('reports.export');
+                    Route::post('/order-adjustments', [BandaraCreditController::class, 'storeOrderAdjustment'])->middleware('can:manage rewards')->name('order-adjustments.store');
                     Route::get('/ledger', [BandaraCreditController::class, 'ledger'])->name('ledger');
                 });
 

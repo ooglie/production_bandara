@@ -20,6 +20,10 @@ class ProductionRun extends Model
         'yield_percent',
         'created_by_id',
         'updated_by_id',
+        'reversed_at',
+        'reversed_by_id',
+        'reversal_reason',
+        'reversal_snapshot_json',
     ];
 
     protected $casts = [
@@ -30,6 +34,8 @@ class ProductionRun extends Model
         'trim_weight_kg' => 'decimal:3',
         'waste_weight_kg' => 'decimal:3',
         'yield_percent' => 'decimal:2',
+        'reversed_at' => 'datetime',
+        'reversal_snapshot_json' => 'array',
     ];
 
     public function inputs()
@@ -50,5 +56,10 @@ class ProductionRun extends Model
     public function creator()
     {
         return $this->belongsTo(User::class, 'created_by_id');
+    }
+
+    public function reversedBy()
+    {
+        return $this->belongsTo(User::class, 'reversed_by_id');
     }
 }

@@ -4,18 +4,21 @@ namespace App\Http\Controllers\Customer;
 
 use App\Http\Controllers\Controller;
 use App\Models\Invoice;
+use App\Models\InvoiceItem;
 use App\Models\Order;
 use App\Models\OrderAddress;
 use App\Models\OrderItem;
 use App\Models\Product;
 use App\Models\User;
 use App\Services\BandaraCreditService;
+use App\Services\DeliveryTaxSettingsService;
+use App\Services\DocumentNumberService;
+use App\Services\GstRateService;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Facades\Schema;
 use Illuminate\Support\Facades\Storage;
-use Illuminate\Support\Str;
 use Symfony\Component\HttpKernel\Exception\NotFoundHttpException;
 
 class OrderController extends Controller
@@ -117,19 +120,28 @@ class OrderController extends Controller
         $order = null;
 
         DB::transaction(function () use ($data, $items, &$order) {
-            $userId        = $data['user_id'];
-            $shippingTotal = (float) ($data['shipping_total'] ?? 0);
+            $userId = (int) $data['user_id'];
+            $customer = User::query()->findOrFail($userId);
+            $shippingTotal = round((float) ($data['shipping_total'] ?? 0), 2);
 
             $productIds = collect($items)->pluck('product_id')->unique()->all();
-            $products   = Product::whereIn('id', $productIds)->get()->keyBy('id');
+            $products = Product::query()
+                ->with('hsnCode')
+                ->whereIn('id', $productIds)
+                ->get()
+                ->keyBy('id');
 
-            $subtotal       = 0;
-            $discountTotal  = 0;
+            $baseState = 'Maharashtra';
+            $shippingState = trim((string) $data['state']);
+            $isIntraState = $shippingState !== '' && strcasecmp($shippingState, $baseState) === 0;
+            $gstType = $isIntraState ? 'intra_state' : 'inter_state';
+
+            $subtotal = 0.0;
+            $discountTotal = 0.0;
+            $cgst = 0.0;
+            $sgst = 0.0;
+            $igst = 0.0;
             $orderItemsData = [];
-
-            $item_weight = 0;
-            $sell_unit = null;
-            $pricing_unit = null;
 
             foreach ($items as $item) {
                 $product = $products[$item['product_id']] ?? null;
@@ -137,119 +149,182 @@ class OrderController extends Controller
                     continue;
                 }
 
-                $qty   = (float) $item['quantity'];
+                $qty = (float) $item['quantity'];
                 $price = (float) $item['unit_price'];
+                $lineSubtotal = round($qty * $price, 2);
+                $gstRate = app(GstRateService::class)->rateForProduct($product, $customer);
+                $taxAmount = round($lineSubtotal * ($gstRate / 100), 2);
 
-                $lineSubtotal = $qty * $price;
-                $subtotal    += $lineSubtotal;
+                $lineCgst = null;
+                $lineSgst = null;
+                $lineIgst = null;
 
-                $item_weight = (float) ($item['item_weight'] ?? 0);
-                $sell_unit   = $item['sell_unit'] ?? 'pc';
-                $pricing_unit = $item['pricing_unit'] ?? null;
+                if ($isIntraState) {
+                    $lineCgst = round($taxAmount / 2, 2);
+                    $lineSgst = round($taxAmount - $lineCgst, 2);
+                    $cgst += $lineCgst;
+                    $sgst += $lineSgst;
+                } else {
+                    $lineIgst = $taxAmount;
+                    $igst += $lineIgst;
+                }
+
+                $subtotal += $lineSubtotal;
 
                 $orderItemsData[] = [
-                    'product_id'          => $product->id,
-                    'product_variant_id'  => null,
-                    'product_name'        => $product->name,
-                    'sku'                 => $product->sku ?? null,
+                    'product_id' => $product->id,
+                    'product_variant_id' => null,
+                    'product_name' => $product->name,
+                    'sku' => $product->sku ?? null,
+                    'hsn_sac_code' => trim((string) ($product->hsnCode?->code ?? '')) ?: null,
+                    'gst_rate' => round($gstRate, 2),
                     'attributes_snapshot' => null,
-                    'quantity'            => $qty,
-                    'unit_price'          => $price,
-                    'subtotal'            => $lineSubtotal,
-                    'discount_amount'     => 0,
-                    'tax_amount'          => 0,
-                    'total'               => $lineSubtotal,
-                    'item_weight'         => $item_weight,
-                    'sell_unit'           => $sell_unit,
-                    'pricing_unit'        => $pricing_unit,
+                    'quantity' => $qty,
+                    'unit_price' => $price,
+                    'subtotal' => $lineSubtotal,
+                    'discount_amount' => 0,
+                    'tax_amount' => $taxAmount,
+                    'total' => round($lineSubtotal + $taxAmount, 2),
+                    'cgst_amount' => $lineCgst,
+                    'sgst_amount' => $lineSgst,
+                    'igst_amount' => $lineIgst,
+                    'item_weight' => (float) ($item['item_weight'] ?? 0),
+                    'sell_unit' => $item['sell_unit'] ?? ($product->sell_unit ?? 'piece'),
+                    'pricing_unit' => $item['pricing_unit'] ?? ($product->pricing_unit ?? (($product->sell_unit ?? null) === 'kg' ? 'kg' : 'pack')),
                 ];
             }
 
-            $baseState     = 'Maharashtra';
-            $shippingState = $data['state'];
+            $subtotal = round($subtotal, 2);
+            $cgst = round($cgst, 2);
+            $sgst = round($sgst, 2);
+            $igst = round($igst, 2);
+            $taxTotal = round($cgst + $sgst + $igst, 2);
+            $grandTotal = round($subtotal - $discountTotal + $taxTotal + $shippingTotal, 2);
 
-            $gstType = null;
-            $cgst    = 0;
-            $sgst    = 0;
-            $igst    = 0;
+            $documentNumbers = app(DocumentNumberService::class)->nextOrderInvoicePair();
 
-            if ($subtotal > 0) {
-                if (strcasecmp($shippingState, $baseState) === 0) {
-                    $gstType = 'intra_state';
-                    $cgst = round($subtotal * 0.025, 2);
-                    $sgst = round($subtotal * 0.025, 2);
-                } else {
-                    $gstType = 'inter_state';
-                    $igst = round($subtotal * 0.05, 2);
-                }
+            $orderData = [
+                'order_number' => $documentNumbers['order_number'],
+                'user_id' => $userId,
+                'status' => 'processing',
+                'subtotal' => $subtotal,
+                'discount_total' => $discountTotal,
+                'tax_total' => $taxTotal,
+                'shipping_total' => $shippingTotal,
+                'grand_total' => $grandTotal,
+                'coupon_id' => null,
+                'gst_type' => $gstType,
+                'cgst_amount' => $isIntraState ? $cgst : null,
+                'sgst_amount' => $isIntraState ? $sgst : null,
+                'igst_amount' => $isIntraState ? null : $igst,
+                'payment_status' => 'pending',
+                'customer_note' => $data['customer_note'] ?? null,
+                'placed_at' => now(),
+            ];
+
+            if (Schema::hasColumn('orders', 'delivery_fee')) {
+                $orderData['delivery_fee'] = $shippingTotal;
+            }
+            if (Schema::hasColumn('orders', 'delivery_tax_rate')) {
+                $orderData['delivery_tax_rate'] = 0;
+            }
+            if (Schema::hasColumn('orders', 'delivery_tax_amount')) {
+                $orderData['delivery_tax_amount'] = 0;
+            }
+            if (Schema::hasColumn('orders', 'delivery_sac_code')) {
+                $orderData['delivery_sac_code'] = app(DeliveryTaxSettingsService::class)->deliverySacCode();
+            }
+            if (Schema::hasColumn('orders', 'handling_sac_code')) {
+                $orderData['handling_sac_code'] = app(DeliveryTaxSettingsService::class)->handlingSacCode();
             }
 
-            $taxTotal   = $cgst + $sgst + $igst;
-            $grandTotal = $subtotal - $discountTotal + $taxTotal + $shippingTotal;
-
-            $order = Order::create([
-                'order_number'   => $this->generateOrderNumber(),
-                'user_id'        => $userId,
-                'status'         => 'processing',
-                'subtotal'       => $subtotal,
-                'discount_total' => $discountTotal,
-                'tax_total'      => $taxTotal,
-                'shipping_total' => $shippingTotal,
-                'grand_total'    => $grandTotal,
-                'coupon_id'      => null,
-                'gst_type'       => $gstType,
-                'cgst_amount'    => $cgst ?: null,
-                'sgst_amount'    => $sgst ?: null,
-                'igst_amount'    => $igst ?: null,
-                'payment_status' => 'pending',
-                'customer_note'  => $data['customer_note'] ?? null,
-                'placed_at'      => now(),
-                'item_weight'    => $item_weight,
-                'sell_unit'      => $sell_unit,
-                'pricing_unit'   => $pricing_unit,
-            ]);
+            $order = Order::create($orderData);
 
             foreach (['billing', 'shipping'] as $type) {
                 OrderAddress::create([
-                    'order_id'      => $order->id,
-                    'type'          => $type,
-                    'full_name'     => $data['full_name'],
-                    'phone'         => $data['phone'],
+                    'order_id' => $order->id,
+                    'type' => $type,
+                    'full_name' => $data['full_name'],
+                    'phone' => $data['phone'],
                     'address_line1' => $data['address_line1'],
                     'address_line2' => $data['address_line2'] ?? null,
-                    'city'          => $data['city'],
-                    'state'         => $data['state'],
-                    'state_code'    => $data['state_code'] ?? null,
-                    'country'       => $data['country'] ?? 'India',
-                    'pincode'       => $data['pincode'],
-                    'gstin'         => $data['gstin'] ?? null,
+                    'city' => $data['city'],
+                    'state' => $data['state'],
+                    'state_code' => $data['state_code'] ?? null,
+                    'country' => $data['country'] ?? 'India',
+                    'pincode' => $data['pincode'],
+                    'gstin' => $data['gstin'] ?? null,
                 ]);
             }
 
+            $createdOrderItems = [];
             foreach ($orderItemsData as $itemData) {
                 $itemData['order_id'] = $order->id;
-                OrderItem::create($itemData);
+                $createdOrderItems[] = OrderItem::create($itemData);
             }
 
-            $invoiceNumber = $this->generateInvoiceNumber();
-
-            $invoice = Invoice::create([
-                'order_id'       => $order->id,
-                'invoice_number' => $invoiceNumber,
-                'status'         => 'pending',
-                'subtotal'       => $subtotal,
+            $invoiceData = [
+                'order_id' => $order->id,
+                'invoice_number' => $documentNumbers['invoice_number'],
+                'status' => 'pending',
+                'subtotal' => $subtotal,
                 'discount_total' => $discountTotal,
-                'tax_total'      => $taxTotal,
-                'grand_total'    => $grandTotal,
-                'invoice_date'   => now(),
-                'due_date'       => now()->addDays(7),
-                'cgst_amount'    => $cgst ?: null,
-                'sgst_amount'    => $sgst ?: null,
-                'igst_amount'    => $igst ?: null,
-                'item_weight'    => $item_weight,
-                'sell_unit'      => $sell_unit,
-                'pricing_unit'   => $pricing_unit,
-            ]);
+                'tax_total' => $taxTotal,
+                'grand_total' => $grandTotal,
+                'invoice_date' => now(),
+                'due_date' => now()->addDays(7),
+            ];
+
+            if (Schema::hasColumn('invoices', 'gst_type')) {
+                $invoiceData['gst_type'] = $gstType;
+            }
+            if (Schema::hasColumn('invoices', 'cgst_amount')) {
+                $invoiceData['cgst_amount'] = $isIntraState ? $cgst : null;
+            }
+            if (Schema::hasColumn('invoices', 'sgst_amount')) {
+                $invoiceData['sgst_amount'] = $isIntraState ? $sgst : null;
+            }
+            if (Schema::hasColumn('invoices', 'igst_amount')) {
+                $invoiceData['igst_amount'] = $isIntraState ? null : $igst;
+            }
+            if (Schema::hasColumn('invoices', 'delivery_fee')) {
+                $invoiceData['delivery_fee'] = $shippingTotal;
+            }
+            if (Schema::hasColumn('invoices', 'delivery_tax_rate')) {
+                $invoiceData['delivery_tax_rate'] = 0;
+            }
+            if (Schema::hasColumn('invoices', 'delivery_tax_amount')) {
+                $invoiceData['delivery_tax_amount'] = 0;
+            }
+            if (Schema::hasColumn('invoices', 'delivery_sac_code')) {
+                $invoiceData['delivery_sac_code'] = $order->delivery_sac_code ?? null;
+            }
+            if (Schema::hasColumn('invoices', 'handling_sac_code')) {
+                $invoiceData['handling_sac_code'] = $order->handling_sac_code ?? null;
+            }
+
+            $invoice = Invoice::create($invoiceData);
+
+            foreach ($createdOrderItems as $orderItem) {
+                InvoiceItem::create([
+                    'invoice_id' => $invoice->id,
+                    'order_item_id' => $orderItem->id,
+                    'description' => $orderItem->product_name,
+                    'hsn_sac_code' => $orderItem->hsn_sac_code,
+                    'gst_rate' => $orderItem->gst_rate,
+                    'quantity' => $orderItem->quantity,
+                    'item_weight' => $orderItem->item_weight,
+                    'unit_price' => $orderItem->unit_price,
+                    'sell_unit' => $orderItem->sell_unit,
+                    'pricing_unit' => $orderItem->pricing_unit,
+                    'subtotal' => $orderItem->subtotal,
+                    'tax_amount' => $orderItem->tax_amount,
+                    'cgst_amount' => $orderItem->cgst_amount,
+                    'sgst_amount' => $orderItem->sgst_amount,
+                    'igst_amount' => $orderItem->igst_amount,
+                    'total' => $orderItem->total,
+                ]);
+            }
 
             app(\App\Services\InvoicePdfService::class)->generateAndStore($invoice);
         });
@@ -261,24 +336,6 @@ class OrderController extends Controller
         return redirect()
             ->route('admin.orders.show', $order)
             ->with('status', 'Order and invoice created for the customer.');
-    }
-
-    protected function generateOrderNumber(): string
-    {
-        do {
-            $number = 'ORD-' . now()->format('Ymd-His') . '-' . Str::upper(Str::random(4));
-        } while (Order::where('order_number', $number)->exists());
-
-        return $number;
-    }
-
-    protected function generateInvoiceNumber(): string
-    {
-        do {
-            $number = 'BA-' . now()->format('dmy') . '-' . Str::upper(Str::random(4));
-        } while (Invoice::where('invoice_number', $number)->exists());
-
-        return $number;
     }
 
     public function invoice(Request $request, Order $order)
@@ -314,8 +371,8 @@ class OrderController extends Controller
         $period = (string) $request->input('period', '');
         $unprintedOnly = $request->boolean('unprinted');
 
-        $allowedStatuses = ['processing', 'shipped', 'delivered', 'cancelled'];
-        $allowedPaymentStatuses = ['pending', 'paid', 'failed', 'refunded'];
+        $allowedStatuses = ['pending_payment', 'processing', 'shipped', 'delivered', 'cancelled', 'payment_failed', 'payment_expired'];
+        $allowedPaymentStatuses = ['pending', 'paid', 'failed', 'expired', 'refunded'];
 
         $query = Order::query()->with(['user', 'printedBy']);
 

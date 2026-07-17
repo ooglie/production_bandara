@@ -16,6 +16,12 @@
             </div>
         @endif
 
+        @if(session('error'))
+            <div class="rounded border border-red-300 bg-red-50 px-3 py-2 text-[11px] text-red-800">
+                {{ session('error') }}
+            </div>
+        @endif
+
         <div class="grid gap-4 sm:grid-cols-2">
             <div>
                 <label class="block text-xs font-medium text-gray-700 dark:text-gray-300">

@@ -109,7 +109,7 @@ return [
     'order_mapping' => [
         'user_id' => 'user_id',
         'status' => 'status',
-        'placed_at' => 'created_at',
+        'placed_at' => 'placed_at',
         'eligible_spend' => 'subtotal',
     ],
 

@@ -14,6 +14,8 @@ class OrderItem extends Model
         'product_variant_id',
         'product_name',
         'sku',
+        'hsn_sac_code',
+        'gst_rate',
         'attributes_snapshot',
         'quantity',
         'unit_price',
@@ -31,6 +33,7 @@ class OrderItem extends Model
 
     protected $casts = [
         'attributes_snapshot' => 'array',
+        'gst_rate'            => 'float',
         'quantity'            => 'float',
         'unit_price'          => 'float',
         'subtotal'            => 'float',

@@ -7,6 +7,7 @@
     use Illuminate\Support\Facades\Storage;
 
     $b2bTerms = app(\App\Services\B2BTermsService::class);
+    $isB2BWishlist = (bool) ($isB2BWishlist ?? false);
 @endphp
 
 <div class="max-w-6xl mx-auto px-4 py-6 space-y-4">
@@ -21,12 +22,6 @@
         </div>
     </div>
 
-    @if(session('status'))
-        <div class="rounded border border-emerald-300 bg-emerald-50 px-3 py-2 text-[11px] text-emerald-800">
-            {{ session('status') }}
-        </div>
-    @endif
-
     @if($items->isEmpty())
         <div class="rounded border border-gray-200 dark:border-gray-800 bg-white dark:bg-gray-900 px-4 py-4 text-xs text-gray-500 dark:text-gray-400">
             Your wishlist is empty.
@@ -38,7 +33,7 @@
                     $product = $item->product;
                     if (!$product) continue;
                     $variant = $item->variant;
-                    $canB2BBuy = $b2bTerms->canBuy(auth()->user(), $product, $variant?->sellUnit, $variant);
+                    $canB2BBuy = $b2bTerms->canBuy(auth()->user(), $product, $variant);
                     $productUrl = route('product.show', $product);
                     $cartStoreUrl = route('cart.store');
                     $destroyUrl = route('wishlist.destroy', $item);

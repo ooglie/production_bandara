@@ -14,7 +14,10 @@
         $shipping?->country,
     ])->filter()->implode(', '));
     $isDelivered = ($order->delivery_status ?? '') === 'delivered' || ($order->status ?? '') === 'delivered';
-    $mapsUrl = $addressText !== '' ? 'https://www.google.com/maps/dir/?api=1&destination=' . urlencode($addressText) . '&travelmode=driving' : null;
+    $mapDestination = ($shipping?->latitude !== null && $shipping?->longitude !== null)
+        ? trim((string) $shipping->latitude) . ',' . trim((string) $shipping->longitude)
+        : $addressText;
+    $mapsUrl = $mapDestination !== '' ? 'https://www.google.com/maps/dir/?api=1&destination=' . urlencode($mapDestination) . '&travelmode=driving' : null;
     $failureReasons = ['Customer unavailable', 'Address issue', 'Customer refused', 'Payment issue', 'Vehicle/rider issue', 'Other'];
     $icons = [
         'map' => '<svg class="h-4 w-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M9 18l-6 3V6l6-3 6 3 6-3v15l-6 3-6-3z"/><path d="M9 3v15M15 6v15"/></svg>',

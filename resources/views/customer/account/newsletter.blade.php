@@ -13,12 +13,6 @@
         </p>
     </div>
 
-    @if(session('status'))
-        <div class="rounded-lg border border-emerald-300 bg-emerald-50 px-4 py-3 text-[12px] text-emerald-800">
-            {{ session('status') }}
-        </div>
-    @endif
-
     <div class="rounded-lg border border-gray-200 dark:border-gray-800 bg-white dark:bg-gray-900 p-5 space-y-4">
         <div class="rounded-sm border border-gray-200 dark:border-gray-800 bg-gray-50 dark:bg-gray-950/40 px-4 py-3">
             <div class="text-[10px] uppercase tracking-wide text-gray-400">Subscribed email</div>

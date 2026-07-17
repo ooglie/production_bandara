@@ -1,14 +1,12 @@
 @php
     /** @var \App\Models\User $user */
     /** @var \App\Models\CustomerProductPrice|null $price */
-    $isEdit = isset($price);
     $selectedProductId = old('product_id', $price->product_id ?? '');
     $selectedVariantId = old('product_variant_id', $price->product_variant_id ?? '');
-    $selectedSellUnitId = old('product_sell_unit_id', $price->product_sell_unit_id ?? '');
 @endphp
 
 <div class="rounded-xl border border-gray-200 dark:border-gray-800 bg-white dark:bg-gray-900 p-4 space-y-4">
-    <div class="grid gap-3 md:grid-cols-3">
+    <div class="grid gap-3 md:grid-cols-2">
         <div>
             <label class="block text-[11px] text-gray-600 dark:text-gray-300 mb-1">Product</label>
             <select id="b2b-price-product"
@@ -35,43 +33,17 @@
 
             <select id="b2b-price-variant"
                     name="product_variant_id"
-                    data-url-template="{{ route('admin.products.variants.index', ['product' => '__PRODUCT__']) }}"
+                    data-url-template="{{ route('admin.products.variants.options', ['product' => '__PRODUCT__']) }}"
                     data-selected="{{ $selectedVariantId }}"
                     class="w-full rounded border border-gray-300 dark:border-gray-700 bg-white dark:bg-gray-950 px-2 py-2 text-[11px]">
                 <option value="">Product-level (no variant)</option>
-                {{-- JS will load variants when product is selected --}}
             </select>
 
             <p class="mt-1 text-[10px] text-gray-400">
-                If you choose a variant, this price applies only to that variant.
+                Use variants for customer-specific pack prices such as Dimsum 10 pcs / 20 pcs.
             </p>
 
             @error('product_variant_id')
-                <p class="mt-1 text-[11px] text-red-600">{{ $message }}</p>
-            @enderror
-        </div>
-
-        <div>
-            <label class="block text-[11px] text-gray-600 dark:text-gray-300 mb-1">
-                Sellable unit (optional)
-            </label>
-            <select id="b2b-price-sell-unit"
-                    name="product_sell_unit_id"
-                    data-selected="{{ $selectedSellUnitId }}"
-                    class="w-full rounded border border-gray-300 dark:border-gray-700 bg-white dark:bg-gray-950 px-2 py-2 text-[11px]">
-                <option value="">Product-level / variant-level</option>
-                @foreach($products as $p)
-                    @foreach(($p->sellUnits ?? collect()) as $unit)
-                        <option value="{{ $unit->id }}" data-product-id="{{ $p->id }}" @selected((int)$selectedSellUnitId === (int)$unit->id)>
-                            {{ $unit->display_label }}
-                        </option>
-                    @endforeach
-                @endforeach
-            </select>
-            <p class="mt-1 text-[10px] text-gray-400">
-                Use for pack/box-specific B2B pricing. Leave variant blank when using a sellable-unit price.
-            </p>
-            @error('product_sell_unit_id')
                 <p class="mt-1 text-[11px] text-red-600">{{ $message }}</p>
             @enderror
         </div>
@@ -130,27 +102,12 @@
 (function () {
     const productSelect = document.getElementById('b2b-price-product');
     const variantSelect = document.getElementById('b2b-price-variant');
-    const sellUnitSelect = document.getElementById('b2b-price-sell-unit');
     if (!productSelect || !variantSelect) return;
 
     const urlTemplate = variantSelect.dataset.urlTemplate;
     const selectedVariantId = (variantSelect.dataset.selected || '').toString();
 
-    function filterSellUnits(productId) {
-        if (!sellUnitSelect) return;
-        Array.from(sellUnitSelect.options).forEach(opt => {
-            if (!opt.value) { opt.hidden = false; return; }
-            opt.hidden = productId && opt.dataset.productId !== productId.toString();
-        });
-
-        if (sellUnitSelect.value) {
-            const selected = sellUnitSelect.options[sellUnitSelect.selectedIndex];
-            if (selected && selected.hidden) sellUnitSelect.value = '';
-        }
-    }
-
     function setVariantOptions(options, selectedId) {
-        // Keep first option as "Product-level"
         variantSelect.innerHTML = '<option value="">Product-level (no variant)</option>';
 
         (options || []).forEach(v => {
@@ -186,7 +143,6 @@
 
             setVariantOptions(data.variants || [], selectedId);
         } catch (e) {
-            // still allow product-level pricing even if variant load fails
             setVariantOptions([], '');
         } finally {
             variantSelect.disabled = false;
@@ -194,13 +150,11 @@
     }
 
     productSelect.addEventListener('change', function () {
-        filterSellUnits(productSelect.value);
         loadVariants(productSelect.value, '');
     });
 
-    // Initial load for edit/old input
-    const initialProductId = productSelect.value;
-    filterSellUnits(initialProductId);
-    loadVariants(initialProductId, selectedVariantId);
+    if (productSelect.value) {
+        loadVariants(productSelect.value, selectedVariantId);
+    }
 })();
 </script>

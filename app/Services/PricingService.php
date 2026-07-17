@@ -4,31 +4,30 @@ namespace App\Services;
 
 use App\Models\CustomerProductPrice;
 use App\Models\Product;
-use App\Models\ProductSellUnit;
 use App\Models\ProductVariant;
 use App\Models\User;
+use Illuminate\Database\Eloquent\Builder;
 
 class PricingService
 {
     protected static array $displayCache = [];
     protected static array $accountingCache = [];
 
-    public function quote(?User $user, Product $product, ?ProductVariant $variant = null, ?ProductSellUnit $sellUnit = null): array
+    public function quote(?User $user, Product $product, ?ProductVariant $variant = null): array
     {
-        $sellUnit = $sellUnit ?: $variant?->sellUnit;
         $isB2B = $this->isB2B($user);
 
-        $price = $this->priceForContext($user, $product, $variant, $sellUnit);
+        $price = $this->priceForContext($user, $product, $variant);
         $base = $isB2B
             ? $this->b2bCompareAtPrice($product, $variant)
             : $this->b2cDisplayBasePrice($product, $variant);
 
         $source = $isB2B
-            ? $this->b2bPriceSource($user, $product, $variant, $sellUnit)
+            ? $this->b2bPriceSource($user, $product, $variant)
             : $this->b2cPriceSource($product);
 
         $moq = $isB2B
-            ? app(B2BTermsService::class)->minOrderQty($user, $product, $sellUnit, $variant)
+            ? app(B2BTermsService::class)->minOrderQty($user, $product, $variant)
             : 1.0;
 
         $displayIncludesGst = $isB2B
@@ -45,7 +44,7 @@ class PricingService
             'can_buy' => $isB2B ? $price > 0 : true,
             'message' => $isB2B && $price <= 0 ? 'B2B price is not configured for this item.' : null,
             // Always ex-GST for cart/order/checkout accounting.
-            'accounting_unit_price' => round($this->cartUnitPriceFor($user, $product, $variant, $sellUnit), 2),
+            'accounting_unit_price' => round($this->cartUnitPriceFor($user, $product, $variant), 2),
             // Kept for existing views; now means current displayed quote includes GST.
             'price_includes_gst_for_display' => $displayIncludesGst,
             'display_price_includes_gst' => $displayIncludesGst,
@@ -55,23 +54,16 @@ class PricingService
     /** Display price for cards/detail pages. */
     public function priceFor(?User $user, Product $product, ?ProductVariant $variant = null): float
     {
-        return $this->priceForContext($user, $product, $variant, $variant?->sellUnit);
-    }
-
-    /** Display price for cards/detail pages when a sellable unit is selected. */
-    public function priceForSellUnit(?User $user, Product $product, ProductSellUnit $sellUnit): float
-    {
-        return $this->priceForContext($user, $product, null, $sellUnit);
+        return $this->priceForContext($user, $product, $variant);
     }
 
     /** Tax-exclusive unit price for cart/order/accounting calculations. */
-    public function cartUnitPriceFor(?User $user, Product $product, ?ProductVariant $variant = null, ?ProductSellUnit $sellUnit = null): float
+    public function cartUnitPriceFor(?User $user, Product $product, ?ProductVariant $variant = null): float
     {
-        $sellUnit = $sellUnit ?: $variant?->sellUnit;
         $isB2B = $this->isB2B($user);
         $today = now()->toDateString();
         $userId = $user?->id ? (int) $user->id : 0;
-        $cacheKey = implode('|', [$userId, (int) $product->id, (int) ($variant?->id ?? 0), (int) ($sellUnit?->id ?? 0), $today, 'accounting']);
+        $cacheKey = implode('|', [$userId, (int) $product->id, (int) ($variant?->id ?? 0), $today, 'accounting']);
 
         if (array_key_exists($cacheKey, self::$accountingCache)) {
             return (float) self::$accountingCache[$cacheKey];
@@ -81,7 +73,7 @@ class PricingService
             return self::$accountingCache[$cacheKey] = round($this->b2cAccountingPrice($product, $variant), 2);
         }
 
-        $source = $this->b2bPriceCandidate($user, $product, $variant, $sellUnit, $today);
+        $source = $this->b2bPriceCandidate($user, $product, $variant, $today);
         if ($source['price'] <= 0) {
             return self::$accountingCache[$cacheKey] = 0.0;
         }
@@ -95,35 +87,148 @@ class PricingService
         return self::$accountingCache[$cacheKey] = round($price, 2);
     }
 
-    public function hasB2BPrice(?User $user, Product $product, ?ProductSellUnit $sellUnit = null, ?ProductVariant $variant = null): bool
+    public function hasB2BPrice(?User $user, Product $product, ?ProductVariant $variant = null): bool
     {
         if (! $this->isB2B($user)) {
             return true;
         }
 
-        return $this->priceForContext($user, $product, $variant, $sellUnit ?: $variant?->sellUnit) > 0;
+        $candidate = $this->b2bPriceCandidate($user, $product, $variant, now()->toDateString());
+
+        return (float) ($candidate['price'] ?? 0) > 0;
     }
 
-    protected function priceForContext(?User $user, Product $product, ?ProductVariant $variant = null, ?ProductSellUnit $sellUnit = null): float
+    /**
+     * Apply the B2B catalogue rule at query level so pagination and search
+     * counts remain correct. A product is visible only when the signed-in
+     * B2B account has an explicit product/variant price, an active B2B/all
+     * special, or an active customer-specific price override.
+     */
+    public function applyProductAvailabilityFilter(Builder $query, ?User $user): Builder
+    {
+        if (! $this->isB2B($user)) {
+            return $query;
+        }
+
+        $today = now()->toDateString();
+        $productTable = $query->getModel()->getTable();
+
+        return $query->where(function (Builder $available) use ($user, $today, $productTable) {
+            $available
+                ->where("{$productTable}.standard_b2b_price", '>', 0)
+                ->orWhere(function (Builder $special) use ($today, $productTable) {
+                    $special
+                        ->where("{$productTable}.is_special", true)
+                        ->where("{$productTable}.special_price", '>', 0)
+                        ->whereIn("{$productTable}.special_audience", ['b2b', 'all'])
+                        ->where(function (Builder $starts) use ($today, $productTable) {
+                            $starts->whereNull("{$productTable}.special_starts_at")
+                                ->orWhereDate("{$productTable}.special_starts_at", '<=', $today);
+                        })
+                        ->where(function (Builder $ends) use ($today, $productTable) {
+                            $ends->whereNull("{$productTable}.special_ends_at")
+                                ->orWhereDate("{$productTable}.special_ends_at", '>=', $today);
+                        });
+                })
+                ->orWhereHas('variants', function (Builder $variants) {
+                    $variants
+                        ->where('standard_b2b_price', '>', 0)
+                        ->where(function (Builder $active) {
+                            $active->whereNull('is_active')->orWhere('is_active', true);
+                        })
+                        ->where(function (Builder $visibility) {
+                            $visibility->whereNull('customer_visibility')
+                                ->orWhereIn('customer_visibility', ['all', 'b2b']);
+                        });
+                })
+                ->orWhereExists(function ($prices) use ($user, $today, $productTable) {
+                    $prices->selectRaw('1')
+                        ->from('customer_product_prices as cpp')
+                        ->whereColumn('cpp.product_id', "{$productTable}.id")
+                        ->where('cpp.user_id', $user->id)
+                        ->where('cpp.is_active', true)
+                        ->where('cpp.price', '>', 0)
+                        ->where(function ($starts) use ($today) {
+                            $starts->whereNull('cpp.valid_from')
+                                ->orWhereDate('cpp.valid_from', '<=', $today);
+                        })
+                        ->where(function ($ends) use ($today) {
+                            $ends->whereNull('cpp.valid_to')
+                                ->orWhereDate('cpp.valid_to', '>=', $today);
+                        })
+                        ->where(function ($target) {
+                            $target->whereNull('cpp.product_variant_id')
+                                ->orWhereExists(function ($variants) {
+                                    $variants->selectRaw('1')
+                                        ->from('product_variants as pv')
+                                        ->whereColumn('pv.id', 'cpp.product_variant_id')
+                                        ->whereNull('pv.deleted_at')
+                                        ->where(function ($active) {
+                                            $active->whereNull('pv.is_active')->orWhere('pv.is_active', true);
+                                        })
+                                        ->where(function ($visibility) {
+                                            $visibility->whereNull('pv.customer_visibility')
+                                                ->orWhereIn('pv.customer_visibility', ['all', 'b2b']);
+                                        });
+                                });
+                        });
+                });
+        });
+    }
+
+    public function productIsAvailableToUser(?User $user, Product $product): bool
+    {
+        if (! $this->isB2B($user)) {
+            return true;
+        }
+
+        if ($this->hasB2BPrice($user, $product)) {
+            return true;
+        }
+
+        $product->loadMissing('variants');
+
+        return $product->variants
+            ->contains(fn (ProductVariant $variant) => $this->variantIsAvailableToUser($user, $product, $variant));
+    }
+
+    public function variantIsAvailableToUser(?User $user, Product $product, ProductVariant $variant): bool
+    {
+        if (! $this->isB2B($user)) {
+            return true;
+        }
+
+        if ($variant->is_active !== null && ! (bool) $variant->is_active) {
+            return false;
+        }
+
+        if (method_exists($variant, 'isVisibleToCustomerType') && ! $variant->isVisibleToCustomerType('b2b')) {
+            return false;
+        }
+
+        return $this->hasB2BPrice($user, $product, $variant);
+    }
+
+    protected function priceForContext(?User $user, Product $product, ?ProductVariant $variant = null): float
     {
         $today = now()->toDateString();
         $userId = $user?->id ? (int) $user->id : 0;
-        $cacheKey = implode('|', [$userId, (int) $product->id, (int) ($variant?->id ?? 0), (int) ($sellUnit?->id ?? 0), $today, 'display']);
+        $cacheKey = implode('|', [$userId, (int) $product->id, (int) ($variant?->id ?? 0), $today, 'display']);
 
         if (array_key_exists($cacheKey, self::$displayCache)) {
             return (float) self::$displayCache[$cacheKey];
         }
 
         if ($this->isB2B($user)) {
-            return self::$displayCache[$cacheKey] = round($this->b2bDisplayPrice($user, $product, $variant, $sellUnit, $today), 2);
+            return self::$displayCache[$cacheKey] = round($this->b2bDisplayPrice($user, $product, $variant, $today), 2);
         }
 
         return self::$displayCache[$cacheKey] = round($this->b2cDisplayPrice($product, $variant), 2);
     }
 
-    protected function b2bDisplayPrice(User $user, Product $product, ?ProductVariant $variant, ?ProductSellUnit $sellUnit, string $today): float
+    protected function b2bDisplayPrice(User $user, Product $product, ?ProductVariant $variant, string $today): float
     {
-        $source = $this->b2bPriceCandidate($user, $product, $variant, $sellUnit, $today);
+        $source = $this->b2bPriceCandidate($user, $product, $variant, $today);
         if ($source['price'] <= 0) {
             return 0.0;
         }
@@ -139,28 +244,23 @@ class PricingService
         return $this->displayForB2B($product, $price);
     }
 
-    protected function b2bPriceCandidate(User $user, Product $product, ?ProductVariant $variant, ?ProductSellUnit $sellUnit, string $today): array
+    protected function b2bPriceCandidate(User $user, Product $product, ?ProductVariant $variant, string $today): array
     {
         $productId = (int) $product->id;
         $variantId = $variant?->id ? (int) $variant->id : null;
-        $sellUnitId = $sellUnit?->id ? (int) $sellUnit->id : null;
-        if ($sellUnitId) {
-            $override = $this->getCustomerOverridePrice($user->id, $productId, null, $sellUnitId, $today);
-            if ($override !== null) return ['price' => $override, 'source' => 'customer_b2b_sell_unit', 'tax_mode' => 'exclusive'];
-        }
 
         if ($variantId) {
-            $override = $this->getCustomerOverridePrice($user->id, $productId, $variantId, null, $today);
+            $override = $this->getCustomerOverridePrice($user->id, $productId, $variantId, $today);
             if ($override !== null) return ['price' => $override, 'source' => 'customer_b2b_variant', 'tax_mode' => 'exclusive'];
         }
 
-        $override = $this->getCustomerOverridePrice($user->id, $productId, null, null, $today);
+        $override = $this->getCustomerOverridePrice($user->id, $productId, null, $today);
         if ($override !== null) return ['price' => $override, 'source' => 'customer_b2b_product', 'tax_mode' => 'exclusive'];
 
         $b2bSpecial = $this->activeSpecialPrice($product, ['b2b']);
         if ($b2bSpecial !== null) return ['price' => $b2bSpecial, 'source' => 'b2b_special', 'tax_mode' => 'exclusive'];
 
-        foreach ([['model' => $sellUnit, 'source' => 'standard_b2b_sell_unit'], ['model' => $variant, 'source' => 'standard_b2b_variant'], ['model' => $product, 'source' => 'standard_b2b_product']] as $entry) {
+        foreach ([['model' => $variant, 'source' => 'standard_b2b_variant'], ['model' => $product, 'source' => 'standard_b2b_product']] as $entry) {
             $standard = $this->positiveNumber($entry['model']?->standard_b2b_price ?? null);
             if ($standard !== null) {
                 return ['price' => $standard, 'source' => $entry['source'], 'tax_mode' => 'exclusive'];
@@ -169,10 +269,6 @@ class PricingService
 
         $allSpecial = $this->activeSpecialPrice($product, ['all']);
         if ($allSpecial !== null) return ['price' => $allSpecial, 'source' => 'all_special', 'tax_mode' => 'exclusive'];
-
-        if ((bool) config('pricing.b2b_allow_retail_fallback', true)) {
-            return ['price' => $this->retailBasePrice($product, $variant), 'source' => 'base_price_fallback', 'tax_mode' => 'exclusive'];
-        }
 
         return ['price' => 0.0, 'source' => 'not_configured', 'tax_mode' => 'exclusive'];
     }
@@ -242,19 +338,17 @@ class PricingService
         return round($price, 2);
     }
 
-    protected function getCustomerOverridePrice(int $userId, int $productId, ?int $variantId, ?int $sellUnitId, string $today): ?float
+    protected function getCustomerOverridePrice(int $userId, int $productId, ?int $variantId, string $today): ?float
     {
         $q = CustomerProductPrice::query()
             ->where('user_id', $userId)
             ->where('product_id', $productId)
             ->where('is_active', true);
 
-        if ($sellUnitId !== null) {
-            $q->where('product_sell_unit_id', $sellUnitId)->whereNull('product_variant_id');
-        } elseif ($variantId !== null) {
-            $q->where('product_variant_id', $variantId)->whereNull('product_sell_unit_id');
+        if ($variantId !== null) {
+            $q->where('product_variant_id', $variantId);
         } else {
-            $q->whereNull('product_variant_id')->whereNull('product_sell_unit_id');
+            $q->whereNull('product_variant_id');
         }
 
         $q->where(function ($x) use ($today) {
@@ -267,10 +361,10 @@ class PricingService
         return $row ? $this->positiveNumber($row->price) : null;
     }
 
-    protected function b2bPriceSource(User $user, Product $product, ?ProductVariant $variant, ?ProductSellUnit $sellUnit): string
+    protected function b2bPriceSource(User $user, Product $product, ?ProductVariant $variant): string
     {
         $today = now()->toDateString();
-        return (string) ($this->b2bPriceCandidate($user, $product, $variant, $sellUnit, $today)['source'] ?? 'not_configured');
+        return (string) ($this->b2bPriceCandidate($user, $product, $variant, $today)['source'] ?? 'not_configured');
     }
 
     protected function b2cPriceSource(Product $product): string

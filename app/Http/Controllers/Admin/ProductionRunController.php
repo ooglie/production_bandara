@@ -10,6 +10,7 @@ use App\Models\ProductVariant;
 use App\Models\ProductionRun;
 use App\Models\ProductionRunInput;
 use App\Models\ProductionRunOutput;
+use App\Services\ProductionRunReversalService;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Validation\ValidationException;
@@ -600,12 +601,13 @@ class ProductionRunController extends Controller
             ->with('status', 'Production run completed.');
     }
 
-    public function show(ProductionRun $run)
+    public function show(ProductionRun $run, ProductionRunReversalService $reversalService)
     {
         $run->load([
             'inputs.inventoryLot.product',
             'inputs.inventoryLot.productVariant',
             'inputs.product',
+            'inputs.productVariant',
             'outputs.inventoryLot.pieces',
             'outputs.inventoryLot.product',
             'outputs.inventoryLot.productVariant',
@@ -614,9 +616,35 @@ class ProductionRunController extends Controller
             'outputLots.product',
             'outputLots.productVariant',
             'outputLots.pieces',
+            'reversedBy',
         ]);
 
-        return view('admin.production.show', compact('run'));
+        $reversalAssessment = $reversalService->assess($run);
+
+        return view('admin.production.show', compact('run', 'reversalAssessment'));
+    }
+
+    public function reverse(Request $request, ProductionRun $run, ProductionRunReversalService $reversalService)
+    {
+        $validated = $request->validate([
+            'reversal_reason' => ['required', 'string', 'min:5', 'max:1000'],
+            'confirm_reverse' => ['accepted'],
+        ], [
+            'confirm_reverse.accepted' => 'Please confirm that you understand this action will restore the source and cancel all untouched output stock.',
+        ]);
+
+        $actor = $request->user();
+        abort_unless($actor && $actor->hasAnyRole(['Admin', 'Manager']), 403);
+
+        $reversalService->reverse(
+            $run,
+            $actor,
+            $validated['reversal_reason']
+        );
+
+        return redirect()
+            ->route('admin.production.show', $run)
+            ->with('status', 'Production run reversed. Source stock was restored and output stock was cancelled.');
     }
 
     protected function createOutputLotAndRow(

@@ -27,6 +27,7 @@
     }
 
     $defaultPackType = old('pack_type', $variant->pack_type ?? 'quantity');
+    $defaultCustomerVisibility = old('customer_visibility', $variant->customer_visibility ?? 'all');
 
     $variantB2BPriceInput = old('standard_b2b_price');
     if ($variantB2BPriceInput === null) {
@@ -88,7 +89,7 @@
         </div>
 
         <div class="rounded-sm border border-amber-200 dark:border-amber-900/60 bg-amber-50 dark:bg-amber-950/20 px-3 py-2 text-[11px] text-amber-800 dark:text-amber-200">
-            Use variants only for true customer choices such as Dimsum 10 pcs / 20 pcs. Do not create variants for vendor lots, pork belly pieces, or slab weights.
+            Use variants only for true customer choices such as Dimsum 10/20/100 pcs or Prawns Jumbo 500g / Jumbo 1kg. Do not create variants for vendor lots, pork belly pieces, or slab weights.
         </div>
 
         <div class="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
@@ -130,7 +131,7 @@
 
             <div>
                 <label class="block text-xs font-medium text-gray-700 dark:text-gray-300">
-                    MRP (₹{{ $b2cIncludesGst ? ', incl GST' : ', excl GST' }})
+                    MRP (₹{{ $b2cIncludesGst ? ', incl GST' : ', excl GST' }}) <span class="text-red-500">*</span> <span class="text-[10px] font-normal text-gray-400">when active</span>
                 </label>
                 <input
                     type="number"
@@ -138,7 +139,7 @@
                     min="0"
                     name="mrp_price"
                     value="{{ $variantMrpInput }}"
-                    placeholder="Optional MRP for this pack"
+                    placeholder="Required for active variants"
                     class="mt-1 w-full rounded-sm border border-gray-300 dark:border-gray-700 bg-white dark:bg-gray-900 px-2 py-1.5 text-sm focus:outline-none focus:ring-1 focus:ring-gray-400 dark:focus:ring-gray-500"
                 >
                 @error('mrp_price')
@@ -148,16 +149,16 @@
 
             <div>
                 <label class="block text-xs font-medium text-gray-700 dark:text-gray-300">
-                    B2C variant price (₹{{ $b2cIncludesGst ? ', incl GST' : ', excl GST' }})
+                    B2C variant price (₹{{ $b2cIncludesGst ? ', incl GST' : ', excl GST' }}) <span class="text-red-500">*</span> <span class="text-[10px] font-normal text-gray-400">when active</span>
                 </label>
                 <input
                     type="number"
                     step="0.01"
                     name="price"
                     value="{{ $variantPriceInput }}"
-                    required
                     class="mt-1 w-full rounded-sm border border-gray-300 dark:border-gray-700 bg-white dark:bg-gray-900 px-2 py-1.5 text-sm focus:outline-none focus:ring-1 focus:ring-gray-400 dark:focus:ring-gray-500"
                 >
+                <p class="mt-1 text-[11px] text-gray-500 dark:text-gray-400">Active variants need their own MRP and sell price; parent product pricing can stay blank.</p>
                 @error('price')
                     <p class="mt-1 text-[11px] text-red-600">{{ $message }}</p>
                 @enderror
@@ -195,6 +196,24 @@
                     class="mt-1 w-full rounded-sm border border-gray-300 dark:border-gray-700 bg-white dark:bg-gray-900 px-2 py-1.5 text-sm focus:outline-none focus:ring-1 focus:ring-gray-400 dark:focus:ring-gray-500"
                 >
                 @error('standard_b2b_min_order_quantity')
+                    <p class="mt-1 text-[11px] text-red-600">{{ $message }}</p>
+                @enderror
+            </div>
+
+            <div>
+                <label class="block text-xs font-medium text-gray-700 dark:text-gray-300">
+                    Customer visibility
+                </label>
+                <select
+                    name="customer_visibility"
+                    class="mt-1 w-full rounded-sm border border-gray-300 dark:border-gray-700 bg-white dark:bg-gray-900 px-2 py-1.5 text-sm focus:outline-none focus:ring-1 focus:ring-gray-400 dark:focus:ring-gray-500"
+                >
+                    <option value="all" @selected($defaultCustomerVisibility === 'all')>B2C + B2B</option>
+                    <option value="b2c" @selected($defaultCustomerVisibility === 'b2c')>B2C only</option>
+                    <option value="b2b" @selected($defaultCustomerVisibility === 'b2b')>B2B only</option>
+                </select>
+                <p class="mt-1 text-[10px] text-gray-500 dark:text-gray-400">Use B2B only for options such as Box of 12 cheese packs.</p>
+                @error('customer_visibility')
                     <p class="mt-1 text-[11px] text-red-600">{{ $message }}</p>
                 @enderror
             </div>
@@ -298,6 +317,17 @@
             </label>
 
             <label class="inline-flex items-center gap-2">
+                <input type="hidden" name="inventory_can_repack" value="0">
+                <input
+                    type="checkbox"
+                    name="inventory_can_repack"
+                    value="1"
+                    @checked(old('inventory_can_repack', $variant->inventory_can_repack ?? false))
+                >
+                <span>Can be used as source in Transform Stock</span>
+            </label>
+
+            <label class="inline-flex items-center gap-2">
                 <input type="hidden" name="is_active" value="0">
                 <input
                     type="checkbox"
@@ -309,15 +339,19 @@
             </label>
         </div>
 
+        <p class="text-[10px] text-gray-500 dark:text-gray-400">
+            Enable this only for inward/master-carton variants such as Dimsum 100 pcs or Cheese box of 12. It does not change customer visibility or storefront behaviour.
+        </p>
+
         <div>
             <label class="block text-xs font-medium text-gray-700 dark:text-gray-300 mb-1">
-                Attribute values for this variant
+                Variant option combination
             </label>
 
             @if($attributeValuesByAttribute->isEmpty())
                 <p class="text-[11px] text-gray-500 dark:text-gray-400">
-                    No attributes configured for this product.
-                    Set attribute values on the product first.
+                    No variant options configured for this product.
+                    Set allowed option values on the product first. For two-level products such as Prawns, add option groups like Size and Pack Size, then assign both values to each variant.
                 </p>
             @else
                 <div class="space-y-3 text-xs">

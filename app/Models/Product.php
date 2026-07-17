@@ -9,6 +9,12 @@ class Product extends Model
 {
     use SoftDeletes;
 
+    public const STORAGE_PROFILE_FROZEN = 'frozen';
+    public const STORAGE_PROFILE_CHILLED = 'chilled';
+    public const STORAGE_PROFILE_AMBIENT = 'ambient';
+    public const STORAGE_PROFILE_CUSTOM = 'custom';
+    public const DEFAULT_STORAGE_PROFILE = self::STORAGE_PROFILE_FROZEN;
+
     public const DEFAULT_STORAGE_GUIDANCE = [
         'Keep frozen at or below -18°C.',
         'Once thawed, keep refrigerated and consume promptly.',
@@ -23,6 +29,75 @@ class Product extends Model
         'Contact support quickly if you receive a damaged or incorrect item.',
     ];
 
+    public const CHILLED_STORAGE_GUIDANCE = [
+        'Keep refrigerated between 2°C and 6°C.',
+        'Do not freeze unless specifically instructed on the pack.',
+        'Keep sealed and consume before the use-by date.',
+        'Return to refrigeration immediately after opening/portioning.',
+    ];
+
+    public const CHILLED_DELIVERY_SUPPORT = [
+        'Delivered chilled in insulated packaging where available.',
+        'Refrigerate immediately on receipt.',
+        'Please inspect the package promptly on delivery.',
+        'Contact support quickly if you receive a damaged or incorrect item.',
+    ];
+
+    public const AMBIENT_STORAGE_GUIDANCE = [
+        'Store in a cool, dry place away from direct sunlight.',
+        'Keep sealed after opening and follow the pack instructions.',
+        'Use before the best-before date shown on the pack.',
+    ];
+
+    public const AMBIENT_DELIVERY_SUPPORT = [
+        'Packed and delivered under standard handling conditions.',
+        'Please inspect the package promptly on delivery.',
+        'Contact support quickly if you receive a damaged or incorrect item.',
+    ];
+
+    public static function storageProfileOptions(): array
+    {
+        return [
+            self::STORAGE_PROFILE_FROZEN => 'Frozen (-18°C or below)',
+            self::STORAGE_PROFILE_CHILLED => 'Chilled (2°C to 6°C)',
+            self::STORAGE_PROFILE_AMBIENT => 'Ambient / shelf stable',
+            self::STORAGE_PROFILE_CUSTOM => 'Custom',
+        ];
+    }
+
+    public static function storageProfileTemplates(): array
+    {
+        return [
+            self::STORAGE_PROFILE_FROZEN => [
+                'label' => self::storageProfileOptions()[self::STORAGE_PROFILE_FROZEN],
+                'temperature' => '-18°C or below',
+                'storage_guidance' => self::defaultStorageGuidanceText(),
+                'delivery_support' => self::defaultDeliverySupportText(),
+            ],
+            self::STORAGE_PROFILE_CHILLED => [
+                'label' => self::storageProfileOptions()[self::STORAGE_PROFILE_CHILLED],
+                'temperature' => '2°C to 6°C',
+                'storage_guidance' => self::chilledStorageGuidanceText(),
+                'delivery_support' => self::chilledDeliverySupportText(),
+            ],
+            self::STORAGE_PROFILE_AMBIENT => [
+                'label' => self::storageProfileOptions()[self::STORAGE_PROFILE_AMBIENT],
+                'temperature' => 'Ambient',
+                'storage_guidance' => self::ambientStorageGuidanceText(),
+                'delivery_support' => self::ambientDeliverySupportText(),
+            ],
+        ];
+    }
+
+    public static function normalizeStorageProfile(?string $profile): string
+    {
+        $profile = trim((string) $profile);
+
+        return array_key_exists($profile, self::storageProfileOptions())
+            ? $profile
+            : self::DEFAULT_STORAGE_PROFILE;
+    }
+
     public static function defaultStorageGuidanceText(): string
     {
         return implode(PHP_EOL, self::DEFAULT_STORAGE_GUIDANCE);
@@ -31,6 +106,43 @@ class Product extends Model
     public static function defaultDeliverySupportText(): string
     {
         return implode(PHP_EOL, self::DEFAULT_DELIVERY_SUPPORT);
+    }
+
+    public static function chilledStorageGuidanceText(): string
+    {
+        return implode(PHP_EOL, self::CHILLED_STORAGE_GUIDANCE);
+    }
+
+    public static function chilledDeliverySupportText(): string
+    {
+        return implode(PHP_EOL, self::CHILLED_DELIVERY_SUPPORT);
+    }
+
+    public static function ambientStorageGuidanceText(): string
+    {
+        return implode(PHP_EOL, self::AMBIENT_STORAGE_GUIDANCE);
+    }
+
+    public static function ambientDeliverySupportText(): string
+    {
+        return implode(PHP_EOL, self::AMBIENT_DELIVERY_SUPPORT);
+    }
+
+    public static function storageGuidanceTextForProfile(?string $profile): string
+    {
+        return self::storageProfileTemplates()[self::normalizeStorageProfile($profile)]['storage_guidance']
+            ?? self::defaultStorageGuidanceText();
+    }
+
+    public static function deliverySupportTextForProfile(?string $profile): string
+    {
+        return self::storageProfileTemplates()[self::normalizeStorageProfile($profile)]['delivery_support']
+            ?? self::defaultDeliverySupportText();
+    }
+
+    public static function storageTemperatureLabelForProfile(?string $profile): ?string
+    {
+        return self::storageProfileTemplates()[self::normalizeStorageProfile($profile)]['temperature'] ?? null;
     }
 
     protected $fillable = [
@@ -42,6 +154,7 @@ class Product extends Model
         'inventory_role',
         'short_description',
         'description',
+        'storage_profile',
         'storage_guidance',
         'delivery_support',
         'primary_image',
@@ -106,6 +219,7 @@ class Product extends Model
         'special_ends_at'         => 'datetime',
         'product_weight'          => 'decimal:3',
         'pieces_per_pack'         => 'decimal:3',
+        'storage_profile'         => 'string',
         'sell_unit'               => 'string',
         'pack_type'               => 'string',
         'inventory_role'          => 'string',
@@ -118,12 +232,34 @@ class Product extends Model
 
     public function storageGuidanceLines(): array
     {
-        return $this->multilineListFromAttribute('storage_guidance', self::DEFAULT_STORAGE_GUIDANCE);
+        return $this->multilineListFromAttribute(
+            'storage_guidance',
+            $this->storageGuidanceFallbackLines()
+        );
     }
 
     public function deliverySupportLines(): array
     {
-        return $this->multilineListFromAttribute('delivery_support', self::DEFAULT_DELIVERY_SUPPORT);
+        return $this->multilineListFromAttribute(
+            'delivery_support',
+            $this->deliverySupportFallbackLines()
+        );
+    }
+
+    protected function storageGuidanceFallbackLines(): array
+    {
+        return preg_split(
+            '/\r\n|\r|\n/',
+            self::storageGuidanceTextForProfile($this->storage_profile ?? self::DEFAULT_STORAGE_PROFILE)
+        ) ?: self::DEFAULT_STORAGE_GUIDANCE;
+    }
+
+    protected function deliverySupportFallbackLines(): array
+    {
+        return preg_split(
+            '/\r\n|\r|\n/',
+            self::deliverySupportTextForProfile($this->storage_profile ?? self::DEFAULT_STORAGE_PROFILE)
+        ) ?: self::DEFAULT_DELIVERY_SUPPORT;
     }
 
     protected function multilineListFromAttribute(string $attribute, array $fallback): array
@@ -189,10 +325,36 @@ class Product extends Model
         return $this->hasMany(ProductVariant::class);
     }
 
-    public function sellUnits()
+    public function sourceTransformations()
     {
-        return $this->hasMany(ProductSellUnit::class)->orderBy('sort_order')->orderBy('name');
+        return $this->hasMany(ProductTransformation::class, 'source_product_id');
     }
+
+    public function targetTransformations()
+    {
+        return $this->hasMany(ProductTransformation::class, 'target_product_id');
+    }
+
+    public function producesProducts()
+    {
+        return $this->belongsToMany(
+            Product::class,
+            'product_transformations',
+            'source_product_id',
+            'target_product_id'
+        )->withPivot(['transformation_type', 'notes'])->withTimestamps();
+    }
+
+    public function producedFromProducts()
+    {
+        return $this->belongsToMany(
+            Product::class,
+            'product_transformations',
+            'target_product_id',
+            'source_product_id'
+        )->withPivot(['transformation_type', 'notes'])->withTimestamps();
+    }
+
 
         public function recipes()
     {

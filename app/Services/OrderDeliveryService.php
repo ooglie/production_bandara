@@ -13,6 +13,12 @@ class OrderDeliveryService
 {
     public function assign(Order $order, ?User $agent, User $actor, ?string $note = null): Order
     {
+        if (in_array((string) $order->status, ['pending_payment', 'payment_failed', 'payment_expired'], true)) {
+            throw ValidationException::withMessages([
+                'delivery_agent_id' => 'Only paid/confirmed orders can be assigned for delivery.',
+            ]);
+        }
+
         if ($order->status === 'delivered') {
             throw ValidationException::withMessages([
                 'delivery_agent_id' => 'Delivered orders cannot be reassigned.',
@@ -51,6 +57,12 @@ class OrderDeliveryService
     public function markOutForDelivery(Order $order, User $actor, ?string $note = null): Order
     {
         $this->assertActorCanUpdateAssignedOrder($order, $actor);
+
+        if (in_array((string) $order->status, ['pending_payment', 'payment_failed', 'payment_expired'], true)) {
+            throw ValidationException::withMessages([
+                'order' => 'Only paid/confirmed orders can be marked out for delivery.',
+            ]);
+        }
 
         if ($order->status === 'cancelled') {
             throw ValidationException::withMessages([

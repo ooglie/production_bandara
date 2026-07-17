@@ -9,6 +9,7 @@
     use Illuminate\Support\Str;
 
     $order = $invoice->order;
+    $isB2BInvoiceCustomer = (auth()->user()?->customer_type ?? 'b2c') === 'b2b';
     $shipping = $order?->addresses?->firstWhere('type', 'shipping');
     $billing  = $order?->addresses?->firstWhere('type', 'billing');
 
@@ -89,11 +90,7 @@
     }
 @endphp
 
-<div class="max-w-6xl mx-auto px-4 py-6 space-y-4 text-xs">
-    @if(session('status'))
-        <div class="rounded border border-emerald-300 bg-emerald-50 px-3 py-2 text-[11px] text-emerald-800">{{ session('status') }}</div>
-    @endif
-    @if($errors->any())
+<div class="max-w-6xl mx-auto px-4 py-6 space-y-4 text-xs">    @if($errors->any())
         <div class="rounded border border-red-300 bg-red-50 px-3 py-2 text-[11px] text-red-800">
             <ul class="list-disc list-inside space-y-0.5">
                 @foreach($errors->all() as $error)
@@ -322,7 +319,7 @@
                         <span>₹{{ number_format($invoice->tax_total, 2) }}</span>
                     </div>
 
-                    @if((float) ($invoice->bandara_credit_redeemed_amount ?? 0) > 0)
+                    @if(! $isB2BInvoiceCustomer && (float) ($invoice->bandara_credit_redeemed_amount ?? 0) > 0)
                         <div class="flex justify-between text-emerald-700 dark:text-emerald-300">
                             <span>Bandara Credit redeemed ({{ number_format((int) ($invoice->bandara_credit_redeemed_points ?? 0)) }} pts)</span>
                             <span>- ₹{{ number_format($invoice->bandara_credit_redeemed_amount, 2) }}</span>

@@ -1,0 +1,6 @@
+product_name,sku,category,hsn_code,storefront_experience,inventory_basis,pricing_unit,mrp,selling_price,product_weight_kg,pieces_per_pack,customer_visibility,manage_stock,stock_quantity,source_products,notes
+Chicken Dimsum,DIMSUM-CHICKEN,Dimsum,HSN_CODE,Variant Choice,Finished quantity / pack stock,Pack,,,0,,B2C+B2B,No,0,Dimsum Master Box,Create 10/20/100 variants separately
+Prawns,PRAWNS,Prawns,HSN_CODE,Variant Choice,Finished quantity / pack stock,Pack,,,0,,B2C+B2B,No,0,Prawns 1kg Source,Create Size + Pack variants
+Pork Belly Full,PB-FULL,Pork,HSN_CODE,Physical Choice,Catchweight / exact piece weights,Weight / kg,1100,1100,,,B2C+B2B,Yes,0,,Add pieces through Vendor Invoice weights
+Cheddar Cheese Block,CHED-BLOCK,Cheese,HSN_CODE,Physical Choice,Catchweight / exact piece weights,Weight / kg,1400,1400,,,B2C+B2B,Yes,0,,Each block weight is an inventory piece
+Dimsum Master Box,DIMSUM-MASTER,Internal,HSN_CODE,Internal Source Only,Bulk / internal source stock,Pack,,,0,100,Internal,Yes,0,,Used as Transform Stock source

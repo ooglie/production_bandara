@@ -12,9 +12,60 @@
             $q->orderBy('position')->orderBy('id');
         },
         'activeRecipes',
+        'variants.attributeValues.attribute',
+        'variants.attributeValues.attributeValue',
     ]);
 
     $variants = $variants ?? collect();
+
+    $currentCustomerType = auth()->check() && ((auth()->user()->customer_type ?? 'b2c') === 'b2b')
+        ? 'b2b'
+        : 'b2c';
+
+    $variantIsVisibleToCustomer = function ($variant) use ($currentCustomerType) {
+        if (method_exists($variant, 'isVisibleToCustomerType')) {
+            return $variant->isVisibleToCustomerType($currentCustomerType);
+        }
+
+        $visibility = (string) ($variant->customer_visibility ?? 'all');
+
+        return $visibility === 'all' || $visibility === $currentCustomerType;
+    };
+
+    $variantIsActive = function ($variant) use ($variantIsVisibleToCustomer) {
+        $isActive = $variant->getAttribute('is_active');
+
+        return ($isActive === null || (bool) $isActive) && $variantIsVisibleToCustomer($variant);
+    };
+
+    $variantIsAvailable = function ($variant) use ($variantIsActive) {
+        if (! $variantIsActive($variant)) {
+            return false;
+        }
+
+        // For variable pack products, the variant is the real stock target.
+        // Parent product stock/manage_stock must not make the product look
+        // available when every pack variant is sold out.
+        if ($variant->stock_quantity !== null) {
+            return (float) $variant->stock_quantity > 0;
+        }
+
+        if ((bool) ($variant->manage_stock ?? false)) {
+            return false;
+        }
+
+        return true;
+    };
+
+    $isVariableProduct = (string) ($product->type ?? 'simple') === 'variable';
+
+    if ($isVariableProduct) {
+        $variants = $variants->filter($variantIsActive)->values();
+    }
+
+    $availableVariants = $isVariableProduct
+        ? $variants->filter($variantIsAvailable)->values()
+        : collect();
 
     $pieceSelector = $pieceSelector ?? ['enabled' => false];
     $hasPieceSelector = (bool) ($pieceSelector['enabled'] ?? false);
@@ -37,10 +88,39 @@
         $mrpDisplay = round($mrpDisplay * (1 + ($gstRate / 100)), 2);
     }
 
-    $hasMrpSavings = $mrpDisplay > 0 && $mrpDisplay > $effectivePrice;
-    $mrpSavings = $hasMrpSavings ? round($mrpDisplay - $effectivePrice, 2) : 0;
-    $mrpSavingsPct = $hasMrpSavings && $mrpDisplay > 0
-        ? round((($mrpDisplay - $effectivePrice) / $mrpDisplay) * 100)
+    $standardPricingUnit = strtolower((string) ($product->sell_unit === 'kg' ? 'kg' : 'pack'));
+    $standardWeightMultiplier = 1.0;
+    if ($standardPricingUnit === 'kg' && (float) ($product->product_weight ?? 0) > 0) {
+        // Direct-buy/catchweight item with one known unit weight.
+        // Example: cheese block 2.470kg at ₹1400/kg should display/charge ₹3458 per block.
+        $standardWeightMultiplier = round((float) $product->product_weight, 3);
+    }
+
+    $effectiveDisplayPrice = round($effectivePrice * $standardWeightMultiplier, 2);
+    $baseDisplayPrice = round($basePrice * $standardWeightMultiplier, 2);
+    $mrpDisplayTotal = round($mrpDisplay * $standardWeightMultiplier, 2);
+    $showsWeightedUnitTotal = $standardPricingUnit === 'kg' && $standardWeightMultiplier > 1 && ! $isVariableProduct;
+
+    $displayPriceForSellUnit = function (float $unitPrice, $variant = null) use ($product): float {
+        $pricingUnit = strtolower((string) ($variant?->pricing_unit ?? ($product->sell_unit === 'kg' ? 'kg' : 'pack')));
+        $pricingUnit = in_array($pricingUnit, ['kg', 'pack'], true) ? $pricingUnit : 'pack';
+
+        if ($pricingUnit !== 'kg') {
+            return round($unitPrice, 2);
+        }
+
+        $weight = round((float) ($variant?->product_weight ?? 0), 3);
+        if ($weight <= 0) {
+            $weight = round((float) ($product->product_weight ?? 0), 3);
+        }
+
+        return round($unitPrice * ($weight > 0 ? $weight : 1), 2);
+    };
+
+    $hasMrpSavings = $mrpDisplayTotal > 0 && $mrpDisplayTotal > $effectiveDisplayPrice;
+    $mrpSavings = $hasMrpSavings ? round($mrpDisplayTotal - $effectiveDisplayPrice, 2) : 0;
+    $mrpSavingsPct = $hasMrpSavings && $mrpDisplayTotal > 0
+        ? round((($mrpDisplayTotal - $effectiveDisplayPrice) / $mrpDisplayTotal) * 100)
         : 0;
 
     $imageUrl = function ($path) {
@@ -64,9 +144,19 @@
         default => 'Per piece',
     };
 
-    $stockValue = (float) ($product->stock_quantity ?? 0);
-    $manageStock = (bool) ($product->manage_stock ?? false);
-    $inStock = !$manageStock || $stockValue > 0;
+    $hasVariantStockContext = $isVariableProduct;
+
+    if ($hasVariantStockContext) {
+        $stockValue = (float) $variants
+            ->filter(fn ($variant) => $variant->stock_quantity !== null)
+            ->sum(fn ($variant) => max((float) ($variant->stock_quantity ?? 0), 0));
+        $manageStock = true;
+        $inStock = $availableVariants->isNotEmpty();
+    } else {
+        $stockValue = (float) ($product->stock_quantity ?? 0);
+        $manageStock = (bool) ($product->manage_stock ?? false);
+        $inStock = !$manageStock || $stockValue > 0;
+    }
 
     $stockLabel = $inStock ? 'In stock' : 'Out of stock';
 
@@ -93,7 +183,7 @@
 
         foreach (($variant->attributeValues ?? collect()) as $value) {
             $attributeName = $value->attribute->name ?? 'Option';
-            $valueName = $value->value ?? $value->name ?? '';
+            $valueName = $value->value ?? $value->name ?? $value->attributeValue?->name ?? '';
             if ($valueName !== '') {
                 $parts[] = $attributeName . ': ' . $valueName;
             }
@@ -144,14 +234,18 @@
 
     $originCode = $product->country_of_origin ?? null;
 
-    $displayVariantPrice = function ($variant) use ($product, $pricingService) {
-        return round((float) $pricingService->priceFor(auth()->user(), $product, $variant), 2);
+    $displayVariantPrice = function ($variant) use ($product, $pricingService, $displayPriceForSellUnit) {
+        $unitPrice = round((float) $pricingService->priceFor(auth()->user(), $product, $variant), 2);
+        return $displayPriceForSellUnit($unitPrice, $variant);
     };
 
-    $hasVariantSelector = !$hasPieceSelector && $product->type === 'variable' && $variants->isNotEmpty();
+    $hasVariantSelector = !$hasPieceSelector && $isVariableProduct;
+    $hasSelectableVariant = $hasVariantSelector && $availableVariants->isNotEmpty();
+
+    $variantDisplaySource = $hasSelectableVariant ? $availableVariants : $variants;
 
     $variantDisplayPrices = $hasVariantSelector
-        ? $variants
+        ? $variantDisplaySource
             ->map(fn ($variant) => $displayVariantPrice($variant))
             ->filter(fn ($price) => $price > 0)
             ->values()
@@ -161,6 +255,78 @@
     if ($hasVariantSelector && old('product_variant_id')) {
         $selectedVariantOld = $variants->firstWhere('id', (int) old('product_variant_id'));
     }
+
+    $variantOptionPayloads = [];
+    $variantAttributeGroups = collect();
+    $selectedVariantAttributeValueIds = [];
+
+    if ($hasVariantSelector) {
+        $variantOptionPayloads = $variants
+            ->map(function ($variant) use ($displayVariantPrice, $variantLabel, $variantIsAvailable) {
+                $attributes = collect($variant->attributeValues ?? collect())
+                    ->map(function ($value) {
+                        $attribute = $value->attribute ?? null;
+                        $attributeValue = $value->attributeValue ?? null;
+                        $valueName = $value->value
+                            ?? $value->name
+                            ?? $attributeValue?->name
+                            ?? '';
+
+                        if (trim((string) $valueName) === '') {
+                            return null;
+                        }
+
+                        return [
+                            'attribute_id' => (int) ($value->attribute_id ?? 0),
+                            'attribute_name' => (string) ($attribute?->display_name ?? $attribute?->name ?? 'Option'),
+                            'value_id' => (int) ($value->id ?? 0),
+                            'value_name' => (string) $valueName,
+                        ];
+                    })
+                    ->filter(fn ($row) => ! empty($row['attribute_id']) && ! empty($row['value_id']))
+                    ->values();
+
+                return [
+                    'id' => (int) $variant->id,
+                    'label' => $variantLabel($variant),
+                    'price' => $displayVariantPrice($variant),
+                    'available' => $variantIsAvailable($variant),
+                    'stock_label' => $variantIsAvailable($variant) ? null : 'Out of stock',
+                    'attributes' => $attributes->all(),
+                ];
+            })
+            ->values()
+            ->all();
+
+        $variantAttributeGroups = collect($variantOptionPayloads)
+            ->flatMap(fn ($variant) => $variant['attributes'] ?? [])
+            ->groupBy('attribute_id')
+            ->map(function ($rows, $attributeId) {
+                return [
+                    'id' => (int) $attributeId,
+                    'name' => (string) ($rows->first()['attribute_name'] ?? 'Option'),
+                    'values' => $rows
+                        ->map(fn ($row) => [
+                            'id' => (int) $row['value_id'],
+                            'name' => (string) $row['value_name'],
+                        ])
+                        ->unique('id')
+                        ->values()
+                        ->all(),
+                ];
+            })
+            ->filter(fn ($group) => count($group['values']) > 0)
+            ->values();
+
+        if ($selectedVariantOld) {
+            $selectedVariantAttributeValueIds = collect($selectedVariantOld->attributeValues ?? collect())
+                ->mapWithKeys(fn ($value) => [(int) ($value->attribute_id ?? 0) => (int) ($value->id ?? 0)])
+                ->filter(fn ($value, $key) => $key > 0 && $value > 0)
+                ->all();
+        }
+    }
+
+    $useMultiVariantSelector = $hasVariantSelector && $variantAttributeGroups->count() > 1;
 
     $piecePricingRatio = ($hasPieceSelector && $effectivePrice > 0 && $mrpDisplay > $effectivePrice)
         ? ($mrpDisplay / $effectivePrice)
@@ -191,8 +357,8 @@
         $topPriceMin = (float) $variantDisplayPrices->min();
         $topPriceMax = (float) $variantDisplayPrices->max();
     } else {
-        $topPriceMin = $effectivePrice;
-        $topPriceMax = $effectivePrice;
+        $topPriceMin = $effectiveDisplayPrice;
+        $topPriceMax = $effectiveDisplayPrice;
     }
 
     $topPriceText = $formatPriceText($topPriceMin, $topPriceMax);
@@ -223,7 +389,7 @@
             $topSaveText = $formatPriceText($saveMin, $saveMax);
             $topSavePct = $mrpMin > 0 ? round((($mrpMin - $topPriceMin) / $mrpMin) * 100) : 0;
         } else {
-            $topMrpText = '₹' . number_format($mrpDisplay, 2);
+            $topMrpText = '₹' . number_format($mrpDisplayTotal, 2);
             $topSaveText = '₹' . number_format($mrpSavings, 2);
             $topSavePct = $mrpSavingsPct;
         }
@@ -354,6 +520,12 @@
                             @else
                                 Price shown {{ ($priceQuote['display_price_includes_gst'] ?? true) ? 'includes' : 'excludes' }} applicable GST.
                             @endif
+
+                            @if($showsWeightedUnitTotal && !$hasPieceSelector && !$hasVariantSelector)
+                                <span class="block mt-0.5">
+                                    Calculated as ₹{{ number_format($effectivePrice, 2) }}/kg × {{ rtrim(rtrim(number_format($standardWeightMultiplier, 3), '0'), '.') }} kg.
+                                </span>
+                            @endif
                         </div>
                     </div>
 
@@ -381,50 +553,94 @@
 
                     {{-- Variant select --}}
                     @if($hasVariantSelector)
-                        <div>
-                            <label class="block text-xs font-medium text-gray-700 dark:text-gray-300 mb-1">
-                                Choose variant
-                            </label>
-                            <select
-                                id="product-variant-select"
-                                name="product_variant_id"
-                                class="w-full rounded border border-gray-300 dark:border-gray-700 bg-white dark:bg-gray-950 px-2 py-1.5 text-xs focus:outline-none focus:ring-1 focus:ring-gray-400 dark:focus:ring-gray-500"
-                                required
-                            >
-                                <option value="">Select…</option>
-                                @foreach($variants as $variant)
-                                    @php
-                                        $label = $variantLabel($variant);
-                                        $variantPrice = $displayVariantPrice($variant);
-                                    @endphp
-                                    <option
-                                        value="{{ $variant->id }}"
-                                        data-display-price="{{ number_format($variantPrice, 2, '.', '') }}"
-                                        @selected((int) old('product_variant_id', 0) === (int) $variant->id)
-                                    >
-                                        {{ $label }} — ₹{{ number_format($variantPrice, 2) }}
-                                    </option>
+                        @if($useMultiVariantSelector)
+                            <div class="space-y-3" id="product-multi-variant-root">
+                                <input
+                                    type="hidden"
+                                    id="product-variant-id"
+                                    name="product_variant_id"
+                                    value="{{ old('product_variant_id') }}"
+                                >
+
+                                @foreach($variantAttributeGroups as $group)
+                                    <div>
+                                        <label class="block text-xs font-medium text-gray-700 dark:text-gray-300 mb-1">
+                                            Choose {{ $group['name'] }}
+                                        </label>
+                                        <select
+                                            class="w-full rounded border border-gray-300 dark:border-gray-700 bg-white dark:bg-gray-950 px-2 py-1.5 text-xs focus:outline-none focus:ring-1 focus:ring-gray-400 dark:focus:ring-gray-500"
+                                            data-variant-attribute="{{ $group['id'] }}"
+                                            required
+                                        >
+                                            <option value="">Select {{ strtolower($group['name']) }}…</option>
+                                            @foreach($group['values'] as $optionValue)
+                                                <option
+                                                    value="{{ $optionValue['id'] }}"
+                                                    @selected((int) ($selectedVariantAttributeValueIds[$group['id']] ?? 0) === (int) $optionValue['id'])
+                                                >
+                                                    {{ $optionValue['name'] }}
+                                                </option>
+                                            @endforeach
+                                        </select>
+                                    </div>
                                 @endforeach
-                            </select>
-                            @error('product_variant_id')
-                                <p class="mt-1 text-[11px] text-red-600">{{ $message }}</p>
-                            @enderror
-                        </div>
+
+                                <p id="product-variant-summary" class="text-[11px] text-gray-500 dark:text-gray-400">
+                                    Choose options to see price and availability.
+                                </p>
+
+                                @error('product_variant_id')
+                                    <p class="mt-1 text-[11px] text-red-600">{{ $message }}</p>
+                                @enderror
+                            </div>
+                        @else
+                            <div>
+                                <label class="block text-xs font-medium text-gray-700 dark:text-gray-300 mb-1">
+                                    Choose variant
+                                </label>
+                                <select
+                                    id="product-variant-select"
+                                    name="product_variant_id"
+                                    class="w-full rounded border border-gray-300 dark:border-gray-700 bg-white dark:bg-gray-950 px-2 py-1.5 text-xs focus:outline-none focus:ring-1 focus:ring-gray-400 dark:focus:ring-gray-500"
+                                    required
+                                >
+                                    <option value="">Select…</option>
+                                    @foreach($variants as $variant)
+                                        @php
+                                            $label = $variantLabel($variant);
+                                            $variantPrice = $displayVariantPrice($variant);
+                                            $variantAvailable = $variantIsAvailable($variant);
+                                        @endphp
+                                        <option
+                                            value="{{ $variant->id }}"
+                                            data-display-price="{{ number_format($variantPrice, 2, '.', '') }}"
+                                            @selected((int) old('product_variant_id', 0) === (int) $variant->id)
+                                            @disabled(! $variantAvailable)
+                                        >
+                                            {{ $label }} — ₹{{ number_format($variantPrice, 2) }}{{ $variantAvailable ? '' : ' (Out of stock)' }}
+                                        </option>
+                                    @endforeach
+                                </select>
+                                @error('product_variant_id')
+                                    <p class="mt-1 text-[11px] text-red-600">{{ $message }}</p>
+                                @enderror
+                            </div>
+                        @endif
                     @endif
 
                     {{-- Lower price block only for simple non-slab, non-variant products --}}
                     @if(!$hasPieceSelector && !$hasVariantSelector)
                         <div class="text-sm text-gray-900 dark:text-gray-50">
-                            @if(! $isB2BPrice && $product->is_special && $effectivePrice < $basePrice)
+                            @if(! $isB2BPrice && $product->is_special && $effectiveDisplayPrice < $baseDisplayPrice)
                                 <span class="text-base font-semibold">
-                                    ₹{{ number_format($effectivePrice, 2) }}
+                                    ₹{{ number_format($effectiveDisplayPrice, 2) }}
                                 </span>
                                 <span class="ml-2 text-xs text-gray-400 line-through">
-                                    ₹{{ number_format($basePrice, 2) }}
+                                    ₹{{ number_format($baseDisplayPrice, 2) }}
                                 </span>
                             @else
                                 <span class="text-base font-semibold">
-                                    ₹{{ number_format($effectivePrice, 2) }}
+                                    ₹{{ number_format($effectiveDisplayPrice, 2) }}
                                 </span>
                             @endif
                         </div>
@@ -450,14 +666,26 @@
                         </div>
                     @endif
 
+                    @php
+                        $disableAddToCart = $hasPieceSelector
+                            || ($hasVariantSelector && ! $hasSelectableVariant)
+                            || ($useMultiVariantSelector && $hasSelectableVariant);
+
+                        $addToCartLabel = $hasPieceSelector
+                            ? 'Select slab to add'
+                            : (($hasVariantSelector && ! $hasSelectableVariant)
+                                ? 'Out of stock'
+                                : ($useMultiVariantSelector ? 'Choose options' : 'Add to cart'));
+                    @endphp
+
                     <div class="flex items-end gap-3">
                         <button
                             type="submit"
                             id="add-to-cart-submit"
-                            @disabled($hasPieceSelector)
+                            @disabled($disableAddToCart)
                             class="inline-flex items-center justify-center rounded-sm border border-gray-900 dark:border-gray-100 bg-gray-900 text-white dark:bg-gray-100 dark:text-gray-900 px-4 py-1.5 text-xs font-medium hover:bg-gray-800 dark:hover:bg-gray-200 disabled:opacity-50 disabled:cursor-not-allowed"
                         >
-                            {{ $hasPieceSelector ? 'Select slab to add' : 'Add to cart' }}
+                            {{ $addToCartLabel }}
                         </button>
 
                         @if(config('features.wishlist', true))
@@ -930,6 +1158,149 @@ document.addEventListener('DOMContentLoaded', function () {
 
         variantSelect.addEventListener('change', syncVariantPrice);
         syncVariantPrice();
+    }
+
+    // ----------------------------
+    // Multi-level variant price sync
+    // ----------------------------
+    const multiVariantRoot = document.getElementById('product-multi-variant-root');
+    if (multiVariantRoot && topPrice) {
+        const hiddenVariantInput = document.getElementById('product-variant-id');
+        const variantSummary = document.getElementById('product-variant-summary');
+        const addButton = document.getElementById('add-to-cart-submit');
+        const attributeSelects = Array.from(multiVariantRoot.querySelectorAll('[data-variant-attribute]'));
+        const variantOptions = @json($variantOptionPayloads);
+        const multiVariantMrpRatio = parseFloat(@json((float) $variantMrpRatio)) || 0;
+        const basePriceText = topPrice.textContent;
+        const baseMrpText = topMrp ? topMrp.textContent : '';
+        const baseSaveAmountText = saveAmount ? saveAmount.textContent : '';
+        const baseSavePctText = savePct ? savePct.textContent : '';
+        const baseSaveVisible = saveCard ? !saveCard.classList.contains('hidden') : false;
+        const baseMrpVisible = topMrp ? !topMrp.classList.contains('hidden') : false;
+
+        function restoreMultiBaseUI() {
+            topPrice.textContent = basePriceText;
+
+            if (topMrp) {
+                topMrp.textContent = baseMrpText;
+                topMrp.classList.toggle('hidden', !baseMrpVisible);
+            }
+
+            if (saveCard && saveAmount && savePct) {
+                saveAmount.textContent = baseSaveAmountText;
+                savePct.textContent = baseSavePctText;
+                saveCard.classList.toggle('hidden', !baseSaveVisible);
+            }
+        }
+
+        function selectedAttributeMap() {
+            const selected = {};
+
+            attributeSelects.forEach(function (select) {
+                const attributeId = String(select.getAttribute('data-variant-attribute') || '');
+                const valueId = String(select.value || '');
+
+                if (attributeId && valueId) {
+                    selected[attributeId] = valueId;
+                }
+            });
+
+            return selected;
+        }
+
+        function allAttributesSelected(selected) {
+            return attributeSelects.every(function (select) {
+                const attributeId = String(select.getAttribute('data-variant-attribute') || '');
+                return Boolean(attributeId && selected[attributeId]);
+            });
+        }
+
+        function variantMatchesSelection(variant, selected) {
+            const attrs = Array.isArray(variant.attributes) ? variant.attributes : [];
+
+            return Object.keys(selected).every(function (attributeId) {
+                return attrs.some(function (attr) {
+                    return String(attr.attribute_id) === String(attributeId)
+                        && String(attr.value_id) === String(selected[attributeId]);
+                });
+            });
+        }
+
+        function optionPossible(attributeId, valueId, selected) {
+            const testSelection = Object.assign({}, selected);
+            testSelection[String(attributeId)] = String(valueId);
+
+            return variantOptions.some(function (variant) {
+                return variant.available && variantMatchesSelection(variant, testSelection);
+            });
+        }
+
+        function refreshOptionAvailability(selected) {
+            attributeSelects.forEach(function (select) {
+                const attributeId = String(select.getAttribute('data-variant-attribute') || '');
+
+                Array.from(select.options).forEach(function (option) {
+                    if (!option.value) {
+                        option.disabled = false;
+                        return;
+                    }
+
+                    option.disabled = !optionPossible(attributeId, option.value, selected);
+                });
+            });
+        }
+
+        function syncMultiVariant() {
+            const selected = selectedAttributeMap();
+            refreshOptionAvailability(selected);
+
+            if (!allAttributesSelected(selected)) {
+                if (hiddenVariantInput) hiddenVariantInput.value = '';
+                if (variantSummary) variantSummary.textContent = 'Choose options to see price and availability.';
+                restoreMultiBaseUI();
+                if (addButton) {
+                    addButton.disabled = true;
+                    addButton.textContent = 'Choose options';
+                }
+                return;
+            }
+
+            const match = variantOptions.find(function (variant) {
+                return variant.available && variantMatchesSelection(variant, selected);
+            });
+
+            if (!match) {
+                if (hiddenVariantInput) hiddenVariantInput.value = '';
+                if (variantSummary) variantSummary.textContent = 'This combination is currently unavailable.';
+                restoreMultiBaseUI();
+                if (addButton) {
+                    addButton.disabled = true;
+                    addButton.textContent = 'Unavailable';
+                }
+                return;
+            }
+
+            if (hiddenVariantInput) hiddenVariantInput.value = match.id;
+
+            const price = parseFloat(match.price || '0') || 0;
+            updateTopPricing(price, price, multiVariantMrpRatio);
+
+            if (variantSummary) {
+                const stockText = match.stock_label ? ' · ' + match.stock_label : '';
+                variantSummary.textContent = match.label + ' · ₹' + price.toFixed(2) + stockText;
+            }
+
+            if (addButton) {
+                addButton.disabled = false;
+                addButton.textContent = 'Add to cart';
+            }
+        }
+
+        attributeSelects.forEach(function (select) {
+            select.addEventListener('change', syncMultiVariant);
+        });
+
+        syncMultiVariant();
     }
 
     // ----------------------------

@@ -12,6 +12,13 @@
 
     $selectedCategoryIds       = $selectedCategoryIds ?? [];
     $selectedAttributeValueIds = $selectedAttributeValueIds ?? [];
+    $transformationSourceProducts = $transformationSourceProducts ?? collect();
+    $selectedSourceProductIds = collect(old('source_product_ids', $selectedSourceProductIds ?? []))
+        ->map(fn($v) => (int) $v)
+        ->filter()
+        ->values()
+        ->all();
+    $producesProducts = $producesProducts ?? collect();
 
     $oldB2CIncludes = old('b2c_price_includes_gst', $product->b2c_price_includes_gst ?? true);
     $b2cIncludesGst = (int) $oldB2CIncludes === 1 || $oldB2CIncludes === true || $oldB2CIncludes === '1';
@@ -20,6 +27,12 @@
     $b2bIncludesGst = (int) $oldB2BIncludes === 1 || $oldB2BIncludes === true || $oldB2BIncludes === '1';
 
     $specialAudience = old('special_audience', $product->special_audience ?? 'b2c');
+    $selectedProductType = old('type', $product->type ?? 'simple');
+    $selectedPackType = old('pack_type', $product->pack_type ?? 'quantity');
+    $selectedSellUnit = old('sell_unit', $product->sell_unit ?? 'piece');
+    $isSelectedVariableProduct = (string) $selectedProductType === 'variable';
+    $isSelectedPhysicalChoice = ! $isSelectedVariableProduct
+        && ((string) $selectedPackType === 'variable_weight' || (string) $selectedSellUnit === 'kg');
 
     $selectedHsnId    = old('hsn_code_id', $product->hsn_code_id ?? '');
     $selectedHsnIdInt = $selectedHsnId !== '' ? (int) $selectedHsnId : null;
@@ -31,11 +44,15 @@
     // SELL PRICE (admin input) - stored in DB as base_price EXCL GST
     $sellInput = old('base_price');
     if ($sellInput === null) {
-        $storedSellExcl = (float) ($product->base_price ?? 0);
-        if ($b2cIncludesGst) {
-            $sellInput = $divisor > 0 ? round($storedSellExcl * $divisor, 2) : round($storedSellExcl, 2);
+        if (($product->base_price ?? null) === null || ($isSelectedVariableProduct && (float) ($product->base_price ?? 0) <= 0)) {
+            $sellInput = '';
         } else {
-            $sellInput = round($storedSellExcl, 2);
+            $storedSellExcl = (float) ($product->base_price ?? 0);
+            if ($b2cIncludesGst) {
+                $sellInput = $divisor > 0 ? round($storedSellExcl * $divisor, 2) : round($storedSellExcl, 2);
+            } else {
+                $sellInput = round($storedSellExcl, 2);
+            }
         }
     }
 
@@ -44,7 +61,7 @@
     if ($mrpInput === null) {
         $storedMrpExcl = (float) ($product->mrp_price ?? 0);
 
-        if (($product->mrp_price ?? null) === null) {
+        if (($product->mrp_price ?? null) === null || (($isSelectedVariableProduct || $isSelectedPhysicalChoice) && (float) ($product->mrp_price ?? 0) <= 0)) {
             $mrpInput = '';
         } else {
             if ($b2cIncludesGst) {
@@ -87,7 +104,23 @@
     $weight = old('product_weight', $product->product_weight ?? '');
     $piecesPerPack = old('pieces_per_pack', $product->pieces_per_pack ?? '');
     $inventoryRole = old('inventory_role', $product->inventory_role ?? (($product->is_active ?? true) ? 'saleable' : 'internal'));
-    $packType = old('pack_type', $product->pack_type ?? 'quantity');
+    $packType = $selectedPackType;
+
+    $storageProfileOptions = \App\Models\Product::storageProfileOptions();
+    $storageProfileTemplates = \App\Models\Product::storageProfileTemplates();
+    $selectedStorageProfile = \App\Models\Product::normalizeStorageProfile(
+        old('storage_profile', $product->storage_profile ?? \App\Models\Product::DEFAULT_STORAGE_PROFILE)
+    );
+    $storageGuidanceValue = old('storage_guidance');
+    if ($storageGuidanceValue === null) {
+        $storageGuidanceValue = $product->storage_guidance
+            ?? \App\Models\Product::storageGuidanceTextForProfile($selectedStorageProfile);
+    }
+    $deliverySupportValue = old('delivery_support');
+    if ($deliverySupportValue === null) {
+        $deliverySupportValue = $product->delivery_support
+            ?? \App\Models\Product::deliverySupportTextForProfile($selectedStorageProfile);
+    }
 
     $hsnManageUrl = \Illuminate\Support\Facades\Route::has('admin.hsn-codes.index')
         ? route('admin.hsn-codes.index')
@@ -145,7 +178,7 @@
                         Product setup
                     </h2>
                     <p class="text-[11px] text-gray-500 dark:text-gray-400">
-                        Save inactive drafts while price and weight are still pending; active products still require complete commercial data.
+                        Save inactive drafts while pricing, variants or weight are still pending. Active simple products need parent prices; variant products use variant prices.
                     </p>
                 </div>
 
@@ -222,6 +255,39 @@
                     @error('description') <p class="mt-1 text-[11px] text-red-600">{{ $message }}</p> @enderror
                 </div>
 
+                <div class="md:col-span-3">
+                    <div class="flex flex-col gap-2 rounded-lg border border-gray-200 bg-gray-50 p-3 dark:border-gray-800 dark:bg-gray-950/60 sm:flex-row sm:items-end sm:justify-between">
+                        <div class="flex-1">
+                            <label class="block text-[12px] font-medium text-gray-700 dark:text-gray-300">
+                                Storage profile <span class="text-red-500">*</span>
+                            </label>
+                            <select
+                                name="storage_profile"
+                                class="{{ $select }}"
+                                data-storage-profile
+                                required
+                            >
+                                @foreach($storageProfileOptions as $profileValue => $profileLabel)
+                                    <option value="{{ $profileValue }}" @selected($selectedStorageProfile === $profileValue)>
+                                        {{ $profileLabel }}
+                                    </option>
+                                @endforeach
+                            </select>
+                            <div class="{{ $hint }}">
+                                Frozen is selected by default. Changing the profile can auto-fill the guidance below; both text fields remain editable.
+                            </div>
+                            @error('storage_profile') <p class="mt-1 text-[11px] text-red-600">{{ $message }}</p> @enderror
+                        </div>
+                        <button
+                            type="button"
+                            class="rounded-sm border border-gray-300 bg-white px-3 py-2 text-[12px] font-medium text-gray-700 hover:bg-gray-100 disabled:cursor-not-allowed disabled:opacity-50 dark:border-gray-700 dark:bg-gray-900 dark:text-gray-200 dark:hover:bg-gray-800"
+                            data-storage-profile-apply
+                        >
+                            Use profile text
+                        </button>
+                    </div>
+                </div>
+
                 <div class="md:col-span-3 grid gap-4 md:grid-cols-2">
                     <div>
                         <label class="block text-[12px] font-medium text-gray-700 dark:text-gray-300">
@@ -232,7 +298,8 @@
                             rows="5"
                             class="{{ $input }}"
                             placeholder="One guidance point per line"
-                        >{{ old('storage_guidance', $product->storage_guidance ?? implode("\n", \App\Models\Product::DEFAULT_STORAGE_GUIDANCE)) }}</textarea>
+                            data-storage-guidance
+                        >{{ $storageGuidanceValue }}</textarea>
                         <div class="{{ $hint }}">Shown in the product page Storage &amp; Delivery tab. Add one bullet point per line.</div>
                         @error('storage_guidance') <p class="mt-1 text-[11px] text-red-600">{{ $message }}</p> @enderror
                     </div>
@@ -246,7 +313,8 @@
                             rows="5"
                             class="{{ $input }}"
                             placeholder="One delivery/support point per line"
-                        >{{ old('delivery_support', $product->delivery_support ?? implode("\n", \App\Models\Product::DEFAULT_DELIVERY_SUPPORT)) }}</textarea>
+                            data-delivery-support
+                        >{{ $deliverySupportValue }}</textarea>
                         <div class="{{ $hint }}">Shown in the product page Storage &amp; Delivery tab. Add one bullet point per line.</div>
                         @error('delivery_support') <p class="mt-1 text-[11px] text-red-600">{{ $message }}</p> @enderror
                     </div>
@@ -254,20 +322,8 @@
 
             </div>
 
-            {{-- Type + HSN + Country --}}
-            <div class="grid gap-4 md:grid-cols-3">
-                <div>
-                    <label class="block text-[12px] font-medium text-gray-700 dark:text-gray-300">
-                        Type <span class="text-red-500">*</span>
-                    </label>
-                    <select name="type" class="{{ $select }}" required>
-                        <option value="simple" @selected(old('type', $product->type ?? 'simple') === 'simple')>Simple</option>
-                        <option value="variable" @selected(old('type', $product->type ?? 'simple') === 'variable')>Variable pack product</option>
-                    </select>
-                    <p class="{{ $hint }}">Use variable pack product for Dimsum 10 pcs / 20 pcs style options. Use simple for slabs, single packs, and normal products.</p>
-                    @error('type') <p class="mt-1 text-[11px] text-red-600">{{ $message }}</p> @enderror
-                </div>
-
+            {{-- Tax + origin --}}
+            <div class="grid gap-4 md:grid-cols-2">
                 <div>
                     <label class="block text-[12px] font-medium text-gray-700 dark:text-gray-300">
                         HSN Code <span class="text-red-500">*</span>
@@ -318,10 +374,12 @@
             </div>
 
             {{-- Pricing --}}
-            <div class="grid gap-4 md:grid-cols-4">
+            <div class="grid gap-4 md:grid-cols-3">
                 <div>
                     <label class="block text-[12px] font-medium text-gray-700 dark:text-gray-300">
-                        MRP (₹) <span class="text-red-500">*</span> <span class="text-[10px] font-normal text-gray-400">when active</span>
+                        <span data-mrp-label-text>{{ $isSelectedPhysicalChoice ? 'MRP / kg (₹)' : ($isSelectedVariableProduct ? 'Parent MRP (₹)' : 'MRP (₹)') }}</span>
+                        <span data-mrp-required-indicator class="text-red-500 {{ ($isSelectedVariableProduct || $isSelectedPhysicalChoice) ? 'hidden' : '' }}">*</span>
+                        <span data-mrp-mode-hint class="text-[10px] font-normal text-gray-400">{{ $isSelectedVariableProduct ? 'variant-level only' : ($isSelectedPhysicalChoice ? 'optional for physical choice' : 'active direct-buy products only') }}</span>
                     </label>
                     <input
                         id="mrp_input"
@@ -331,15 +389,17 @@
                         name="mrp_price"
                         value="{{ $mrpInput }}"
                         class="{{ $input }}"
-                        placeholder="Maximum retail price"
+                        placeholder="{{ $isSelectedPhysicalChoice ? 'Optional MRP per kg' : 'Maximum retail price' }}"
                     >
-                    <div class="{{ $hint }}">Leave blank only while the product is an inactive draft.</div>
+                    <div class="{{ $hint }}" data-mrp-hint>{{ $isSelectedPhysicalChoice ? 'Optional for physical-choice products such as cheese blocks. Enter only if you want to show a per-kg MRP; exact block weights come from inward stock.' : 'Required for active direct-buy products. For variant-choice products such as prawns, leave blank here and enter MRP on each variant.' }}</div>
                     @error('mrp_price') <p class="mt-1 text-[11px] text-red-600">{{ $message }}</p> @enderror
                 </div>
 
                 <div>
                     <label class="block text-[12px] font-medium text-gray-700 dark:text-gray-300">
-                        Sell price (₹) <span class="text-red-500">*</span> <span class="text-[10px] font-normal text-gray-400">when active</span>
+                        <span data-sell-label-text>{{ $isSelectedPhysicalChoice ? 'Sell price / kg (₹)' : ($isSelectedVariableProduct ? 'Parent sell price (₹)' : 'Sell price (₹)') }}</span>
+                        <span data-sell-required-indicator class="text-red-500 {{ $isSelectedVariableProduct ? 'hidden' : '' }}">*</span>
+                        <span data-sell-mode-hint class="text-[10px] font-normal text-gray-400">{{ $isSelectedVariableProduct ? 'variant-level only' : ($isSelectedPhysicalChoice ? 'required per kg' : 'active direct-buy products only') }}</span>
                     </label>
                     <input
                         id="price_input"
@@ -349,9 +409,9 @@
                         name="base_price"
                         value="{{ $sellInput }}"
                         class="{{ $input }}"
-                        placeholder="Actual selling price"
+                        placeholder="{{ $isSelectedPhysicalChoice ? 'Selling rate per kg' : 'Actual selling price' }}"
                     >
-                    <div class="{{ $hint }}">Leave blank only while the product is an inactive draft.</div>
+                    <div class="{{ $hint }}" data-sell-hint>{{ $isSelectedPhysicalChoice ? 'Required per kg for active physical-choice products. Individual cheese block/slab weights are entered later from vendor inward stock.' : 'Required for active direct-buy products. Variant-choice products use the sell price saved on each variant.' }}</div>
                     @error('base_price') <p class="mt-1 text-[11px] text-red-600">{{ $message }}</p> @enderror
                 </div>
 
@@ -367,49 +427,6 @@
                     @error('b2c_price_includes_gst') <p class="mt-1 text-[11px] text-red-600">{{ $message }}</p> @enderror
                 </div>
 
-                <div>
-                    <label class="block text-[12px] font-medium text-gray-700 dark:text-gray-300">
-                        Product / pack weight (kg) <span class="text-red-500">*</span> <span class="text-[10px] font-normal text-gray-400">when needed</span>
-                    </label>
-                    <input
-                        type="number"
-                        name="product_weight"
-                        step="0.001"
-                        min="0"
-                        value="{{ $weight }}"
-                        class="{{ $input }}"
-                        placeholder="e.g. 0.500 for 500g pack"
-                    >
-                    <div class="{{ $hint }}">For fixed-weight packs, enter the pack weight. For by-kg products, this can be the target/average pack weight.</div>
-                    @error('product_weight') <p class="mt-1 text-[11px] text-red-600">{{ $message }}</p> @enderror
-                </div>
-            </div>
-
-            <div class="grid gap-4 md:grid-cols-3">
-                <div>
-                    <label class="block text-[12px] font-medium text-gray-700 dark:text-gray-300">Pack / sale type</label>
-                    <select name="pack_type" class="{{ $select }}">
-                        <option value="quantity" @selected($packType === 'quantity')>Quantity item</option>
-                        <option value="bulk" @selected($packType === 'bulk')>Bulk/internal stock</option>
-                        <option value="fixed_weight_pack" @selected($packType === 'fixed_weight_pack')>Fixed weight pack</option>
-                        <option value="fixed_piece_pack" @selected($packType === 'fixed_piece_pack')>Fixed piece pack</option>
-                        <option value="variable_weight" @selected($packType === 'variable_weight')>Variable-weight prepacked / by kg</option>
-                    </select>
-                    <div class="{{ $hint }}">This is used by vendor inward and create pack stock; the frontend remains product-based.</div>
-                    @error('pack_type') <p class="mt-1 text-[11px] text-red-600">{{ $message }}</p> @enderror
-                </div>
-
-                <div>
-                    <label class="block text-[12px] font-medium text-gray-700 dark:text-gray-300">Pieces per pack</label>
-                    <input type="number" name="pieces_per_pack" step="0.001" min="0" value="{{ $piecesPerPack }}" class="{{ $input }}" placeholder="e.g. 10 for dimsum">
-                    <div class="{{ $hint }}">Use for dimsum, kebabs, rolls and other fixed piece packs.</div>
-                    @error('pieces_per_pack') <p class="mt-1 text-[11px] text-red-600">{{ $message }}</p> @enderror
-                </div>
-
-                <div class="rounded-sm border border-gray-200 dark:border-gray-800 bg-gray-50 dark:bg-gray-950/40 px-4 py-3 text-[12px] text-gray-600 dark:text-gray-300">
-                    <div class="font-semibold text-gray-900 dark:text-gray-50">Simple rule</div>
-                    <div class="mt-1 text-[11px] text-gray-500 dark:text-gray-400">If the customer buys it, create it as a product. Use inactive products only for raw/inward stock.</div>
-                </div>
             </div>
 
             {{-- Standard B2B pricing --}}
@@ -436,7 +453,7 @@
                     <input type="number" step="0.001" min="0.001" name="standard_b2b_min_order_quantity"
                            value="{{ old('standard_b2b_min_order_quantity', $product->standard_b2b_min_order_quantity ?? '') }}"
                            class="{{ $input }}" placeholder="Default 1 if empty">
-                    <div class="{{ $hint }}">Customer/sellable-unit MOQ overrides this when configured.</div>
+                    <div class="{{ $hint }}">Customer-specific or variant-level MOQ overrides this when configured.</div>
                     @error('standard_b2b_min_order_quantity') <p class="mt-1 text-[11px] text-red-600">{{ $message }}</p> @enderror
                 </div>
             </div>
@@ -528,7 +545,7 @@
         <summary class="px-5 py-4 flex items-center justify-between gap-3 cursor-pointer">
             <div>
                 <div class="text-sm font-semibold text-gray-900 dark:text-gray-50">Optional details</div>
-                <div class="text-[11px] text-gray-500 dark:text-gray-400">Slug, vendor, barcode, unit and extra product data.</div>
+                <div class="text-[11px] text-gray-500 dark:text-gray-400">Slug, vendor, barcode and product transformation relationships.</div>
             </div>
             <span class="text-[12px] text-gray-500 dark:text-gray-400 select-none">▾</span>
         </summary>
@@ -548,17 +565,6 @@
                 </div>
 
                 <div>
-                    <label class="block text-[12px] font-medium text-gray-700 dark:text-gray-300">Product role</label>
-                    <select name="inventory_role" class="{{ $select }}">
-                        <option value="saleable" @selected($inventoryRole === 'saleable')>Saleable frontend product</option>
-                        <option value="internal" @selected($inventoryRole === 'internal')>Internal / inward stock only</option>
-                        <option value="both" @selected($inventoryRole === 'both')>Both inward and saleable</option>
-                    </select>
-                    <div class="{{ $hint }}">Use inactive/internal products for raw stock such as Full Pork Belly. Customer-facing packs remain normal saleable products.</div>
-                    @error('inventory_role') <p class="mt-1 text-[11px] text-red-600">{{ $message }}</p> @enderror
-                </div>
-
-                <div>
                     <label class="block text-[12px] font-medium text-gray-700 dark:text-gray-300">Vendor</label>
                     <select name="vendor_id" class="{{ $select }}">
                         <option value="">— None —</option>
@@ -571,15 +577,46 @@
                     @error('vendor_id') <p class="mt-1 text-[11px] text-red-600">{{ $message }}</p> @enderror
                 </div>
 
+            </div>
+
+            <div class="rounded-sm border border-gray-200 dark:border-gray-800 bg-gray-50 dark:bg-gray-950/40 p-4 space-y-3">
                 <div>
-                    <label class="block text-[12px] font-medium text-gray-700 dark:text-gray-300">Sell as</label>
-                    <select name="sell_unit" class="{{ $select }}">
-                        <option value="piece" @selected(old('sell_unit', $product->sell_unit ?? 'piece') === 'piece')>Quantity (per piece / pack)</option>
-                        <option value="kg" @selected(old('sell_unit', $product->sell_unit ?? 'piece') === 'kg')>Weight (per kg)</option>
-                        <option value="pack" @selected(old('sell_unit', $product->sell_unit ?? 'piece') === 'pack')>Pack</option>
-                    </select>
-                    <div class="{{ $hint }}">Controls ₹/pc vs ₹/kg display and cart behaviour.</div>
-                    @error('sell_unit') <p class="mt-1 text-[11px] text-red-600">{{ $message }}</p> @enderror
+                    <div class="text-sm font-semibold text-gray-900 dark:text-gray-50">Product transformation relationships</div>
+                    <div class="{{ $hint }}">Use this to document source products such as Pork Belly Full → Pork Slice Pack, Cheese Block → Cheese Portions, or Dimsum Master Box → Dimsum packs. This does not move stock by itself.</div>
+                </div>
+
+                <div class="grid gap-4 md:grid-cols-2">
+                    <div>
+                        <label class="block text-[12px] font-medium text-gray-700 dark:text-gray-300">Produced from product(s)</label>
+                        <select name="source_product_ids[]" multiple size="7" class="{{ $select }}">
+                            @foreach($transformationSourceProducts as $sourceProduct)
+                                <option value="{{ $sourceProduct->id }}" @selected(in_array((int) $sourceProduct->id, $selectedSourceProductIds, true))>
+                                    {{ $sourceProduct->name }}{{ $sourceProduct->sku ? ' · '.$sourceProduct->sku : '' }}
+                                </option>
+                            @endforeach
+                        </select>
+                        <div class="{{ $hint }}">Hold Cmd/Ctrl to select multiple sources. Example: Pork Slice Pack can be produced from Full Belly and from Pork Slab.</div>
+                        @error('source_product_ids') <p class="mt-1 text-[11px] text-red-600">{{ $message }}</p> @enderror
+                        @error('source_product_ids.*') <p class="mt-1 text-[11px] text-red-600">{{ $message }}</p> @enderror
+                    </div>
+
+                    <div>
+                        <div class="text-[12px] font-medium text-gray-700 dark:text-gray-300">Produces</div>
+                        @if($isEdit && $producesProducts->isNotEmpty())
+                            <div class="mt-1 rounded-sm border border-gray-200 dark:border-gray-800 bg-white dark:bg-gray-950 divide-y divide-gray-100 dark:divide-gray-800">
+                                @foreach($producesProducts as $producedProduct)
+                                    <a href="{{ route('admin.products.edit', $producedProduct) }}" class="block px-3 py-2 text-[12px] text-gray-700 dark:text-gray-200 hover:bg-gray-50 dark:hover:bg-gray-900">
+                                        {{ $producedProduct->name }}{{ $producedProduct->sku ? ' · '.$producedProduct->sku : '' }}
+                                    </a>
+                                @endforeach
+                            </div>
+                        @else
+                            <div class="mt-1 rounded-sm border border-dashed border-gray-300 dark:border-gray-700 px-3 py-3 text-[11px] text-gray-500 dark:text-gray-400">
+                                No products currently point to this product as a source.
+                            </div>
+                        @endif
+                        <div class="{{ $hint }}">This badge is automatic. If another product selects this one as a source, it becomes a Raw Source Product in the product list.</div>
+                    </div>
                 </div>
             </div>
 
@@ -598,12 +635,12 @@
         </div>
     </details>
 
-    {{-- ATTRIBUTES --}}
+    {{-- VARIANT OPTIONS --}}
     <details class="fb-acc {{ $card }}">
         <summary class="px-5 py-4 flex items-center justify-between gap-3 cursor-pointer">
             <div>
-                <div class="text-sm font-semibold text-gray-900 dark:text-gray-50">Attributes & values</div>
-                <div class="text-[11px] text-gray-500 dark:text-gray-400">Optional attribute mapping for filters and variants.</div>
+                <div class="text-sm font-semibold text-gray-900 dark:text-gray-50">Variant options</div>
+                <div class="text-[11px] text-gray-500 dark:text-gray-400">Choose the option values allowed for variant-choice products such as Dimsum and Prawns.</div>
             </div>
             <span class="text-[12px] text-gray-500 dark:text-gray-400 select-none">▾</span>
         </summary>
@@ -611,27 +648,43 @@
         <div class="px-5 pb-5">
             @if($attributes->isEmpty())
                 <div class="rounded-sm border border-gray-200 dark:border-gray-800 bg-gray-50 dark:bg-gray-950/40 px-4 py-3 text-[12px] text-gray-500 dark:text-gray-400">
-                    No attributes defined yet.
+                    No variant option groups defined yet.
                     @if(\Illuminate\Support\Facades\Route::has('admin.attributes.index'))
-                        <a href="{{ route('admin.attributes.index') }}" class="underline">Manage attributes</a>.
+                        <a href="{{ route('admin.attributes.index') }}" class="underline">Manage variant options</a>.
                     @endif
                 </div>
             @else
                 <div class="space-y-3">
                     @foreach($attributes as $attribute)
                         <div class="rounded-sm border border-gray-200 dark:border-gray-800 bg-gray-50 dark:bg-gray-950/40 p-3">
-                            <div class="flex items-center justify-between">
-                                <div class="text-[12px] font-semibold text-gray-900 dark:text-gray-50">
-                                    {{ $attribute->display_name ?? $attribute->name }}
+                            <div class="flex items-center justify-between gap-3">
+                                <div>
+                                    <div class="text-[12px] font-semibold text-gray-900 dark:text-gray-50">
+                                        {{ $attribute->display_name ?? $attribute->name }}
+                                    </div>
+                                    <div class="text-[10px] text-gray-400">{{ ucfirst($attribute->frontend_type) }}</div>
                                 </div>
-                                <div class="text-[10px] text-gray-400">{{ ucfirst($attribute->frontend_type) }}</div>
+
+                                <div class="flex items-center gap-2 text-[10px]">
+                                    @if(\Illuminate\Support\Facades\Route::has('admin.variant-option-values.index'))
+                                        <a href="{{ route('admin.variant-option-values.index', ['attribute_id' => $attribute->id]) }}"
+                                           class="text-gray-500 underline hover:text-gray-800 dark:hover:text-gray-200">
+                                            Manage values
+                                        </a>
+                                    @elseif(\Illuminate\Support\Facades\Route::has('admin.attributes.values.index'))
+                                        <a href="{{ route('admin.attributes.values.index', $attribute) }}"
+                                           class="text-gray-500 underline hover:text-gray-800 dark:hover:text-gray-200">
+                                            Manage values
+                                        </a>
+                                    @endif
+                                </div>
                             </div>
 
                             @if($attribute->values->isEmpty())
                                 <div class="mt-1 text-[12px] text-gray-500 dark:text-gray-400">
-                                    No values defined.
+                                    No option values defined.
                                     @if(\Illuminate\Support\Facades\Route::has('admin.attributes.values.index'))
-                                        <a href="{{ route('admin.attributes.values.index', $attribute) }}" class="underline">Add values</a>.
+                                        <a href="{{ route('admin.attributes.values.index', $attribute) }}" class="underline">Add option values</a>.
                                     @endif
                                 </div>
                             @else
@@ -708,50 +761,16 @@
                     <div class="{{ $hint }}">Used when inward or output lots are created.</div>
                     @error('lot_stage_default') <p class="mt-1 text-[11px] text-red-600">{{ $message }}</p> @enderror
                 </div>
-
-                <div class="md:col-span-2">
-                    <div class="grid gap-2 md:grid-cols-2">
-                        <input type="hidden" name="inventory_is_saleable" value="0">
-                        <label class="rounded-sm border border-gray-200 dark:border-gray-800 bg-gray-50 dark:bg-gray-950/40 px-3 py-2 flex items-center gap-2">
-                            <input type="checkbox"
-                                   name="inventory_is_saleable"
-                                   value="1"
-                                   class="rounded border-gray-300 dark:border-gray-700"
-                                   @checked(old('inventory_is_saleable', $product->inventory_is_saleable ?? true))>
-                            <span class="text-[12px] text-gray-800 dark:text-gray-200">Saleable inventory</span>
-                        </label>
-
-                        <input type="hidden" name="inventory_can_repack" value="0">
-                        <label class="rounded-sm border border-gray-200 dark:border-gray-800 bg-gray-50 dark:bg-gray-950/40 px-3 py-2 flex items-center gap-2">
-                            <input type="checkbox"
-                                   name="inventory_can_repack"
-                                   value="1"
-                                   class="rounded border-gray-300 dark:border-gray-700"
-                                   @checked(old('inventory_can_repack', $product->inventory_can_repack ?? false))>
-                            <span class="text-[12px] text-gray-800 dark:text-gray-200">Can be used in production / repack</span>
-                        </label>
-                    </div>
-
-                    <div class="{{ $hint }} mt-3">
-                        Examples:
-                        <br>• Whole belly / salmon side → <strong>Raw + saleable + repackable</strong>
-                        <br>• Slab pack → <strong>Slab + saleable + repackable</strong>
-                        <br>• Slice pack → <strong>Slice + saleable + not repackable</strong>
-                    </div>
-
-                    @error('inventory_is_saleable') <p class="mt-1 text-[11px] text-red-600">{{ $message }}</p> @enderror
-                    @error('inventory_can_repack') <p class="mt-1 text-[11px] text-red-600">{{ $message }}</p> @enderror
-                </div>
             </div>
         </div>
     </details>
 
     {{-- VISIBILITY --}}
-    <details class="fb-acc {{ $card }}">
+    <details class="fb-acc {{ $card }}" open>
         <summary class="px-5 py-4 flex items-center justify-between gap-3 cursor-pointer">
             <div>
                 <div class="text-sm font-semibold text-gray-900 dark:text-gray-50">Visibility & storefront options</div>
-                <div class="text-[11px] text-gray-500 dark:text-gray-400">Store display and merchandising flags.</div>
+                <div class="text-[11px] text-gray-500 dark:text-gray-400">Storefront behaviour, publish state and merchandising flags.</div>
             </div>
             <span class="text-[12px] text-gray-500 dark:text-gray-400 select-none">▾</span>
         </summary>
@@ -763,10 +782,156 @@
             <input type="hidden" name="is_new" value="0">
             <input type="hidden" name="is_special" value="0">
             <input type="hidden" name="is_active" value="0">
+            <input type="hidden" name="inventory_is_saleable" value="0">
+            <input type="hidden" name="inventory_can_repack" value="0">
+
+            <div class="rounded-sm border border-gray-200 dark:border-gray-800 bg-gray-50 dark:bg-gray-950/40 p-4 space-y-4">
+                <div>
+                    <div class="text-sm font-semibold text-gray-900 dark:text-gray-50">Storefront behaviour setup</div>
+                    <div class="{{ $hint }}">These fields decide whether the product behaves like Dimsum/Prawns, Pork/Salmon slabs, a simple retail pack, or an internal source item.</div>
+                </div>
+
+                <div class="rounded-sm border border-amber-200 bg-amber-50/70 p-3 dark:border-amber-900/60 dark:bg-amber-950/20">
+                    <div class="text-[12px] font-semibold text-amber-900 dark:text-amber-100">Quick setup presets</div>
+                    <div class="mt-1 text-[11px] text-amber-800/80 dark:text-amber-200/80">
+                        Optional helper only. Presets fill the storefront, inventory and pricing fields below; you can still adjust any value before saving.
+                    </div>
+                    <div class="mt-3 grid gap-2 sm:grid-cols-2 lg:grid-cols-4" data-product-presets>
+                        <button type="button" data-product-preset="direct" class="rounded-sm border border-amber-200 bg-white px-3 py-2 text-left text-[11px] hover:bg-amber-50 dark:border-amber-900 dark:bg-gray-950 dark:hover:bg-amber-950/30">
+                            <span class="block font-semibold text-gray-900 dark:text-gray-50">Direct buy</span>
+                            <span class="block text-gray-500 dark:text-gray-400">One product, one price, normal cart button.</span>
+                        </button>
+                        <button type="button" data-product-preset="variant" class="rounded-sm border border-amber-200 bg-white px-3 py-2 text-left text-[11px] hover:bg-amber-50 dark:border-amber-900 dark:bg-gray-950 dark:hover:bg-amber-950/30">
+                            <span class="block font-semibold text-gray-900 dark:text-gray-50">Variant choice</span>
+                            <span class="block text-gray-500 dark:text-gray-400">Dimsum, prawns, pack/dropdown products.</span>
+                        </button>
+                        <button type="button" data-product-preset="physical" class="rounded-sm border border-amber-200 bg-white px-3 py-2 text-left text-[11px] hover:bg-amber-50 dark:border-amber-900 dark:bg-gray-950 dark:hover:bg-amber-950/30">
+                            <span class="block font-semibold text-gray-900 dark:text-gray-50">Physical choice</span>
+                            <span class="block text-gray-500 dark:text-gray-400">Pork, salmon, tuna, cheese blocks by exact weight.</span>
+                        </button>
+                        <button type="button" data-product-preset="internal" class="rounded-sm border border-amber-200 bg-white px-3 py-2 text-left text-[11px] hover:bg-amber-50 dark:border-amber-900 dark:bg-gray-950 dark:hover:bg-amber-950/30">
+                            <span class="block font-semibold text-gray-900 dark:text-gray-50">Internal source</span>
+                            <span class="block text-gray-500 dark:text-gray-400">Master boxes/raw stock used only for Transform Stock.</span>
+                        </button>
+                    </div>
+                </div>
+
+                <div class="grid gap-4 md:grid-cols-3">
+                    <div>
+                        <label class="block text-[12px] font-medium text-gray-700 dark:text-gray-300">
+                            Storefront experience <span class="text-red-500">*</span>
+                        </label>
+                        <select name="type" class="{{ $select }}" required data-storefront-type>
+                            <option value="simple" @selected($selectedProductType === 'simple')>Direct buy / physical choice product</option>
+                            <option value="variable" @selected($selectedProductType === 'variable')>Variant choice product</option>
+                        </select>
+                        <p class="{{ $hint }}">Variant choice is for Dimsum/Prawns. Direct buy also covers physical-choice products such as Pork Belly, Salmon, Tuna and cheese blocks.</p>
+                        @error('type') <p class="mt-1 text-[11px] text-red-600">{{ $message }}</p> @enderror
+                    </div>
+
+                    <div>
+                        <label class="block text-[12px] font-medium text-gray-700 dark:text-gray-300">Inventory / stock basis</label>
+                        <select name="pack_type" class="{{ $select }}" data-pack-type>
+                            <option value="quantity" @selected($packType === 'quantity')>Finished quantity / pack stock</option>
+                            <option value="bulk" @selected($packType === 'bulk')>Bulk / internal source stock</option>
+                            <option value="fixed_weight_pack" @selected($packType === 'fixed_weight_pack')>Fixed weight finished pack</option>
+                            <option value="fixed_piece_pack" @selected($packType === 'fixed_piece_pack')>Fixed piece finished pack</option>
+                            <option value="variable_weight" @selected($packType === 'variable_weight')>Physical choice / catchweight pieces</option>
+                        </select>
+                        <div class="{{ $hint }}">This is the stock logic behind the product. It does not create variants automatically.</div>
+                        @error('pack_type') <p class="mt-1 text-[11px] text-red-600">{{ $message }}</p> @enderror
+                    </div>
+
+                    <div>
+                        <label class="block text-[12px] font-medium text-gray-700 dark:text-gray-300">Storefront / inward role</label>
+                        <select name="inventory_role" class="{{ $select }}" data-inventory-role>
+                            <option value="saleable" @selected($inventoryRole === 'saleable')>Customer-facing product</option>
+                            <option value="internal" @selected($inventoryRole === 'internal')>Internal source only</option>
+                            <option value="both" @selected($inventoryRole === 'both')>Both customer-facing and inward source</option>
+                        </select>
+                        <div class="{{ $hint }}">Use internal for master boxes/raw stock that should not be sold directly.</div>
+                        @error('inventory_role') <p class="mt-1 text-[11px] text-red-600">{{ $message }}</p> @enderror
+                    </div>
+                </div>
+
+                <div class="grid gap-4 md:grid-cols-4">
+                    <div>
+                        <label class="block text-[12px] font-medium text-gray-700 dark:text-gray-300">Pricing unit</label>
+                        <select name="sell_unit" class="{{ $select }}" data-sell-unit>
+                            <option value="piece" @selected($selectedSellUnit === 'piece')>Quantity / piece</option>
+                            <option value="pack" @selected($selectedSellUnit === 'pack')>Pack</option>
+                            <option value="kg" @selected($selectedSellUnit === 'kg')>Weight / kg</option>
+                        </select>
+                        <div class="{{ $hint }}">Controls ₹/unit labels and kg-based slab pricing.</div>
+                        @error('sell_unit') <p class="mt-1 text-[11px] text-red-600">{{ $message }}</p> @enderror
+                    </div>
+
+                    <div>
+                        <label class="block text-[12px] font-medium text-gray-700 dark:text-gray-300">
+                            Product / pack weight (kg)
+                        </label>
+                        <input
+                            type="number"
+                            name="product_weight"
+                            step="0.001"
+                            min="0"
+                            value="{{ $weight }}"
+                            class="{{ $input }}"
+                            placeholder="e.g. 0.500 for 500g pack"
+                        >
+                        <div class="{{ $hint }}" data-product-weight-hint>{{ $isSelectedPhysicalChoice ? 'For physical-choice products such as cheese blocks, leave this blank. Enter each real block/slab weight from vendor inward stock.' : 'Use for fixed-weight packs or a direct-buy catchweight item with one known weight. Slab-selector products can leave this blank and use inventory-piece weights.' }}</div>
+                        @error('product_weight') <p class="mt-1 text-[11px] text-red-600">{{ $message }}</p> @enderror
+                    </div>
+
+                    <div>
+                        <label class="block text-[12px] font-medium text-gray-700 dark:text-gray-300">Pieces per pack</label>
+                        <input type="number" name="pieces_per_pack" step="0.001" min="0" value="{{ $piecesPerPack }}" class="{{ $input }}" placeholder="e.g. 10 for dimsum">
+                        <div class="{{ $hint }}">Use on product only for fixed piece packs. Variant products manage pack pieces on variants.</div>
+                        @error('pieces_per_pack') <p class="mt-1 text-[11px] text-red-600">{{ $message }}</p> @enderror
+                    </div>
+
+                    <div id="product-behaviour-guide" class="rounded-sm border border-gray-200 dark:border-gray-800 bg-white dark:bg-gray-950 px-4 py-3 text-[11px] text-gray-600 dark:text-gray-300" aria-live="polite">
+                        Select the storefront experience and inventory basis to see the recommended setup.
+                    </div>
+                </div>
+
+                <div class="grid gap-2 md:grid-cols-2">
+                    <label class="rounded-sm border border-gray-200 dark:border-gray-800 bg-white dark:bg-gray-950 px-3 py-2 flex items-start gap-2">
+                        <input type="checkbox"
+                               name="inventory_is_saleable"
+                               value="1"
+                               data-inventory-saleable
+                               class="mt-0.5 rounded border-gray-300 dark:border-gray-700"
+                               @checked(old('inventory_is_saleable', $product->inventory_is_saleable ?? true))>
+                        <span>
+                            <span class="block text-[12px] text-gray-800 dark:text-gray-200">Inventory lots/pieces can be sold directly</span>
+                            <span class="block text-[10px] text-gray-500 dark:text-gray-400">Use for Pork Belly, Salmon, Tuna, Black Cod and cheese blocks where customers choose exact pieces.</span>
+                        </span>
+                    </label>
+
+                    <label class="rounded-sm border border-gray-200 dark:border-gray-800 bg-white dark:bg-gray-950 px-3 py-2 flex items-start gap-2">
+                        <input type="checkbox"
+                               name="inventory_can_repack"
+                               value="1"
+                               data-inventory-repack
+                               class="mt-0.5 rounded border-gray-300 dark:border-gray-700"
+                               @checked(old('inventory_can_repack', $product->inventory_can_repack ?? false))>
+                        <span>
+                            <span class="block text-[12px] text-gray-800 dark:text-gray-200">Can be used as source in Transform Stock</span>
+                            <span class="block text-[10px] text-gray-500 dark:text-gray-400">Use for master boxes, whole belly, salmon sides, cheese blocks and prawn 1kg stock.</span>
+                        </span>
+                    </label>
+                </div>
+            </div>
+
+            <div>
+                <div class="text-[12px] font-semibold text-gray-900 dark:text-gray-50">Storefront visibility & merchandising</div>
+                <div class="{{ $hint }}">Publish state, stock control and promotional flags shown on the customer storefront.</div>
+            </div>
 
             <div class="grid gap-2 md:grid-cols-3">
                 <label class="rounded-sm border border-gray-200 dark:border-gray-800 bg-gray-50 dark:bg-gray-950/40 px-3 py-2 flex items-center gap-2">
-                    <input type="checkbox" name="manage_stock" value="1" class="rounded border-gray-300 dark:border-gray-700"
+                    <input type="checkbox" name="manage_stock" value="1" data-manage-stock class="rounded border-gray-300 dark:border-gray-700"
                            @checked(old('manage_stock', $product->manage_stock ?? false))>
                     <span class="text-[12px] text-gray-800 dark:text-gray-200">Manage stock</span>
                 </label>
@@ -857,7 +1022,7 @@
     <div class="sticky bottom-3 z-10">
         <div class="rounded-lg border border-gray-200 dark:border-gray-800 bg-white/95 dark:bg-gray-900/95 backdrop-blur px-4 py-3 flex items-center justify-between gap-3">
             <div class="text-[11px] text-gray-500 dark:text-gray-400">
-                {{ $isEdit ? 'Editing existing product.' : 'Create a saleable product or save an inactive draft while pricing/weight are pending.' }}
+                {{ $isEdit ? 'Editing existing product.' : 'Create a saleable product or save an inactive draft while pricing, variants or weight are pending.' }}
             </div>
 
             <div class="flex items-center gap-2">
@@ -908,6 +1073,241 @@
     const outBase = document.getElementById('calc_base');
     const outIncl = document.getElementById('calc_incl');
     const outDisc = document.getElementById('mrp_discount');
+
+    const storefrontTypeEl = document.querySelector('[data-storefront-type]');
+    const packTypeEl = document.querySelector('[data-pack-type]');
+    const inventoryRoleEl = document.querySelector('[data-inventory-role]');
+    const sellUnitEl = document.querySelector('[data-sell-unit]');
+    const inventorySaleableEl = document.querySelector('[data-inventory-saleable]');
+    const inventoryRepackEl = document.querySelector('[data-inventory-repack]');
+    const manageStockEl = document.querySelector('[data-manage-stock]');
+    const behaviourGuide = document.getElementById('product-behaviour-guide');
+    const storageProfileEl = document.querySelector('[data-storage-profile]');
+    const storageGuidanceEl = document.querySelector('[data-storage-guidance]');
+    const deliverySupportEl = document.querySelector('[data-delivery-support]');
+    const storageProfileApplyEl = document.querySelector('[data-storage-profile-apply]');
+    const storageProfileTemplates = @json($storageProfileTemplates);
+    const mrpLabelTextEl = document.querySelector('[data-mrp-label-text]');
+    const mrpRequiredEl = document.querySelector('[data-mrp-required-indicator]');
+    const mrpModeHintEl = document.querySelector('[data-mrp-mode-hint]');
+    const mrpHintEl = document.querySelector('[data-mrp-hint]');
+    const sellLabelTextEl = document.querySelector('[data-sell-label-text]');
+    const sellRequiredEl = document.querySelector('[data-sell-required-indicator]');
+    const sellModeHintEl = document.querySelector('[data-sell-mode-hint]');
+    const sellHintEl = document.querySelector('[data-sell-hint]');
+    const productWeightHintEl = document.querySelector('[data-product-weight-hint]');
+
+    function normalizeTemplateText(value) {
+        return String(value || '')
+            .replace(/\r\n|\r/g, '\n')
+            .split('\n')
+            .map(line => line.trim())
+            .filter(Boolean)
+            .join('\n');
+    }
+
+    function matchesKnownStorageTemplate(value, key) {
+        const normalized = normalizeTemplateText(value);
+        if (!normalized) return true;
+
+        return Object.values(storageProfileTemplates).some(template => {
+            return normalizeTemplateText(template[key] || '') === normalized;
+        });
+    }
+
+    function applyStorageProfileTemplate(force) {
+        if (!storageProfileEl) return;
+
+        const template = storageProfileTemplates[storageProfileEl.value];
+        const hasTemplate = !!template;
+
+        if (storageProfileApplyEl) {
+            storageProfileApplyEl.disabled = !hasTemplate;
+        }
+
+        if (!hasTemplate) return;
+
+        if (storageGuidanceEl && (force || matchesKnownStorageTemplate(storageGuidanceEl.value, 'storage_guidance'))) {
+            storageGuidanceEl.value = template.storage_guidance || '';
+        }
+
+        if (deliverySupportEl && (force || matchesKnownStorageTemplate(deliverySupportEl.value, 'delivery_support'))) {
+            deliverySupportEl.value = template.delivery_support || '';
+        }
+    }
+
+    if (storageProfileEl) {
+        storageProfileEl.addEventListener('change', function () {
+            applyStorageProfileTemplate(false);
+        });
+        applyStorageProfileTemplate(false);
+    }
+
+    if (storageProfileApplyEl) {
+        storageProfileApplyEl.addEventListener('click', function () {
+            applyStorageProfileTemplate(true);
+        });
+    }
+
+    function setSelectValue(el, value) {
+        if (!el) return;
+        el.value = value;
+        el.dispatchEvent(new Event('change', { bubbles: true }));
+    }
+
+    function setCheckboxValue(el, checked) {
+        if (!el) return;
+        el.checked = !!checked;
+        el.dispatchEvent(new Event('change', { bubbles: true }));
+    }
+
+    function applyProductPreset(preset) {
+        if (preset === 'variant') {
+            setSelectValue(storefrontTypeEl, 'variable');
+            setSelectValue(packTypeEl, 'quantity');
+            setSelectValue(inventoryRoleEl, 'saleable');
+            setSelectValue(sellUnitEl, 'pack');
+            setCheckboxValue(inventorySaleableEl, false);
+            setCheckboxValue(inventoryRepackEl, false);
+            setCheckboxValue(manageStockEl, false);
+        } else if (preset === 'physical') {
+            setSelectValue(storefrontTypeEl, 'simple');
+            setSelectValue(packTypeEl, 'variable_weight');
+            setSelectValue(inventoryRoleEl, 'both');
+            setSelectValue(sellUnitEl, 'kg');
+            setCheckboxValue(inventorySaleableEl, true);
+            setCheckboxValue(inventoryRepackEl, true);
+            setCheckboxValue(manageStockEl, true);
+        } else if (preset === 'internal') {
+            setSelectValue(storefrontTypeEl, 'simple');
+            setSelectValue(packTypeEl, 'bulk');
+            setSelectValue(inventoryRoleEl, 'internal');
+            setSelectValue(sellUnitEl, 'piece');
+            setCheckboxValue(inventorySaleableEl, false);
+            setCheckboxValue(inventoryRepackEl, true);
+            setCheckboxValue(manageStockEl, true);
+        } else {
+            setSelectValue(storefrontTypeEl, 'simple');
+            setSelectValue(packTypeEl, 'quantity');
+            setSelectValue(inventoryRoleEl, 'saleable');
+            setSelectValue(sellUnitEl, 'pack');
+            setCheckboxValue(inventorySaleableEl, false);
+            setCheckboxValue(inventoryRepackEl, false);
+            setCheckboxValue(manageStockEl, true);
+        }
+        updateProductBehaviourGuide();
+    }
+
+    document.querySelectorAll('[data-product-preset]').forEach(button => {
+        button.addEventListener('click', function () {
+            applyProductPreset(this.dataset.productPreset || 'direct');
+        });
+    });
+
+    function pricingBasisSuffix(sellUnit) {
+        if (sellUnit === 'kg') return '/ kg';
+        if (sellUnit === 'piece') return '/ pc';
+        return '/ pack';
+    }
+
+    function updatePricingFieldGuidance() {
+        const storefrontType = storefrontTypeEl ? storefrontTypeEl.value : 'simple';
+        const packType = packTypeEl ? packTypeEl.value : 'quantity';
+        const sellUnit = sellUnitEl ? sellUnitEl.value : 'piece';
+        const isVariable = storefrontType === 'variable';
+        const isPhysicalChoice = !isVariable && (packType === 'variable_weight' || sellUnit === 'kg');
+        const suffix = pricingBasisSuffix(sellUnit);
+
+        if (mrpLabelTextEl) {
+            mrpLabelTextEl.textContent = isVariable
+                ? 'Parent MRP (₹)'
+                : (isPhysicalChoice ? 'MRP / kg (₹)' : `MRP ${suffix} (₹)`);
+        }
+        if (sellLabelTextEl) {
+            sellLabelTextEl.textContent = isVariable
+                ? 'Parent sell price (₹)'
+                : (isPhysicalChoice ? 'Sell price / kg (₹)' : `Sell price ${suffix} (₹)`);
+        }
+
+        if (mrpRequiredEl) {
+            mrpRequiredEl.classList.toggle('hidden', isVariable || isPhysicalChoice);
+        }
+        if (sellRequiredEl) {
+            sellRequiredEl.classList.toggle('hidden', isVariable);
+        }
+
+        if (mrpModeHintEl) {
+            mrpModeHintEl.textContent = isVariable
+                ? 'variant-level only'
+                : (isPhysicalChoice ? 'optional for physical choice' : 'active direct-buy products only');
+        }
+        if (sellModeHintEl) {
+            sellModeHintEl.textContent = isVariable
+                ? 'variant-level only'
+                : (isPhysicalChoice ? 'required per kg' : 'active direct-buy products only');
+        }
+
+        if (mrpHintEl) {
+            mrpHintEl.textContent = isVariable
+                ? 'Variant-choice products such as prawns use variant-level MRP. Leave this blank on the parent product.'
+                : (isPhysicalChoice
+                    ? 'Optional for physical-choice products such as cheese blocks. Enter only if you want to show a per-kg MRP; exact block weights come from inward stock.'
+                    : 'Required for active direct-buy products. For variant-choice products such as prawns, leave blank here and enter MRP on each variant.');
+        }
+        if (sellHintEl) {
+            sellHintEl.textContent = isVariable
+                ? 'Variant-choice products use the sell price saved on each variant.'
+                : (isPhysicalChoice
+                    ? 'Required per kg for active physical-choice products. Individual cheese block/slab weights are entered later from vendor inward stock.'
+                    : 'Required for active direct-buy products. Variant-choice products use the sell price saved on each variant.');
+        }
+        if (productWeightHintEl) {
+            productWeightHintEl.textContent = isPhysicalChoice
+                ? 'For physical-choice products such as cheese blocks, leave this blank. Enter each real block/slab weight from vendor inward stock.'
+                : 'Use for fixed-weight packs or a direct-buy catchweight item with one known weight. Slab-selector products can leave this blank and use inventory-piece weights.';
+        }
+    }
+
+    function updateProductBehaviourGuide() {
+        const storefrontType = storefrontTypeEl ? storefrontTypeEl.value : 'simple';
+        const packType = packTypeEl ? packTypeEl.value : 'quantity';
+        const inventoryRole = inventoryRoleEl ? inventoryRoleEl.value : 'saleable';
+        const sellUnit = sellUnitEl ? sellUnitEl.value : 'piece';
+
+        updatePricingFieldGuidance();
+
+        if (!behaviourGuide) return;
+
+        let title = 'Direct buy / simple product';
+        let body = 'Use this for one product, one price and normal add-to-cart stock.';
+
+        if (inventoryRole === 'internal') {
+            title = 'Internal source product';
+            body = 'This product should stay off the storefront and be used for vendor inward stock or Transform Stock source lots.';
+        } else if (storefrontType === 'variable') {
+            title = 'Variant choice product';
+            body = 'Use this for Dimsum, dumplings, buns, rolls and Prawns. Parent stock can be zero; price, stock, pack size and B2B/B2C visibility are managed on variants.';
+        } else if (packType === 'variable_weight' || sellUnit === 'kg') {
+            title = 'Physical choice / catchweight product';
+            body = 'Use this for Pork Belly, Salmon, Tuna, Black Cod, Hamachi and cheese blocks. Customer chooses exact inventory pieces; price is calculated per kg. Enter the per-kg sell price here; enter actual block/slab weights in inward stock.';
+        } else if (packType === 'fixed_weight_pack') {
+            title = 'Fixed weight finished pack';
+            body = 'Use this for same-size packs such as Pork Slice 500g or cheese portion packs. Enter product/pack weight and manage stock as pack count.';
+        } else if (packType === 'fixed_piece_pack') {
+            title = 'Fixed piece finished pack';
+            body = 'Use this for a single fixed pack product. If customers choose 10/20/100 packs, use Variant choice instead and set pieces on each variant.';
+        } else if (packType === 'bulk') {
+            title = 'Bulk / inward source stock';
+            body = 'Use this for source stock that can be transformed later, such as dimsum master boxes, prawn 1kg stock or raw bulk stock.';
+        }
+
+        behaviourGuide.innerHTML = '<div class="font-semibold text-gray-900 dark:text-gray-50">' + title + '</div><div class="mt-1">' + body + '</div>';
+    }
+
+    [storefrontTypeEl, packTypeEl, inventoryRoleEl, sellUnitEl].forEach(el => {
+        if (el) el.addEventListener('change', updateProductBehaviourGuide);
+    });
+    updateProductBehaviourGuide();
 
     function validateCategories() {
         if (!categoryBoxes.length) return true;

@@ -17,14 +17,16 @@ use App\Services\B2BPayLaterService;
 use App\Services\BandaraCreditService;
 use App\Services\CartService;
 use App\Services\DeliveryChargeService;
+use App\Services\DocumentNumberService;
 use App\Services\InvoicePdfService;
 use App\Services\OrderInventoryService;
+use App\Services\StockReservationService;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Route;
 use Illuminate\Support\Facades\Schema;
 use Illuminate\Support\Facades\Log;
-use Illuminate\Support\Str;
+use Illuminate\Validation\ValidationException;
 
 use App\Models\Product;
 use App\Models\ProductVariant;
@@ -35,7 +37,7 @@ class CheckoutController extends Controller
     {
         $user = $request->user();
         if (! $user) {
-            return redirect()->guest(route('login'));
+            return redirect()->guest(route('login', ['redirect' => $this->checkoutIndexUrl($request)]));
         }
 
         if ($request->routeIs('b2b.*') && ! $this->isB2BRequest($request)) {
@@ -157,7 +159,7 @@ class CheckoutController extends Controller
     {
         $user = $request->user();
         if (! $user) {
-            return redirect()->guest(route('login'));
+            return redirect()->guest(route('login', ['redirect' => $this->checkoutIndexUrl($request)]));
         }
 
         if ($request->routeIs('b2b.*') && ! $this->isB2BRequest($request)) {
@@ -239,7 +241,7 @@ class CheckoutController extends Controller
             $terms = app(\App\Services\B2BTermsService::class);
 
             foreach ($items as $it) {
-                if ($it->product && ! $terms->canBuy($user, $it->product, $it->productVariant?->sellUnit, $it->productVariant)) {
+                if ($it->product && ! $terms->canBuy($user, $it->product, $it->productVariant)) {
                     return $this->b2bCartBlockedRedirect()
                         ->withErrors(['cart' => ($it->product->name ?? 'This product') . ' does not have a configured B2B price. Please contact the team before buying.']);
                 }
@@ -253,7 +255,7 @@ class CheckoutController extends Controller
                         continue;
                     }
 
-                    $min = (float) $terms->minOrderQty($user, $it->product, $it->productVariant?->sellUnit, $it->productVariant);
+                    $min = (float) $terms->minOrderQty($user, $it->product, $it->productVariant);
                     if ($min <= 0) {
                         $min = 1.0;
                     }
@@ -381,11 +383,15 @@ class CheckoutController extends Controller
             $payLaterOption,
             &$order
         ) {
+            $documentNumbers = app(DocumentNumberService::class)->nextOrderInvoicePair();
+
             $order = new Order();
-            $order->order_number = 'ORD-' . now()->format('dmy') . '-' . Str::upper(Str::random(6));
+            $order->order_number = $documentNumbers['order_number'];
             $order->user_id = $user->id;
 
-            $order->status = 'processing';
+            // Online-payment orders are not fulfillment-ready yet. They become
+            // processing only after Razorpay payment is verified and stock is committed.
+            $order->status = $paymentMethod === 'pay_later' ? 'processing' : 'pending_payment';
 
             $order->subtotal = round($subtotal, 2);
             $order->discount_total = round($discountTotal, 2);
@@ -410,6 +416,12 @@ class CheckoutController extends Controller
             ] as $deliveryColumn) {
                 if (Schema::hasColumn('orders', $deliveryColumn)) {
                     $order->{$deliveryColumn} = round((float) ($deliveryQuote[$deliveryColumn] ?? 0), 2);
+                }
+            }
+
+            foreach (['delivery_sac_code', 'handling_sac_code'] as $deliveryCodeColumn) {
+                if (Schema::hasColumn('orders', $deliveryCodeColumn)) {
+                    $order->{$deliveryCodeColumn} = $deliveryQuote[$deliveryCodeColumn] ?? null;
                 }
             }
 
@@ -513,6 +525,12 @@ class CheckoutController extends Controller
                 $oa->country = $address->country ?? 'India';
                 $oa->pincode = $address->pincode;
 
+                foreach (['latitude', 'longitude', 'geocoding_provider', 'geocoding_quality'] as $locationColumn) {
+                    if (Schema::hasColumn('order_addresses', $locationColumn)) {
+                        $oa->{$locationColumn} = $address->{$locationColumn} ?? null;
+                    }
+                }
+
                 $oa->gstin = $address->gstin;
                 $oa->save();
             }
@@ -552,6 +570,8 @@ class CheckoutController extends Controller
                 $oi->pricing_unit = $getpriceUnit;
                 $oi->sell_unit = $sellUnit;
                 $oi->sku = $variant?->sku ?? $product?->sku;
+                $oi->hsn_sac_code = trim((string) ($product?->hsnCode?->code ?? '')) ?: null;
+                $oi->gst_rate = $line['gst_rate'];
 
                 $snapshot = [];
                 if ($variant) {
@@ -597,7 +617,7 @@ class CheckoutController extends Controller
 
             $invoice = new Invoice();
             $invoice->order_id = $order->id;
-            $invoice->invoice_number = 'BA-' . now()->format('dmy') . '-' . Str::upper(Str::random(6));
+            $invoice->invoice_number = $documentNumbers['invoice_number'];
             $invoice->status = $paymentMethod === 'pay_later' ? 'due' : 'pending';
             $invoice->invoice_date = now()->toDateString();
             $invoice->due_date = $paymentMethod === 'pay_later'
@@ -607,6 +627,18 @@ class CheckoutController extends Controller
             $invoice->subtotal = round($order->subtotal, 2);
             $invoice->tax_total = round($order->tax_total, 2);
             $invoice->discount_total = round($order->discount_total, 2);
+            if (Schema::hasColumn('invoices', 'gst_type')) {
+                $invoice->gst_type = $order->gst_type;
+            }
+            if (Schema::hasColumn('invoices', 'cgst_amount')) {
+                $invoice->cgst_amount = $order->cgst_amount;
+            }
+            if (Schema::hasColumn('invoices', 'sgst_amount')) {
+                $invoice->sgst_amount = $order->sgst_amount;
+            }
+            if (Schema::hasColumn('invoices', 'igst_amount')) {
+                $invoice->igst_amount = $order->igst_amount;
+            }
             if (Schema::hasColumn('invoices', 'delivery_zone_id')) {
                 $invoice->delivery_zone_id = $order->delivery_zone_id ?? null;
             }
@@ -624,6 +656,11 @@ class CheckoutController extends Controller
             ] as $deliveryColumn) {
                 if (Schema::hasColumn('invoices', $deliveryColumn)) {
                     $invoice->{$deliveryColumn} = $order->{$deliveryColumn} ?? 0;
+                }
+            }
+            foreach (['delivery_sac_code', 'handling_sac_code'] as $deliveryCodeColumn) {
+                if (Schema::hasColumn('invoices', $deliveryCodeColumn)) {
+                    $invoice->{$deliveryCodeColumn} = $order->{$deliveryCodeColumn} ?? null;
                 }
             }
             foreach (['delivery_duration_minutes', 'delivery_distance_provider', 'delivery_distance_calculated_at', 'delivery_fee_source'] as $deliveryMetaColumn) {
@@ -651,6 +688,8 @@ class CheckoutController extends Controller
                     'invoice_id'    => $invoice->id,
                     'order_item_id' => $oi->id,
                     'description'   => $oi->product_name,
+                    'hsn_sac_code'  => $oi->hsn_sac_code,
+                    'gst_rate'      => $oi->gst_rate,
                     'quantity'      => $oi->quantity,
                     'item_weight'   => $oi->item_weight,
                     'unit_price'    => $oi->unit_price,
@@ -658,8 +697,21 @@ class CheckoutController extends Controller
                     'pricing_unit'  => $oi->pricing_unit,
                     'subtotal'      => $oi->subtotal,
                     'tax_amount'    => $oi->tax_amount,
+                    'cgst_amount'   => $oi->cgst_amount,
+                    'sgst_amount'   => $oi->sgst_amount,
+                    'igst_amount'   => $oi->igst_amount,
                     'total'         => $oi->total,
                 ]);
+            }
+
+            if ($paymentMethod !== 'pay_later') {
+                try {
+                    app(StockReservationService::class)->reserveOrder($order);
+                } catch (\Throwable $e) {
+                    throw ValidationException::withMessages([
+                        'checkout' => $e->getMessage() ?: 'Stock is no longer available for one or more cart items. Please update your cart and try again.',
+                    ]);
+                }
             }
 
             if ($paymentMethod === 'pay_later') {
@@ -717,21 +769,21 @@ class CheckoutController extends Controller
     }
 
 
-    public function applyBandaraCredit(Request $request, CartService $cartService)
+    public function applyBandaraCredit(Request $request)
     {
         $user = $request->user();
         if (! $user) {
-            return redirect()->guest(route('login'));
+            return redirect()->guest(route('login', ['redirect' => $this->checkoutIndexUrl($request)]));
         }
 
         if (($user->customer_type ?? 'b2c') === 'b2b') {
-            return redirect()->route('checkout.index')
-                ->withErrors(['bandara_credit_points' => 'Bandara Credit redemption is not available for B2B checkout.']);
+            return redirect()->route('checkout.index');
         }
 
         $data = $request->validate([
             'bandara_credit_points' => ['nullable', 'integer', 'min:0'],
             'address_id' => ['nullable', 'integer'],
+            'payment_method' => ['nullable', 'in:razorpay,pay_later'],
         ]);
 
         $params = [];
@@ -741,15 +793,30 @@ class CheckoutController extends Controller
         if ((int) ($data['bandara_credit_points'] ?? 0) > 0) {
             $params['bandara_credit_points'] = (int) $data['bandara_credit_points'];
         }
+        if (! empty($data['payment_method'])) {
+            $params['payment_method'] = (string) $data['payment_method'];
+        }
 
         return redirect()->route('checkout.index', $params);
     }
 
     public function removeBandaraCredit(Request $request)
     {
+        if (($request->user()?->customer_type ?? 'b2c') === 'b2b') {
+            return redirect()->route('checkout.index');
+        }
+
+        $data = $request->validate([
+            'address_id' => ['nullable', 'integer'],
+            'payment_method' => ['nullable', 'in:razorpay,pay_later'],
+        ]);
+
         $params = [];
-        if ($request->filled('address_id')) {
-            $params['address_id'] = (int) $request->input('address_id');
+        if (! empty($data['address_id'])) {
+            $params['address_id'] = (int) $data['address_id'];
+        }
+        if (! empty($data['payment_method'])) {
+            $params['payment_method'] = (string) $data['payment_method'];
         }
 
         return redirect()->route('checkout.index', $params)
@@ -818,11 +885,17 @@ class CheckoutController extends Controller
                 }
             }
 
-            if ($variant && (bool) ($variant->manage_stock ?? false)) {
-                $available = (float) ($variant->stock_quantity ?? 0);
+            if ($variant) {
+                if (! $this->variantVisibleToUser($variant, request()->user())) {
+                    return 'One of the selected product options is no longer available for your customer type.';
+                }
 
-                if (($isKg && $qty > round($available, 2)) || (! $isKg && $qty > floor($available))) {
-                    return 'Stock not available for ' . $product->name . '.';
+                if ($variant->stock_quantity !== null || (bool) ($variant->manage_stock ?? false)) {
+                    $available = (float) ($variant->stock_quantity ?? 0);
+
+                    if (($isKg && $qty > round($available, 2)) || (! $isKg && $qty > floor($available))) {
+                        return 'Stock not available for ' . $product->name . '.';
+                    }
                 }
 
                 continue;
@@ -838,6 +911,23 @@ class CheckoutController extends Controller
         }
 
         return null;
+    }
+
+    protected function variantVisibleToUser(?ProductVariant $variant, ?\App\Models\User $user): bool
+    {
+        if (! $variant) {
+            return true;
+        }
+
+        $customerType = $user && (($user->customer_type ?? 'b2c') === 'b2b') ? 'b2b' : 'b2c';
+
+        if (method_exists($variant, 'isVisibleToCustomerType')) {
+            return $variant->isVisibleToCustomerType($customerType);
+        }
+
+        $visibility = (string) ($variant->customer_visibility ?? 'all');
+
+        return $visibility === 'all' || $visibility === $customerType;
     }
 
     /**
@@ -947,8 +1037,8 @@ class CheckoutController extends Controller
             return route('account.addresses.create', ['return_to' => $returnTo], false);
         }
 
-        if (Route::has('customer.addresses.create')) {
-            return route('customer.addresses.create', ['return_to' => $returnTo], false);
+        if (Route::has('account.addresses.create')) {
+            return route('account.addresses.create', ['return_to' => $returnTo], false);
         }
 
         return $returnTo;
@@ -1334,6 +1424,7 @@ class CheckoutController extends Controller
                 'subtotal'        => round($sub, 2),
                 'discount_amount' => round($disc, 2),
                 'tax_amount'      => round($taxLine, 2),
+                'gst_rate'        => round((float) ($lineTaxMap[$id]['rate_percent'] ?? 0), 2),
                 'total'           => $totalLine,
                 'cgst_amount'     => $cgst,
                 'sgst_amount'     => $sgst,

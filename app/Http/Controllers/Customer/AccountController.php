@@ -16,9 +16,7 @@ class AccountController extends Controller
     public function rewards(Request $request, BandaraCreditService $bandaraCreditService)
     {
         if (($request->user()?->customer_type ?? 'b2c') === 'b2b') {
-            return redirect()
-                ->route('dashboard.customer')
-                ->with('status', 'Rewards are available for B2C accounts. Your B2B account pricing is used automatically in the storefront.');
+            return redirect()->route('dashboard.customer');
         }
 
         $snapshot = $bandaraCreditService->snapshotForUser($request->user()->id);

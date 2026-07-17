@@ -16,6 +16,9 @@
                 <p class="text-[11px] text-gray-500 dark:text-gray-400">
                     SKU: {{ $product->sku ?: '—' }}
                 </p>
+                <p class="mt-1 text-[11px] text-gray-500 dark:text-gray-400">
+                    Click <span class="font-medium">Make primary</span> on any image to set it as the storefront/default image.
+                </p>
             </div>
 
             <div class="flex items-center gap-2">
@@ -26,7 +29,7 @@
 
                 <a href="{{ route('admin.products.images.create', $product) }}"
                    class="inline-flex items-center px-3 py-1.5 text-xs rounded border border-gray-300 dark:border-gray-700 bg-gray-900 text-white dark:bg-gray-100 dark:text-gray-900 hover:bg-gray-800 dark:hover:bg-gray-200">
-                    + Upload image
+                    + Upload images
                 </a>
             </div>
         </div>
@@ -39,13 +42,13 @@
 
         @if($images->isEmpty())
             <div class="rounded border border-gray-200 dark:border-gray-800 px-3 py-4 text-xs text-gray-500 dark:text-gray-400">
-                No images yet. <a href="{{ route('admin.products.images.create', $product) }}" class="underline">Upload one</a>.
+                No images yet. <a href="{{ route('admin.products.images.create', $product) }}" class="underline">Upload images</a>.
             </div>
         @else
             <div class="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
                 @foreach($images as $image)
                     <div class="border border-gray-200 dark:border-gray-800 rounded-lg overflow-hidden bg-white dark:bg-gray-950 flex flex-col">
-                        <div class="aspect-[4/3] bg-gray-100 dark:bg-gray-800 flex items-center justify-center">
+                        <div class="relative aspect-[4/3] bg-gray-100 dark:bg-gray-800 flex items-center justify-center group">
                             @if($image->file_path)
                                 <img
                                     src="{{ Storage::url($image->file_path) }}"
@@ -55,6 +58,28 @@
                             @else
                                 <span class="text-[11px] text-gray-500 dark:text-gray-400">No preview</span>
                             @endif
+
+                            <div class="absolute right-2 top-2">
+                                @if($image->is_primary)
+                                    <span class="inline-flex items-center gap-1 rounded-full bg-emerald-50/95 dark:bg-emerald-900/80 text-emerald-700 dark:text-emerald-200 border border-emerald-200 dark:border-emerald-700 px-2 py-1 text-[10px] font-medium shadow-sm">
+                                        <span aria-hidden="true">★</span>
+                                        Primary
+                                    </span>
+                                @else
+                                    <form method="POST" action="{{ route('admin.images.primary', $image) }}">
+                                        @csrf
+                                        <button
+                                            type="submit"
+                                            class="inline-flex items-center gap-1 rounded-full border border-white/80 bg-white/95 px-2.5 py-1 text-[10px] font-medium text-gray-700 shadow-sm hover:border-emerald-300 hover:bg-emerald-50 hover:text-emerald-700 focus:outline-none focus:ring-2 focus:ring-emerald-400 dark:border-gray-700 dark:bg-gray-950/90 dark:text-gray-200 dark:hover:border-emerald-500 dark:hover:bg-emerald-950/70 dark:hover:text-emerald-200"
+                                            title="Make this the primary product image"
+                                            aria-label="Make image #{{ $image->id }} primary"
+                                        >
+                                            <span aria-hidden="true">☆</span>
+                                            Make primary
+                                        </button>
+                                    </form>
+                                @endif
+                            </div>
                         </div>
 
                         <div class="p-3 space-y-2 text-xs flex-1 flex flex-col">

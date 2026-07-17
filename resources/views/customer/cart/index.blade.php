@@ -64,15 +64,9 @@
         </div>
     </div>
 
-    @if(session('status'))
-        <div class="rounded-sm border border-emerald-300 bg-emerald-50 px-3 py-2 text-[11px] text-emerald-800">
-            {{ session('status') }}
-        </div>
-    @endif
-
     @if(!empty($pricingUpdatedCount) && $pricingUpdatedCount > 0)
         <div class="rounded-sm border border-gray-200 dark:border-gray-800 bg-white dark:bg-gray-900 px-3 py-2 text-[11px] text-gray-700 dark:text-gray-200">
-            Prices were updated for {{ $pricingUpdatedCount }} item(s) based on latest product pricing.
+            Your cart was updated for {{ $pricingUpdatedCount }} item(s) based on current availability and pricing.
         </div>
     @endif
 
@@ -105,10 +99,42 @@
 
             {{-- Items --}}
             <div class="lg:col-span-2 rounded-sm border border-gray-200 dark:border-gray-800 bg-white dark:bg-gray-900 overflow-hidden">
+                <form id="cart-bulk-remove-form"
+                      method="POST"
+                      action="{{ $cartRoute('cart.bulk-destroy') }}"
+                      data-cart-bulk-remove-form
+                      data-bandara-confirm="Remove selected item(s) from cart?"
+                      data-bandara-confirm-title="Remove selected items?"
+                      data-bandara-confirm-text="Remove selected"
+                      data-bandara-confirm-variant="danger">
+                    @csrf
+                    @method('DELETE')
+                    <input type="hidden" name="return_to" value="{{ request()->getRequestUri() }}">
+                </form>
+
+                <div class="px-3 py-2 border-b border-gray-200 dark:border-gray-800 flex items-center justify-between gap-3">
+                    <div>
+                        <div class="font-semibold text-gray-900 dark:text-gray-50">Items</div>
+                        <div class="text-[11px] text-gray-500 dark:text-gray-400">Select multiple rows to remove them together.</div>
+                    </div>
+                    <button type="submit"
+                            form="cart-bulk-remove-form"
+                            data-cart-bulk-remove-button="cart-bulk-remove-form"
+                            disabled
+                            class="inline-flex items-center rounded-sm border border-red-300 dark:border-red-700 px-3 py-1 text-[10px] text-red-700 dark:text-red-300 hover:bg-red-50 dark:hover:bg-red-950/30 disabled:opacity-40 disabled:cursor-not-allowed">
+                        Remove selected
+                    </button>
+                </div>
+
                 <div class="overflow-x-auto">
                     <table class="min-w-full text-[11px]">
                         <thead class="bg-gray-50 dark:bg-gray-950 border-b border-gray-200 dark:border-gray-800">
                         <tr class="text-left text-gray-600 dark:text-gray-300">
+                            <th class="px-3 py-2 font-medium">
+                                <input type="checkbox"
+                                       data-cart-bulk-select-all="cart-bulk-remove-form"
+                                       class="rounded border-gray-300 dark:border-gray-700">
+                            </th>
                             <th class="px-3 py-2 font-medium">#</th>
                             <th class="px-3 py-2 font-medium">Item</th>
                             <th class="px-3 py-2 font-medium">Qty</th>
@@ -155,7 +181,10 @@
                                 $unitPrice = (float) ($representative->unit_price ?? 0);
                                 $lineTotal = (float) $rowGroup->sum(fn ($it) => (float) ($it->total ?? 0));
 
-                                $packWeight = (float)($product?->product_weight ?? 0);
+                                $packWeight = (float)($variant?->product_weight ?? $product?->product_weight ?? 0);
+                                $pricingUnitForRow = strtolower((string) ($variant?->pricing_unit ?? ($product?->pricing_unit ?? ($isKg ? 'kg' : 'pack'))));
+                                $pricingUnitForRow = in_array($pricingUnitForRow, ['kg', 'pack'], true) ? $pricingUnitForRow : 'pack';
+                                $fixedWeightKgUnit = !$isPieceGroup && $pricingUnitForRow === 'kg' && $packWeight > 0;
 
                                 if ($isPieceGroup) {
                                     $weightPerPiece = (float) ($pieceMeta['weight_kg'] ?? 0);
@@ -166,7 +195,11 @@
                                 } else {
                                     $qtyRaw = (float) ($representative->quantity ?? 1);
 
-                                    if ($isKg) {
+                                    if ($fixedWeightKgUnit) {
+                                        $qtyInt = (int) max(round($qtyRaw), 1);
+                                        $qtyDisplay = $qtyInt;
+                                        $itemWeight = (float) ($representative->item_weight ?? ($qtyInt * $packWeight));
+                                    } elseif ($isKg) {
                                         $qtyDisplay = $fmtQty($qtyRaw);
                                         $itemWeight = (float) ($representative->item_weight ?? $qtyRaw);
                                     } else {
@@ -186,15 +219,14 @@
                                 $available = null;
 
                                 if (!$isPieceGroup) {
-                                    if ($variant && (bool)($variant->manage_stock ?? false)) {
-                                        $manageStock = true;
-                                        $available = (float)($variant->stock_quantity ?? 0);
+                                    if ($variant) {
+                                        if ($variant->stock_quantity !== null || (bool)($variant->manage_stock ?? false)) {
+                                            $manageStock = true;
+                                            $available = (float)($variant->stock_quantity ?? 0);
+                                        }
                                     } elseif ($product && (bool)($product->manage_stock ?? false)) {
                                         $manageStock = true;
                                         $available = (float)($product->stock_quantity ?? 0);
-                                    } elseif ($variant && $variant->stock_quantity !== null && (float)$variant->stock_quantity > 0) {
-                                        $manageStock = true;
-                                        $available = (float) $variant->stock_quantity;
                                     } elseif ($product && $product->stock_quantity !== null && (float)$product->stock_quantity > 0) {
                                         $manageStock = true;
                                         $available = (float) $product->stock_quantity;
@@ -204,21 +236,21 @@
                                 $maxQty = null;
                                 if ($manageStock) {
                                     $available = max((float)$available, 0);
-                                    $maxQty = $isKg ? round($available, 2) : (float) max((int) floor($available), 0);
+                                    $maxQty = ($isKg && ! $fixedWeightKgUnit) ? round($available, 2) : (float) max((int) floor($available), 0);
                                 }
 
                                 $qtyForMath = $isPieceGroup
                                     ? (float) $groupQty
-                                    : ($isKg ? (float) $representative->quantity : (float) max((int) round((float) $representative->quantity), 1));
+                                    : (($isKg && ! $fixedWeightKgUnit) ? (float) $representative->quantity : (float) max((int) round((float) $representative->quantity), 1));
 
-                                $step = $isKg ? 0.01 : 1;
-                                $minQty = $isKg ? 0.01 : 1;
+                                $step = ($isKg && ! $fixedWeightKgUnit) ? 0.01 : 1;
+                                $minQty = ($isKg && ! $fixedWeightKgUnit) ? 0.01 : 1;
 
                                 $decDisabled = (!$isPieceGroup && ($qtyForMath <= ($minQty + 1e-9)));
-                                $decQty = $isKg
+                                $decQty = ($isKg && ! $fixedWeightKgUnit)
                                     ? round(max($qtyForMath - $step, $minQty), 2)
                                     : (float) max((int) round($qtyForMath - $step), 1);
-                                $incQty = $isKg
+                                $incQty = ($isKg && ! $fixedWeightKgUnit)
                                     ? round($qtyForMath + $step, 2)
                                     : (float) ((int) round($qtyForMath + $step));
 
@@ -240,8 +272,7 @@
                                         $perSlabPrice = round((float) ($representative->total ?? 0) * $displayTaxMultiplier, 2);
                                         $displayLineTotal = round($lineTotal * $displayTaxMultiplier, 2);
                                     } else {
-                                        $pricingUnit = strtolower((string) ($variant?->pricing_unit ?? ($product?->pricing_unit ?? ($isKg ? 'kg' : 'pack'))));
-                                        $displayLineTotal = $pricingUnit === 'kg'
+                                        $displayLineTotal = $pricingUnitForRow === 'kg'
                                             ? round(max((float) $itemWeight, 0) * $displayUnitPrice, 2)
                                             : round($qtyForMath * $displayUnitPrice, 2);
                                     }
@@ -249,6 +280,14 @@
                             @endphp
 
                             <tr class="text-gray-700 dark:text-gray-200">
+                                <td class="px-3 py-2 whitespace-nowrap align-top">
+                                    <input type="checkbox"
+                                           form="cart-bulk-remove-form"
+                                           name="cart_item_keys[]"
+                                           value="{{ $rowGroup->pluck('id')->implode(',') }}"
+                                           data-cart-bulk-checkbox="cart-bulk-remove-form"
+                                           class="rounded border-gray-300 dark:border-gray-700">
+                                </td>
                                 <td class="px-3 py-2 whitespace-nowrap align-top">{{ $counter }}</td>
 
                                 <td class="px-3 py-2">
@@ -410,23 +449,31 @@
 
                                 <td class="px-3 py-2 whitespace-nowrap text-right">
                                     @if($isPieceGroup)
-                                        <form method="POST" action="{{ $cartRoute('cart.update', $representative->id) }}">
+                                        <form method="POST"
+                                              action="{{ $cartRoute('cart.update', $representative->id) }}"
+                                              data-bandara-confirm="Remove all slabs of this size from cart?"
+                                              data-bandara-confirm-title="Remove slab group?"
+                                              data-bandara-confirm-text="Remove all"
+                                              data-bandara-confirm-variant="danger">
                                             @csrf
                                             @method('PATCH')
                                             <input type="hidden" name="quantity" value="{{ $groupQty }}">
                                             <input type="hidden" name="piece_group_action" value="remove_all">
                                             <button type="submit"
-                                                    onclick="return confirm('Remove all slabs of this size from cart?')"
                                                     class="inline-flex items-center rounded-sm border border-gray-300 dark:border-gray-700 px-3 py-1 text-[10px] hover:bg-gray-100 dark:hover:bg-gray-800">
                                                 Remove all
                                             </button>
                                         </form>
                                     @else
-                                        <form method="POST" action="{{ $cartRoute('cart.destroy', $representative->id) }}">
+                                        <form method="POST"
+                                              action="{{ $cartRoute('cart.destroy', $representative->id) }}"
+                                              data-bandara-confirm="Remove this item from cart?"
+                                              data-bandara-confirm-title="Remove item?"
+                                              data-bandara-confirm-text="Remove"
+                                              data-bandara-confirm-variant="danger">
                                             @csrf
                                             @method('DELETE')
                                             <button type="submit"
-                                                    onclick="return confirm('Remove this item from cart?')"
                                                     class="inline-flex items-center rounded-sm border border-gray-300 dark:border-gray-700 px-3 py-1 text-[10px] hover:bg-gray-100 dark:hover:bg-gray-800">
                                                 Remove
                                             </button>
@@ -578,9 +625,15 @@
                     Item rows show your customer-facing price mode. GST and delivery/handling fees are finalized at checkout after address selection.
                 </div>
 
+                @php
+                    $checkoutHref = $isB2BCart && \Illuminate\Support\Facades\Route::has('b2b.checkout.index')
+                        ? route('b2b.checkout.index', [], false)
+                        : route('checkout.index', [], false);
+                @endphp
+
                 @auth
                     @if(auth()->user()->hasVerifiedEmail())
-                        <a href="{{ $isB2BCart && \Illuminate\Support\Facades\Route::has('b2b.checkout.index') ? route('b2b.checkout.index') : route('checkout.index') }}"
+                        <a href="{{ $checkoutHref }}"
                            class="w-full inline-flex items-center justify-center rounded-sm border border-gray-900 dark:border-gray-100 bg-gray-900 text-white dark:bg-gray-100 dark:text-gray-900 px-4 py-2 text-[11px] font-medium hover:bg-gray-800 dark:hover:bg-gray-200">
                             Proceed to checkout
                         </a>
@@ -591,7 +644,7 @@
                         </a>
                     @endif
                 @else
-                    <a href="{{ $isB2BCart && \Illuminate\Support\Facades\Route::has('b2b.checkout.index') ? route('b2b.checkout.index') : route('checkout.index') }}"
+                    <a href="{{ route('login', ['redirect' => $checkoutHref]) }}"
                        class="w-full inline-flex items-center justify-center rounded-sm border border-gray-900 dark:border-gray-100 bg-gray-900 text-white dark:bg-gray-100 dark:text-gray-900 px-4 py-2 text-[11px] font-medium hover:bg-gray-800 dark:hover:bg-gray-200">
                         Sign in to checkout
                     </a>
@@ -601,6 +654,51 @@
         </div>
 
         {{-- Stock limit + normalization --}}
+        <script>
+        (function () {
+            const bindBulkRemove = function (formId) {
+                const checkboxes = Array.from(document.querySelectorAll('[data-cart-bulk-checkbox="' + formId + '"]'));
+                const selectAll = document.querySelector('[data-cart-bulk-select-all="' + formId + '"]');
+                const button = document.querySelector('[data-cart-bulk-remove-button="' + formId + '"]');
+
+                if (!checkboxes.length || !button) {
+                    return;
+                }
+
+                const updateState = function () {
+                    const selectedCount = checkboxes.filter((checkbox) => checkbox.checked).length;
+
+                    button.disabled = selectedCount === 0;
+                    button.textContent = selectedCount > 0
+                        ? 'Remove selected (' + selectedCount + ')'
+                        : 'Remove selected';
+
+                    if (selectAll) {
+                        selectAll.checked = selectedCount === checkboxes.length;
+                        selectAll.indeterminate = selectedCount > 0 && selectedCount < checkboxes.length;
+                    }
+                };
+
+                checkboxes.forEach((checkbox) => {
+                    checkbox.addEventListener('change', updateState);
+                });
+
+                if (selectAll) {
+                    selectAll.addEventListener('change', function () {
+                        checkboxes.forEach((checkbox) => {
+                            checkbox.checked = selectAll.checked;
+                        });
+                        updateState();
+                    });
+                }
+
+                updateState();
+            };
+
+            bindBulkRemove('cart-bulk-remove-form');
+        })();
+        </script>
+
         <script>
         (function () {
             const LIMITED_MSG = "Limited stock of this product available";
@@ -614,7 +712,7 @@
                     if (Number.isFinite(max) && max > 0 && Number.isFinite(current) && Number.isFinite(step)) {
                         if ((current + step) > (max + 1e-9)) {
                             e.preventDefault();
-                            alert(LIMITED_MSG);
+                            if (window.BandaraToast) { BandaraToast.warning(LIMITED_MSG, 'Limited stock'); }
                         }
                     }
                 });
@@ -646,7 +744,7 @@
                     }
 
                     if (Number.isFinite(max) && max >= 0 && v > max) {
-                        alert(LIMITED_MSG);
+                        if (window.BandaraToast) { BandaraToast.warning(LIMITED_MSG, 'Limited stock'); }
                         v = max;
                     }
 

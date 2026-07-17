@@ -10,11 +10,13 @@ use App\Models\Country;
 use App\Models\HsnCode;
 use App\Models\Product;
 use App\Models\ProductVariant;
+use App\Models\ProductTransformation;
 use App\Models\Vendor;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Schema;
 use Illuminate\Support\Str;
+use Illuminate\Validation\ValidationException;
 use Illuminate\View\View;
 
 class ProductController extends Controller
@@ -41,9 +43,23 @@ class ProductController extends Controller
                 ->with('error', 'No product found for the scanned barcode / SKU.');
         }
 
+        $hasTransformations = Schema::hasTable('product_transformations');
+
         $query = Product::query()
-            ->with(['vendor', 'categories'])
+            ->select('products.*')
+            ->with(array_filter([
+                'categories',
+                $hasTransformations ? 'producedFromProducts:id,name,sku' : null,
+                $hasTransformations ? 'producesProducts:id,name,sku' : null,
+            ]))
+            ->withCount(array_filter([
+                'variants',
+                $hasTransformations ? 'producedFromProducts as produced_from_count' : null,
+                $hasTransformations ? 'producesProducts as produces_count' : null,
+            ]))
             ->latest();
+
+        $this->addProductIndexStockSummaries($query);
 
         // Search by name / SKU
         if ($request->filled('q')) {
@@ -73,6 +89,30 @@ class ProductController extends Controller
             }
         }
 
+        // Bandara V1 product model filter
+        if ($request->filled('model')) {
+            $model = (string) $request->input('model');
+
+            if ($model === 'simple') {
+                $query->where('type', 'simple')
+                    ->where(function ($q) {
+                        $q->whereNull('pack_type')
+                            ->orWhereNotIn('pack_type', ['variable_weight']);
+                    });
+            } elseif ($model === 'variable_pack') {
+                $query->where('type', 'variable');
+            } elseif ($model === 'catchweight') {
+                $query->where(function ($q) {
+                    $q->where('pack_type', 'variable_weight')
+                        ->orWhere('sell_unit', 'kg');
+                });
+            } elseif ($model === 'produced' && $hasTransformations) {
+                $query->whereHas('producedFromProducts');
+            } elseif ($model === 'raw_source' && $hasTransformations) {
+                $query->whereHas('producesProducts');
+            }
+        }
+
         // Flag filter
         if ($request->filled('flag')) {
             $flag = (string) $request->input('flag');
@@ -86,11 +126,129 @@ class ProductController extends Controller
             }
         }
 
+        $allowedPerPage = [20, 50, 100];
+        $perPage = (int) $request->input('per_page', 20);
+
+        if (! in_array($perPage, $allowedPerPage, true)) {
+            $perPage = 20;
+        }
+
         $products = $query
-            ->paginate(20)
+            ->paginate($perPage)
             ->withQueryString();
 
-        return view('admin.products.index', compact('products'));
+        return view('admin.products.index', compact('products', 'perPage', 'allowedPerPage'));
+    }
+
+    protected function addProductIndexStockSummaries(\Illuminate\Database\Eloquent\Builder $query): void
+    {
+        if (Schema::hasTable('inventory_lots')) {
+            $inventoryLotColumns = collect(Schema::getColumnListing('inventory_lots'));
+
+            if ($inventoryLotColumns->contains('available_weight_kg')) {
+                $query->selectSub(function ($subQuery) use ($inventoryLotColumns) {
+                    $subQuery
+                        ->from('inventory_lots')
+                        ->selectRaw('COALESCE(SUM(COALESCE(available_weight_kg, 0)), 0)')
+                        ->whereColumn('inventory_lots.product_id', 'products.id');
+
+                    if ($inventoryLotColumns->contains('lot_status')) {
+                        $subQuery->where('inventory_lots.lot_status', 'available');
+                    }
+                }, 'inventory_stock_weight_kg');
+            }
+
+            $quantityColumns = collect(['available_pack_count', 'available_piece_count', 'available_quantity'])
+                ->filter(fn (string $column) => $inventoryLotColumns->contains($column))
+                ->values();
+
+            if ($quantityColumns->isNotEmpty()) {
+                $coalesceColumns = $quantityColumns
+                    ->map(fn (string $column) => "inventory_lots.{$column}")
+                    ->implode(', ');
+
+                $query->selectSub(function ($subQuery) use ($inventoryLotColumns, $coalesceColumns) {
+                    $subQuery
+                        ->from('inventory_lots')
+                        ->selectRaw("COALESCE(SUM(COALESCE({$coalesceColumns}, 0)), 0)")
+                        ->whereColumn('inventory_lots.product_id', 'products.id');
+
+                    if ($inventoryLotColumns->contains('lot_status')) {
+                        $subQuery->where('inventory_lots.lot_status', 'available');
+                    }
+                }, 'inventory_stock_qty');
+            }
+        }
+
+        if (Schema::hasTable('product_variants')) {
+            $variantColumns = collect(Schema::getColumnListing('product_variants'));
+
+            if ($variantColumns->contains('price')) {
+                $query->selectSub(function ($subQuery) use ($variantColumns) {
+                    $subQuery
+                        ->from('product_variants')
+                        ->selectRaw('MIN(NULLIF(price, 0))')
+                        ->whereColumn('product_variants.product_id', 'products.id');
+
+                    if ($variantColumns->contains('is_active')) {
+                        $subQuery->where('product_variants.is_active', true);
+                    }
+
+                    if ($variantColumns->contains('deleted_at')) {
+                        $subQuery->whereNull('product_variants.deleted_at');
+                    }
+                }, 'variant_min_price');
+
+                $query->selectSub(function ($subQuery) use ($variantColumns) {
+                    $subQuery
+                        ->from('product_variants')
+                        ->selectRaw('MAX(NULLIF(price, 0))')
+                        ->whereColumn('product_variants.product_id', 'products.id');
+
+                    if ($variantColumns->contains('is_active')) {
+                        $subQuery->where('product_variants.is_active', true);
+                    }
+
+                    if ($variantColumns->contains('deleted_at')) {
+                        $subQuery->whereNull('product_variants.deleted_at');
+                    }
+                }, 'variant_max_price');
+            }
+
+            if ($variantColumns->contains('stock_quantity')) {
+                $query->selectSub(function ($subQuery) use ($variantColumns) {
+                    $subQuery
+                        ->from('product_variants')
+                        ->selectRaw('COALESCE(SUM(COALESCE(stock_quantity, 0)), 0)')
+                        ->whereColumn('product_variants.product_id', 'products.id');
+
+                    if ($variantColumns->contains('is_active')) {
+                        $subQuery->where('product_variants.is_active', true);
+                    }
+
+                    if ($variantColumns->contains('deleted_at')) {
+                        $subQuery->whereNull('product_variants.deleted_at');
+                    }
+                }, 'variant_stock_qty');
+            }
+
+            if ($variantColumns->contains('stock_quantity') && $variantColumns->contains('product_weight')) {
+                $query->selectSub(function ($subQuery) use ($variantColumns) {
+                    $subQuery
+                        ->from('product_variants')
+                        ->selectRaw('COALESCE(SUM(COALESCE(stock_quantity, 0) * COALESCE(product_weight, 0)), 0)')
+                        ->whereColumn('product_variants.product_id', 'products.id');
+
+                    if ($variantColumns->contains('is_active')) {
+                        $subQuery->where('product_variants.is_active', true);
+                    }
+
+                    if ($variantColumns->contains('deleted_at')) {
+                        $subQuery->whereNull('product_variants.deleted_at');
+                    }
+                }, 'variant_stock_weight_kg');
+            }
+        }
     }
 
     public function create(): View
@@ -109,7 +267,7 @@ class ProductController extends Controller
         return redirect()
             ->route('admin.products.edit', $product)
             ->with('status', $request->isDraftSave()
-                ? 'Product draft saved. It remains inactive until price and weight are completed.'
+                ? 'Product draft saved. It remains inactive until pricing, variant and weight details are completed.'
                 : 'Product created successfully.');
     }
 
@@ -125,7 +283,7 @@ class ProductController extends Controller
         return redirect()
             ->route('admin.products.edit', $product)
             ->with('status', $request->isDraftSave()
-                ? 'Product draft updated. It remains inactive until price and weight are completed.'
+                ? 'Product draft updated. It remains inactive until pricing, variant and weight details are completed.'
                 : 'Product updated successfully.');
     }
 
@@ -150,7 +308,14 @@ class ProductController extends Controller
 
     protected function formData(Product $product): array
     {
-        $product->loadMissing(['categories', 'attributeValues']);
+        $hasTransformations = Schema::hasTable('product_transformations');
+
+        $product->loadMissing(array_filter([
+            'categories',
+            'attributeValues',
+            $hasTransformations ? 'producedFromProducts' : null,
+            $hasTransformations ? 'producesProducts' : null,
+        ]));
 
         return [
             'product' => $product,
@@ -188,6 +353,20 @@ class ProductController extends Controller
             'countries' => Country::query()
                 ->orderBy('name')
                 ->get(),
+
+            'transformationSourceProducts' => Product::query()
+                ->when($product->exists, fn ($query) => $query->whereKeyNot($product->getKey()))
+                ->orderBy('name')
+                ->get(['id', 'name', 'sku', 'inventory_role', 'pack_type', 'type', 'is_active']),
+
+            'selectedSourceProductIds' => $hasTransformations
+                ? $product->producedFromProducts
+                    ->pluck('id')
+                    ->map(fn ($id) => (int) $id)
+                    ->all()
+                : [],
+
+            'producesProducts' => $hasTransformations ? $product->producesProducts : collect(),
 
             // kept because your Blade expects it
             'supplierVendors' => Vendor::query()
@@ -235,14 +414,20 @@ class ProductController extends Controller
         $enteredStandardB2B = $this->toDecimal($validated['standard_b2b_price'] ?? null);
         $specialAudience = $validated['special_audience'] ?? 'b2c';
         $inventoryRole = $validated['inventory_role'] ?? 'saleable';
+        $isVariableProduct = (string) ($validated['type'] ?? 'simple') === 'variable';
+        $packType = $validated['pack_type'] ?? $this->inferPackTypeFromProductInput($validated);
+        $sellUnit = (string) ($validated['sell_unit'] ?? 'piece');
+        $isPhysicalChoice = ! $isVariableProduct && ((string) $packType === 'variable_weight' || $sellUnit === 'kg');
         $specialPriceIncludesGst = $specialAudience === 'b2b' ? $b2bPriceIncludesGst : $b2cPriceIncludesGst;
+        $storageProfile = Product::normalizeStorageProfile($validated['storage_profile'] ?? Product::DEFAULT_STORAGE_PROFILE);
 
         $payload = [
             'name' => $name,
             'short_description' => $validated['short_description'],
             'description' => $validated['description'],
-            'storage_guidance' => $this->nullableTrim($validated['storage_guidance'] ?? null) ?? Product::defaultStorageGuidanceText(),
-            'delivery_support' => $this->nullableTrim($validated['delivery_support'] ?? null) ?? Product::defaultDeliverySupportText(),
+            'storage_profile' => $storageProfile,
+            'storage_guidance' => $this->nullableTrim($validated['storage_guidance'] ?? null) ?? Product::storageGuidanceTextForProfile($storageProfile),
+            'delivery_support' => $this->nullableTrim($validated['delivery_support'] ?? null) ?? Product::deliverySupportTextForProfile($storageProfile),
             'slug' => $slug,
             'sku' => $validated['sku'],
             'type' => $validated['type'],
@@ -253,8 +438,8 @@ class ProductController extends Controller
 
             // Stored in DB as EXCL GST. B2C input defaults to GST-inclusive;
             // B2B input defaults to GST-exclusive.
-            'base_price' => $this->normalizeStoredPrice($enteredSell, $b2cPriceIncludesGst, $factor) ?? 0.0,
-            'mrp_price' => $this->normalizeStoredPrice($enteredMrp, $b2cPriceIncludesGst, $factor) ?? 0.0,
+            'base_price' => $this->parentProductPriceValue($enteredSell, $b2cPriceIncludesGst, $factor, $isVariableProduct, 'base_price'),
+            'mrp_price' => $this->parentProductPriceValue($enteredMrp, $b2cPriceIncludesGst, $factor, $isVariableProduct || $isPhysicalChoice, 'mrp_price'),
             'special_price' => $this->normalizeStoredPrice($enteredSpecial, $specialPriceIncludesGst, $factor),
             'standard_b2b_price' => $this->normalizeStoredPrice($enteredStandardB2B, $b2bPriceIncludesGst, $factor),
             'standard_b2b_min_order_quantity' => $this->toDecimal($validated['standard_b2b_min_order_quantity'] ?? null),
@@ -265,7 +450,7 @@ class ProductController extends Controller
             'gst_rate' => round($gstRate, 2),
 
             'sell_unit' => $validated['sell_unit'] ?? 'piece',
-            'pack_type' => $validated['pack_type'] ?? $this->inferPackTypeFromProductInput($validated),
+            'pack_type' => $packType,
             'product_weight' => $this->toDecimal($validated['product_weight'] ?? null),
             'pieces_per_pack' => $this->toDecimal($validated['pieces_per_pack'] ?? null),
 
@@ -297,6 +482,47 @@ class ProductController extends Controller
         ];
 
         return $this->filterProductPayloadForSchema($payload);
+    }
+
+    protected function parentProductPriceValue(?float $enteredPrice, bool $inputIncludesGst, float $factor, bool $keepNullableWhenBlank, string $column): ?float
+    {
+        $stored = $this->normalizeStoredPrice($enteredPrice, $inputIncludesGst, $factor);
+
+        if ($stored !== null) {
+            return $stored;
+        }
+
+        // Variant-choice products such as prawns/dimsum take commercial prices
+        // from their variants. Physical-choice products such as cheese blocks
+        // still require a sell price per kg, but MRP is optional. Keep optional
+        // parent values free of fake zeroes when the database column can hold
+        // NULL; otherwise fall back to zero for older schemas until the
+        // nullable-price migration is applied.
+        if ($keepNullableWhenBlank && $this->productColumnAllowsNull($column)) {
+            return null;
+        }
+
+        return 0.0;
+    }
+
+    protected function productColumnAllowsNull(string $column): bool
+    {
+        if (! Schema::hasTable('products') || ! Schema::hasColumn('products', $column)) {
+            return true;
+        }
+
+        try {
+            foreach (Schema::getColumns('products') as $definition) {
+                if (($definition['name'] ?? null) === $column) {
+                    return (bool) ($definition['nullable'] ?? false);
+                }
+            }
+        } catch (\Throwable $e) {
+            // Safe fallback for framework/driver combinations that do not expose
+            // column metadata. Existing non-null schemas can still store zero.
+        }
+
+        return false;
     }
 
     protected function inferPackTypeFromProductInput(array $validated): string
@@ -423,8 +649,122 @@ class ProductController extends Controller
         }
 
         if (method_exists($product, 'attributeValues')) {
-            $product->attributeValues()->sync($attributeValueIds);
+            $product->attributeValues()->sync($this->attributeValueSyncPayload($attributeValueIds));
         }
+
+        $this->syncProductTransformations($product, $validated['source_product_ids'] ?? []);
+    }
+
+
+    /**
+     * Build the payload required by product_attribute_values.
+     *
+     * The pivot table stores both attribute_value_id and attribute_id. A plain
+     * sync([1, 2, 3]) only writes attribute_value_id and fails on databases where
+     * attribute_id is NOT NULL. Keep the public form unchanged, but derive the
+     * option group id from each selected option value before syncing.
+     *
+     * @param  array<int>  $attributeValueIds
+     * @return array<int, array<string, int>>|array<int>
+     */
+    protected function attributeValueSyncPayload(array $attributeValueIds): array
+    {
+        if (empty($attributeValueIds)) {
+            return [];
+        }
+
+        if (! Schema::hasTable('product_attribute_values') || ! Schema::hasColumn('product_attribute_values', 'attribute_id')) {
+            return $attributeValueIds;
+        }
+
+        return DB::table('attribute_values')
+            ->whereIn('id', $attributeValueIds)
+            ->pluck('attribute_id', 'id')
+            ->mapWithKeys(function ($attributeId, $attributeValueId) {
+                return [(int) $attributeValueId => ['attribute_id' => (int) $attributeId]];
+            })
+            ->all();
+    }
+
+    protected function syncProductTransformations(Product $product, array $sourceProductIds): void
+    {
+        if (! Schema::hasTable('product_transformations')) {
+            return;
+        }
+
+        $sourceProductIds = collect($sourceProductIds)
+            ->map(fn ($id) => (int) $id)
+            ->filter(fn ($id) => $id > 0 && $id !== (int) $product->id)
+            ->unique()
+            ->values()
+            ->all();
+
+        foreach ($sourceProductIds as $sourceProductId) {
+            if ($this->wouldCreateTransformationCycle((int) $product->id, (int) $sourceProductId, $sourceProductIds)) {
+                $sourceName = Product::query()->whereKey($sourceProductId)->value('name') ?: ('Product #' . $sourceProductId);
+
+                throw ValidationException::withMessages([
+                    'source_product_ids' => "Cannot set {$sourceName} as a source because it would create a circular product transformation.",
+                ]);
+            }
+        }
+
+        $syncPayload = collect($sourceProductIds)
+            ->mapWithKeys(fn ($sourceProductId) => [
+                $sourceProductId => ['transformation_type' => 'repack'],
+            ])
+            ->all();
+
+        $product->producedFromProducts()->sync($syncPayload);
+    }
+
+    protected function wouldCreateTransformationCycle(int $targetProductId, int $candidateSourceProductId, array $newSourceProductIds): bool
+    {
+        if ($targetProductId <= 0 || $candidateSourceProductId <= 0) {
+            return false;
+        }
+
+        if ($targetProductId === $candidateSourceProductId) {
+            return true;
+        }
+
+        $edges = ProductTransformation::query()
+            ->where('target_product_id', '!=', $targetProductId)
+            ->get(['source_product_id', 'target_product_id'])
+            ->map(fn ($row) => [(int) $row->source_product_id, (int) $row->target_product_id])
+            ->all();
+
+        foreach ($newSourceProductIds as $sourceProductId) {
+            $edges[] = [(int) $sourceProductId, $targetProductId];
+        }
+
+        $adjacency = [];
+        foreach ($edges as [$source, $target]) {
+            $adjacency[$source][] = $target;
+        }
+
+        $stack = [$targetProductId];
+        $seen = [];
+
+        while ($stack) {
+            $current = array_pop($stack);
+
+            if (isset($seen[$current])) {
+                continue;
+            }
+
+            $seen[$current] = true;
+
+            foreach ($adjacency[$current] ?? [] as $next) {
+                if ($next === $candidateSourceProductId) {
+                    return true;
+                }
+
+                $stack[] = $next;
+            }
+        }
+
+        return false;
     }
 
     protected function resolveSlug(?string $rawSlug, string $name, Product $product): string

@@ -36,6 +36,11 @@ return [
     'default_delivery_tax_rate' => (float) env('DELIVERY_TAX_RATE', 0),
     'default_handling_tax_rate' => (float) env('HANDLING_TAX_RATE', 0),
 
+    // Snapshot these onto each order/invoice so historical PDFs do not change
+    // when the configured service classification changes later.
+    'delivery_sac_code' => trim((string) env('DELIVERY_SAC_CODE', '')),
+    'handling_sac_code' => trim((string) env('HANDLING_SAC_CODE', '')),
+
     // Bandara currently operates as a frozen/cold-chain storefront, so handling
     // rules should default to the frozen temperature bucket unless the caller
     // passes a more specific mode. Admin can still create an `all` rule.

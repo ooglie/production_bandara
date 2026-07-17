@@ -48,9 +48,6 @@
                         <td class="px-3 py-3">
                             <div class="font-medium text-gray-900 dark:text-gray-50">{{ $row->product?->name ?? ('Product #' . $row->product_id) }}</div>
                             <div class="text-gray-500 dark:text-gray-400">SKU: {{ $row->product?->sku ?: '—' }}</div>
-                            @if($row->productSellUnit)
-                                <div class="mt-1 text-gray-500 dark:text-gray-400">Requested unit: {{ $row->productSellUnit->display_label }}</div>
-                            @endif
                             @if($row->productVariant)
                                 <div class="mt-1 text-gray-500 dark:text-gray-400">Variant: {{ $row->productVariant->name ?: $row->productVariant->sku }}</div>
                             @endif
@@ -84,15 +81,10 @@
                                         <input type="number" name="min_order_quantity" step="0.01" min="0.01" placeholder="MOQ" value="1" class="rounded border border-gray-300 px-2 py-1 text-[11px] dark:border-gray-700 dark:bg-gray-950">
                                         <input type="number" name="price" step="0.01" min="0" placeholder="B2B price optional" class="rounded border border-gray-300 px-2 py-1 text-[11px] dark:border-gray-700 dark:bg-gray-950">
                                     </div>
-                                    @if($row->productSellUnit || $row->product_variant_id)
+                                    @if($row->product_variant_id)
                                         <select name="price_scope" class="mt-2 w-full rounded border border-gray-300 px-2 py-1 text-[11px] dark:border-gray-700 dark:bg-gray-950">
                                             <option value="product">Apply price at product level</option>
-                                            @if($row->productSellUnit)
-                                                <option value="sell_unit" selected>Apply price to requested sellable unit</option>
-                                            @endif
-                                            @if($row->product_variant_id)
-                                                <option value="variant">Apply price to requested variant</option>
-                                            @endif
+                                            <option value="variant" selected>Apply price to requested variant</option>
                                         </select>
                                     @else
                                         <input type="hidden" name="price_scope" value="product">

@@ -20,10 +20,16 @@ class OrderAddress extends Model
         'state_code',
         'country',
         'pincode',
+        'latitude',
+        'longitude',
+        'geocoding_provider',
+        'geocoding_quality',
         'gstin',
     ];
 
     protected $casts = [
+        'latitude' => 'float',
+        'longitude' => 'float',
         'created_at' => 'datetime',
         'updated_at' => 'datetime',
     ];

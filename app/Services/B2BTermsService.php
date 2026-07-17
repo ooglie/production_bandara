@@ -4,56 +4,50 @@ namespace App\Services;
 
 use App\Models\B2BCustomerProduct;
 use App\Models\Product;
-use App\Models\ProductSellUnit;
 use App\Models\ProductVariant;
 use App\Models\User;
 
 class B2BTermsService
 {
     /**
-     * Unified storefront rule:
-     * - B2B users can browse the same active catalog as B2C users.
-     * - Buying is allowed when a B2B price can be resolved for the product,
-     *   variant, or sellable unit.
-     * - Existing b2b_customer_products rows now act as MOQ/terms overrides,
-     *   not mandatory catalog visibility gates.
+     * B2B buying is allowed only when an explicit B2B/customer price can be
+     * resolved for the selected product option.
      */
-    public function canBuy(?User $user, Product $product, ?ProductSellUnit $sellUnit = null, ?ProductVariant $variant = null): bool
+    public function canBuy(?User $user, Product $product, ?ProductVariant $variant = null): bool
     {
         if (! $user || (($user->customer_type ?? 'b2c') !== 'b2b')) {
             return true;
         }
 
-        return app(PricingService::class)->hasB2BPrice($user, $product, $sellUnit ?: $variant?->sellUnit, $variant);
+        return app(PricingService::class)->hasB2BPrice($user, $product, $variant);
     }
 
     public function hasAnyPortfolioAccess(?User $user, Product $product): bool
     {
-        return $this->canBuy($user, $product);
+        return app(PricingService::class)->productIsAvailableToUser($user, $product);
     }
 
-    public function minOrderQty(?User $user, Product $product, ?ProductSellUnit $sellUnit = null, ?ProductVariant $variant = null): float
+    public function minOrderQty(?User $user, Product $product, ?ProductVariant $variant = null): float
     {
         if (! $user || (($user->customer_type ?? 'b2c') !== 'b2b')) {
             return 1.0;
         }
 
-        $sellUnit = $sellUnit ?: $variant?->sellUnit;
         $query = $this->activeAssignmentQuery($user, $product);
 
-        if ($sellUnit) {
-            $row = (clone $query)->where('product_sell_unit_id', $sellUnit->id)->first();
+        if ($variant) {
+            $row = (clone $query)->where('product_variant_id', $variant->id)->first();
             if ($row && (float) ($row->min_order_quantity ?? 0) > 0) {
                 return (float) $row->min_order_quantity;
             }
         }
 
-        $row = (clone $query)->whereNull('product_sell_unit_id')->first();
+        $row = (clone $query)->whereNull('product_variant_id')->first();
         if ($row && (float) ($row->min_order_quantity ?? 0) > 0) {
             return (float) $row->min_order_quantity;
         }
 
-        foreach ([$sellUnit, $variant, $product] as $model) {
+        foreach ([$variant, $product] as $model) {
             $min = (float) ($model?->standard_b2b_min_order_quantity ?? 0);
             if ($min > 0) {
                 return $min;

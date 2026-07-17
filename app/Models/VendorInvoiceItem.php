@@ -10,7 +10,6 @@ class VendorInvoiceItem extends Model
         'vendor_invoice_id',
         'product_id',
         'product_variant_id',
-        'product_sell_unit_id',
         'receipt_type',
         'quantity',
         'unit_cost',
@@ -53,10 +52,6 @@ class VendorInvoiceItem extends Model
         return $this->belongsTo(ProductVariant::class);
     }
 
-    public function sellUnit()
-    {
-        return $this->belongsTo(ProductSellUnit::class, 'product_sell_unit_id');
-    }
 
     public function hsnCode()
     {

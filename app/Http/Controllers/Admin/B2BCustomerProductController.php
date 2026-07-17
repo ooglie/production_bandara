@@ -6,7 +6,7 @@ use App\Http\Controllers\Controller;
 use App\Models\B2BCustomerProduct;
 use App\Models\CustomerProductPrice;
 use App\Models\Product;
-use App\Models\ProductSellUnit;
+use App\Models\ProductVariant;
 use App\Models\User;
 use Illuminate\Http\Request;
 use Illuminate\Support\Collection;
@@ -17,12 +17,12 @@ class B2BCustomerProductController extends Controller
     {
         $this->assertB2B($user);
 
-        $rows = B2BCustomerProduct::with(['product', 'sellUnit'])
+        $rows = B2BCustomerProduct::with(['product', 'productVariant'])
             ->where('user_id', $user->id)
             ->orderByDesc('is_active')
             ->orderBy('product_id')
-            ->orderByRaw('product_sell_unit_id IS NULL DESC')
-            ->orderBy('product_sell_unit_id')
+            ->orderByRaw('product_variant_id IS NULL DESC')
+            ->orderBy('product_variant_id')
             ->paginate(20);
 
         $priceOverrides = $this->priceOverridesFor($user->id, $rows->getCollection());
@@ -38,7 +38,7 @@ class B2BCustomerProductController extends Controller
     {
         $this->assertB2B($user);
 
-        $products = $this->productsWithSellUnits();
+        $products = $this->productsWithVariants();
 
         return view('admin.customers.b2b-products.create', [
             'user' => $user,
@@ -57,21 +57,21 @@ class B2BCustomerProductController extends Controller
             'is_active'          => ['sometimes', 'boolean'],
         ]);
 
-        [$product, $sellUnit] = $this->resolveAssignmentTarget($data['assignment_target']);
+        [$product, $variant] = $this->resolveAssignmentTarget($data['assignment_target']);
 
         $minOrderQty = (float) ($data['min_order_quantity'] ?? 1);
         $isActive = $request->boolean('is_active', true);
 
         $row = B2BCustomerProduct::where('user_id', $user->id)
             ->where('product_id', $product->id)
-            ->when($sellUnit, fn ($q) => $q->where('product_sell_unit_id', $sellUnit->id), fn ($q) => $q->whereNull('product_sell_unit_id'))
+            ->when($variant, fn ($q) => $q->where('product_variant_id', $variant->id), fn ($q) => $q->whereNull('product_variant_id'))
             ->first();
 
         if (! $row) {
             $row = new B2BCustomerProduct();
             $row->user_id = $user->id;
             $row->product_id = $product->id;
-            $row->product_sell_unit_id = $sellUnit?->id;
+            $row->product_variant_id = $variant?->id;
             $row->created_by_id = $request->user()->id;
         }
 
@@ -80,11 +80,11 @@ class B2BCustomerProductController extends Controller
         $row->updated_by_id = $request->user()->id;
         $row->save();
 
-        $this->upsertPriceIfProvided($request, $user, $product, $sellUnit);
+        $this->upsertPriceIfProvided($request, $user, $product, $variant);
 
         return redirect()
             ->route('admin.customers.b2b-products.index', $user)
-            ->with('status', $sellUnit ? 'Sellable unit added to B2B catalog.' : 'Product added to B2B catalog.');
+            ->with('status', $variant ? 'Variant option added to B2B catalog.' : 'Product added to B2B catalog.');
     }
 
     public function edit(User $user, B2BCustomerProduct $row)
@@ -92,8 +92,8 @@ class B2BCustomerProductController extends Controller
         $this->assertB2B($user);
         abort_unless($row->user_id === $user->id, 404);
 
-        $row->load(['product', 'sellUnit']);
-        $priceOverride = $this->priceOverrideFor($user->id, (int) $row->product_id, $row->product_sell_unit_id ? (int) $row->product_sell_unit_id : null);
+        $row->load(['product', 'productVariant']);
+        $priceOverride = $this->priceOverrideFor($user->id, (int) $row->product_id, $row->product_variant_id ? (int) $row->product_variant_id : null);
 
         return view('admin.customers.b2b-products.edit', [
             'user' => $user,
@@ -113,14 +113,14 @@ class B2BCustomerProductController extends Controller
             'is_active'          => ['sometimes', 'boolean'],
         ]);
 
-        $row->loadMissing(['product', 'sellUnit']);
+        $row->loadMissing(['product', 'productVariant']);
         $row->min_order_quantity = (float) ($data['min_order_quantity'] ?? 1);
         $row->is_active = $request->boolean('is_active', true);
         $row->updated_by_id = $request->user()->id;
         $row->save();
 
         if ($row->product) {
-            $this->upsertPriceIfProvided($request, $user, $row->product, $row->sellUnit);
+            $this->upsertPriceIfProvided($request, $user, $row->product, $row->productVariant);
         }
 
         return redirect()
@@ -147,14 +147,13 @@ class B2BCustomerProductController extends Controller
         }
     }
 
-    protected function productsWithSellUnits()
+    protected function productsWithVariants()
     {
         return Product::query()
-            ->with(['sellUnits' => function ($q) {
-                $q->where('is_active', true)
-                    ->where('is_b2b_visible', true)
-                    ->orderBy('sort_order')
-                    ->orderBy('name');
+            ->with(['variants' => function ($q) {
+                $q->where(function ($query) {
+                    $query->where('is_active', true)->orWhereNull('is_active');
+                })->orderBy('name')->orderBy('sku')->orderBy('id');
             }])
             ->where('is_active', true)
             ->orderBy('name')
@@ -171,36 +170,36 @@ class B2BCustomerProductController extends Controller
             return [$product, null];
         }
 
-        if ($type === 'unit' && $id > 0) {
-            $sellUnit = ProductSellUnit::query()
+        if ($type === 'variant' && $id > 0) {
+            $variant = ProductVariant::query()
                 ->with('product')
-                ->where('is_active', true)
-                ->where('is_b2b_visible', true)
+                ->where(function ($query) {
+                    $query->where('is_active', true)->orWhereNull('is_active');
+                })
                 ->findOrFail($id);
 
-            if (! $sellUnit->product || ! (bool) ($sellUnit->product->is_active ?? false)) {
-                abort(422, 'Selected sellable unit does not belong to an active product.');
+            if (! $variant->product || ! (bool) ($variant->product->is_active ?? false)) {
+                abort(422, 'Selected variant does not belong to an active product.');
             }
 
-            return [$sellUnit->product, $sellUnit];
+            return [$variant->product, $variant];
         }
 
-        abort(422, 'Please select a valid product or sellable unit.');
+        abort(422, 'Please select a valid product or variant.');
     }
 
-    protected function upsertPriceIfProvided(Request $request, User $user, Product $product, ?ProductSellUnit $sellUnit): void
+    protected function upsertPriceIfProvided(Request $request, User $user, Product $product, ?ProductVariant $variant): void
     {
         if (! $request->has('price') || trim((string) $request->input('price')) === '') {
             return;
         }
 
-        $price = (float) $request->input('price');
+        $price = $this->normalizeStoredB2BPrice($request->input('price'), $product);
 
         $row = CustomerProductPrice::query()
             ->where('user_id', $user->id)
             ->where('product_id', $product->id)
-            ->whereNull('product_variant_id')
-            ->when($sellUnit, fn ($q) => $q->where('product_sell_unit_id', $sellUnit->id), fn ($q) => $q->whereNull('product_sell_unit_id'))
+            ->when($variant, fn ($q) => $q->where('product_variant_id', $variant->id), fn ($q) => $q->whereNull('product_variant_id'))
             ->whereNull('valid_from')
             ->whereNull('valid_to')
             ->first();
@@ -209,8 +208,7 @@ class B2BCustomerProductController extends Controller
             $row = new CustomerProductPrice();
             $row->user_id = $user->id;
             $row->product_id = $product->id;
-            $row->product_variant_id = null;
-            $row->product_sell_unit_id = $sellUnit?->id;
+            $row->product_variant_id = $variant?->id;
             $row->currency = 'INR';
             $row->created_by_id = $request->user()?->id;
         }
@@ -221,13 +219,12 @@ class B2BCustomerProductController extends Controller
         $row->save();
     }
 
-    protected function priceOverrideFor(int $userId, int $productId, ?int $sellUnitId): ?CustomerProductPrice
+    protected function priceOverrideFor(int $userId, int $productId, ?int $variantId): ?CustomerProductPrice
     {
         return CustomerProductPrice::query()
             ->where('user_id', $userId)
             ->where('product_id', $productId)
-            ->whereNull('product_variant_id')
-            ->when($sellUnitId, fn ($q) => $q->where('product_sell_unit_id', $sellUnitId), fn ($q) => $q->whereNull('product_sell_unit_id'))
+            ->when($variantId, fn ($q) => $q->where('product_variant_id', $variantId), fn ($q) => $q->whereNull('product_variant_id'))
             ->whereNull('valid_from')
             ->whereNull('valid_to')
             ->latest('id')
@@ -245,10 +242,23 @@ class B2BCustomerProductController extends Controller
         return CustomerProductPrice::query()
             ->where('user_id', $userId)
             ->whereIn('product_id', $productIds)
-            ->whereNull('product_variant_id')
             ->whereNull('valid_from')
             ->whereNull('valid_to')
             ->get()
-            ->keyBy(fn ($price) => $price->product_id . '|' . ((int) ($price->product_sell_unit_id ?? 0)));
+            ->keyBy(fn ($price) => $price->product_id . '|' . ((int) ($price->product_variant_id ?? 0)));
+    }
+
+    protected function normalizeStoredB2BPrice(mixed $value, Product $product): float
+    {
+        $price = (float) $value;
+        $includesGst = (bool) ($product->b2b_price_includes_gst ?? false);
+        $gstRate = (float) ($product->effective_gst_rate ?? $product->gst_rate ?? 0);
+        $factor = 1 + ($gstRate / 100);
+
+        if ($includesGst && $factor > 0) {
+            return round($price / $factor, 2);
+        }
+
+        return round($price, 2);
     }
 }

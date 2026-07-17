@@ -1,0 +1,46 @@
+diff --git a/app/Http/Controllers/Admin/ProductController.php b/app/Http/Controllers/Admin/ProductController.php
+--- a/app/Http/Controllers/Admin/ProductController.php
++++ b/app/Http/Controllers/Admin/ProductController.php
+@@ -482,10 +482,41 @@
+         }
+ 
+         if (method_exists($product, 'attributeValues')) {
+-            $product->attributeValues()->sync($attributeValueIds);
++            $product->attributeValues()->sync($this->attributeValueSyncPayload($attributeValueIds));
+         }
+ 
+         $this->syncProductTransformations($product, $validated['source_product_ids'] ?? []);
++    }
++
++
++    /**
++     * Build the payload required by product_attribute_values.
++     *
++     * The pivot table stores both attribute_value_id and attribute_id. A plain
++     * sync([1, 2, 3]) only writes attribute_value_id and fails on databases where
++     * attribute_id is NOT NULL. Keep the public form unchanged, but derive the
++     * option group id from each selected option value before syncing.
++     *
++     * @param  array<int>  $attributeValueIds
++     * @return array<int, array<string, int>>|array<int>
++     */
++    protected function attributeValueSyncPayload(array $attributeValueIds): array
++    {
++        if (empty($attributeValueIds)) {
++            return [];
++        }
++
++        if (! Schema::hasTable('product_attribute_values') || ! Schema::hasColumn('product_attribute_values', 'attribute_id')) {
++            return $attributeValueIds;
++        }
++
++        return DB::table('attribute_values')
++            ->whereIn('id', $attributeValueIds)
++            ->pluck('attribute_id', 'id')
++            ->mapWithKeys(function ($attributeId, $attributeValueId) {
++                return [(int) $attributeValueId => ['attribute_id' => (int) $attributeId]];
++            })
++            ->all();
+     }
+ 
+     protected function syncProductTransformations(Product $product, array $sourceProductIds): void

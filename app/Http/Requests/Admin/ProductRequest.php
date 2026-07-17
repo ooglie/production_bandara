@@ -50,6 +50,7 @@ class ProductRequest extends FormRequest
             'barcode' => trim((string) $this->input('barcode', '')),
             'short_description' => trim((string) $this->input('short_description', '')),
             'description' => trim((string) $this->input('description', '')),
+            'storage_profile' => Product::normalizeStorageProfile($this->input('storage_profile', Product::DEFAULT_STORAGE_PROFILE)),
             'storage_guidance' => $normalizeMultiline($this->input('storage_guidance')),
             'delivery_support' => $normalizeMultiline($this->input('delivery_support')),
 
@@ -77,6 +78,7 @@ class ProductRequest extends FormRequest
 
             'category_ids' => $normalizeArrayInts($this->input('category_ids', [])),
             'attribute_value_ids' => $normalizeArrayInts($this->input('attribute_value_ids', [])),
+            'source_product_ids' => $normalizeArrayInts($this->input('source_product_ids', [])),
         ]);
     }
 
@@ -90,9 +92,19 @@ class ProductRequest extends FormRequest
         $isDraft = $this->isDraftSave();
         $isVariable = (string) $this->input('type', 'simple') === 'variable';
         $packType = (string) $this->input('pack_type', 'quantity');
-        $productWeightRules = $isDraft || $isVariable || $packType === 'fixed_piece_pack'
-            ? ['nullable', 'numeric', 'min:0']
-            : ['required', 'numeric', 'gt:0'];
+        $sellUnit = (string) $this->input('sell_unit', 'piece');
+        $isPhysicalChoice = ! $isVariable && ($packType === 'variable_weight' || $sellUnit === 'kg');
+        $requiresParentSellPrice = ! $isDraft && ! $isVariable;
+        $requiresParentMrpPrice = ! $isDraft && ! $isVariable && ! $isPhysicalChoice;
+        // Product weight is only mandatory when the product itself is a fixed-weight finished pack.
+        // Catchweight/physical-choice products use the exact weights saved on inventory pieces/lots,
+        // and variable products keep pack weight on their variants.
+        $productWeightRules = (! $isDraft && ! $isVariable && $packType === 'fixed_weight_pack')
+            ? ['required', 'numeric', 'gt:0']
+            : ['nullable', 'numeric', 'min:0'];
+
+        // Pieces-per-pack is only mandatory when the product itself is a single fixed-piece pack.
+        // Dimsum/Prawns-style variant products keep pieces/pack metadata on variants.
         $piecesPerPackRules = (! $isDraft && ! $isVariable && $packType === 'fixed_piece_pack')
             ? ['required', 'numeric', 'gt:0']
             : ['nullable', 'numeric', 'min:0'];
@@ -101,6 +113,7 @@ class ProductRequest extends FormRequest
             'name' => ['required', 'string', 'max:255'],
             'short_description' => ['required', 'string', 'max:255'],
             'description' => ['required', 'string'],
+            'storage_profile' => ['required', Rule::in(array_keys(Product::storageProfileOptions()))],
             'storage_guidance' => ['nullable', 'string', 'max:5000'],
             'delivery_support' => ['nullable', 'string', 'max:5000'],
 
@@ -124,12 +137,12 @@ class ProductRequest extends FormRequest
             'vendor_id' => ['nullable', 'integer', 'exists:vendors,id'],
             'barcode' => ['nullable', 'string', 'max:191'],
 
-            'mrp_price' => ($isDraft || $isVariable)
-                ? ['nullable', 'numeric', 'min:0']
-                : ['required', 'numeric', 'gt:0'],
-            'base_price' => ($isDraft || $isVariable)
-                ? ['nullable', 'numeric', 'min:0']
-                : ['required', 'numeric', 'gt:0'],
+            'mrp_price' => $requiresParentMrpPrice
+                ? ['required', 'numeric', 'gt:0']
+                : ['nullable', 'numeric', 'min:0'],
+            'base_price' => $requiresParentSellPrice
+                ? ['required', 'numeric', 'gt:0']
+                : ['nullable', 'numeric', 'min:0'],
             'b2c_price_includes_gst' => ['required', Rule::in(['0', '1', 0, 1, true, false])],
             'b2b_price_includes_gst' => ['required', Rule::in(['0', '1', 0, 1, true, false])],
 
@@ -148,6 +161,9 @@ class ProductRequest extends FormRequest
 
             'attribute_value_ids' => ['nullable', 'array'],
             'attribute_value_ids.*' => ['integer', 'exists:attribute_values,id'],
+
+            'source_product_ids' => ['nullable', 'array'],
+            'source_product_ids.*' => ['integer', 'exists:products,id', Rule::notIn(array_filter([(int) ($productId ?? 0)]))],
 
             'stock_quantity' => ['nullable', 'numeric', 'min:0'],
             'low_stock_threshold' => ['nullable', 'numeric', 'min:0'],
@@ -181,24 +197,26 @@ class ProductRequest extends FormRequest
             'name.required' => 'Product name is required.',
             'short_description.required' => 'Short description is required.',
             'description.required' => 'Full description is required.',
+            'storage_profile.required' => 'Please select a storage profile.',
+
 
             'sku.required' => 'SKU is required.',
             'sku.unique' => 'This SKU has already been taken.',
 
             'type.required' => 'Type is required.',
 
-            'mrp_price.required' => 'MRP is required before activating/publishing the product.',
-            'base_price.required' => 'Sell price is required before activating/publishing the product.',
-            'mrp_price.gt' => 'MRP must be greater than zero before activation.',
-            'base_price.gt' => 'Sell price must be greater than zero before activation.',
+            'mrp_price.required' => 'MRP is required for active direct-buy products. Physical-choice products can leave MRP blank; variant products use variant-level MRP.',
+            'base_price.required' => 'Sell price is required for active direct-buy and physical-choice products. Variant products use variant-level sell price.',
+            'mrp_price.gt' => 'MRP must be greater than zero for active direct-buy products.',
+            'base_price.gt' => 'Sell price must be greater than zero for active direct-buy and physical-choice products.',
             'b2c_price_includes_gst.required' => 'B2C price mode is required.',
             'b2b_price_includes_gst.required' => 'B2B price mode is required.',
 
             'hsn_code_id.required' => 'HSN is required.',
             'gst_rate.required' => 'GST rate is required.',
 
-            'product_weight.required' => 'Product weight / pack weight is required before activating/publishing this product.',
-            'product_weight.gt' => 'Product weight / pack weight must be greater than zero before activation.',
+            'product_weight.required' => 'Product / pack weight is required only for fixed-weight finished packs before activation.',
+            'product_weight.gt' => 'Product / pack weight must be greater than zero for fixed-weight finished packs.',
             'pieces_per_pack.required' => 'Pieces per pack is required for fixed piece pack products.',
             'pieces_per_pack.gt' => 'Pieces per pack must be greater than zero.',
 
@@ -207,6 +225,7 @@ class ProductRequest extends FormRequest
 
             'category_ids.required' => 'Please select at least one category.',
             'category_ids.min' => 'Please select at least one category.',
+            'source_product_ids.*.not_in' => 'A product cannot be produced from itself.',
 
             'slug.unique' => 'This slug has already been taken.',
 

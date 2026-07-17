@@ -8,6 +8,7 @@ use App\Models\OrderItem;
 use App\Models\Product;
 use App\Models\ProductOffer;
 use App\Services\BandaraCreditService;
+use App\Services\PricingService;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Auth;
 
@@ -16,6 +17,8 @@ class CustomerDashboardController extends Controller
     public function index(Request $request, BandaraCreditService $bandaraCreditService)
     {
         $user = Auth::user();
+        $isB2B = (($user->customer_type ?? 'b2c') === 'b2b');
+        $pricing = app(PricingService::class);
 
         // Last order for this customer
         $lastOrder = Order::with('items')
@@ -40,6 +43,13 @@ class CustomerDashboardController extends Controller
 
         if ($favoriteRow) {
             $favoriteProduct = Product::with('images')->find($favoriteRow->product_id);
+
+            if ($favoriteProduct) {
+                if ($isB2B && ! $pricing->productIsAvailableToUser($user, $favoriteProduct)) {
+                    $favoriteProduct = null;
+                    $favoriteProductStats = null;
+                }
+            }
 
             if ($favoriteProduct) {
                 $favoriteProductStats = [
@@ -67,9 +77,16 @@ class CustomerDashboardController extends Controller
                 ->latest()
                 ->take(3)
                 ->get();
+
+            if ($isB2B) {
+                $personalOffers = $personalOffers
+                    ->filter(fn (ProductOffer $offer) => $offer->product
+                        && $pricing->productIsAvailableToUser($user, $offer->product))
+                    ->values();
+            }
         }
 
-        $creditSnapshot = $bandaraCreditService->snapshotForUser($user->id);
+        $creditSnapshot = $isB2B ? [] : $bandaraCreditService->snapshotForUser($user->id);
 
         return view('dashboard.customer', [
             'lastOrder'            => $lastOrder,

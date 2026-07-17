@@ -4,8 +4,22 @@
     $bands = data_get($pieceSelector, 'bands', []);
 
     $quote = app(\App\Services\PricingService::class)->quote(auth()->user(), $product);
-    $effectivePrice = (float) ($quote['price'] ?? 0);
-    $basePrice = (float) ($quote['compare_at_price'] ?? $product->base_price ?? 0);
+    $unitEffectivePrice = (float) ($quote['price'] ?? 0);
+    $unitBasePrice = (float) ($quote['compare_at_price'] ?? $product->base_price ?? 0);
+
+    $pricingUnit = strtolower((string) (($product->sell_unit ?? 'piece') === 'kg' ? 'kg' : 'pack'));
+    $weightMultiplier = 1.0;
+    if (! $hasPieceSelector && $pricingUnit === 'kg' && (float) ($product->product_weight ?? 0) > 0) {
+        // Fixed/catchweight product sold as one physical unit: display total price for that unit.
+        $weightMultiplier = round((float) $product->product_weight, 3);
+    }
+
+    $effectivePrice = round($unitEffectivePrice * $weightMultiplier, 2);
+    $basePrice = round($unitBasePrice * $weightMultiplier, 2);
+    $showsWeightedTotal = ! $hasPieceSelector && $pricingUnit === 'kg' && $weightMultiplier > 1;
+    $displayMrp = isset($mrp) && $mrp !== null ? round((float) $mrp * $weightMultiplier, 2) : null;
+    $displayEffectiveForSavings = isset($effective) ? round((float) $effective * $weightMultiplier, 2) : $effectivePrice;
+    $displayBaseForSavings = isset($base) ? round((float) $base * $weightMultiplier, 2) : $basePrice;
     $isB2BPrice = ($quote['customer_type'] ?? 'b2c') === 'b2b';
     $isSpecialPrice = !$isB2BPrice && (bool) ($quote['is_special'] ?? false) && $effectivePrice > 0 && $basePrice > $effectivePrice;
     $moq = (float) ($quote['moq'] ?? 1);
@@ -107,16 +121,22 @@
         @else
             <div class="text-sm font-semibold text-gray-900 dark:text-gray-50">₹{{ number_format($effectivePrice, 2) }}</div>
         @endif
+
+        @if($showsWeightedTotal)
+            <div class="text-[10px] text-gray-500 dark:text-gray-400">
+                ₹{{ number_format($unitEffectivePrice, 2) }}/kg × {{ rtrim(rtrim(number_format($weightMultiplier, 3), '0'), '.') }} kg
+            </div>
+        @endif
     </div>
 
-    @if(isset($mrp, $effective) && $mrp !== null && $mrp > 0 && $mrp > $effective)
+    @if($displayMrp !== null && $displayMrp > 0 && $displayMrp > $displayEffectiveForSavings)
         <div class="flex items-center gap-2">
             <span class="text-[11px] text-red-600 line-through">
-                ₹{{ number_format($mrp, 2) }}
+                ₹{{ number_format($displayMrp, 2) }}
             </span>
 
             @php
-                $offPct = $mrp > 0 ? (($mrp - $effective) / $mrp) * 100 : 0;
+                $offPct = $displayMrp > 0 ? (($displayMrp - $displayEffectiveForSavings) / $displayMrp) * 100 : 0;
             @endphp
 
             @if($offPct > 0.5)
@@ -126,9 +146,9 @@
             @endif
         </div>
     @else
-        @if(isset($effective, $base) && $product->is_special && $effective < $base)
+        @if(isset($effective, $base) && $product->is_special && $displayEffectiveForSavings < $displayBaseForSavings)
             <span class="text-[11px] text-gray-400 line-through">
-                ₹{{ number_format($base, 2) }}
+                ₹{{ number_format($displayBaseForSavings, 2) }}
             </span>
         @endif
     @endif

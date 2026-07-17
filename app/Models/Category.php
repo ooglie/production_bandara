@@ -18,6 +18,10 @@ class Category extends Model
         'position',
     ];
 
+    protected $casts = [
+        'is_active' => 'bool',
+    ];
+
     public function parent()
     {
         return $this->belongsTo(self::class, 'parent_id');

@@ -86,7 +86,10 @@
                         $shipping?->state,
                     ])->filter()->implode(', '));
                     $isDelivered = ($order->delivery_status ?? '') === 'delivered' || ($order->status ?? '') === 'delivered';
-                    $mapsUrl = $addressText !== '' ? 'https://www.google.com/maps/dir/?api=1&destination=' . urlencode($addressText) . '&travelmode=driving' : null;
+                    $mapDestination = ($shipping?->latitude !== null && $shipping?->longitude !== null)
+                        ? trim((string) $shipping->latitude) . ',' . trim((string) $shipping->longitude)
+                        : $addressText;
+                    $mapsUrl = $mapDestination !== '' ? 'https://www.google.com/maps/dir/?api=1&destination=' . urlencode($mapDestination) . '&travelmode=driving' : null;
                 @endphp
                 <article class="rounded-2xl border border-gray-200 dark:border-gray-800 bg-white dark:bg-gray-900 p-4 space-y-3 shadow-sm">
                     <div class="flex items-start justify-between gap-3">

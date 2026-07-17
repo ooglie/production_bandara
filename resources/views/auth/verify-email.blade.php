@@ -15,12 +15,6 @@
             </p>
         </div>
 
-        @if (session('status') === 'verification-link-sent')
-            <div class="rounded border border-emerald-300 bg-emerald-50 px-3 py-2 text-[11px] text-emerald-800">
-                A new verification link has been sent to your email address.
-            </div>
-        @endif
-
         <form method="POST" action="{{ route('verification.send') }}" class="space-y-3">
             @csrf
             <button

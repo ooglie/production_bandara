@@ -96,12 +96,6 @@
                 </div>
 
                 <div class="p-4 sm:p-6 lg:p-7 space-y-5">
-                    @if(session('status'))
-                        <div class="rounded-sm border border-emerald-300 bg-emerald-50 dark:border-emerald-800 dark:bg-emerald-950/20 px-4 py-3 text-sm text-emerald-800 dark:text-emerald-300">
-                            {{ session('status') }}
-                        </div>
-                    @endif
-
                     @if($errors->any())
                         <div class="rounded-sm border border-red-300 bg-red-50 dark:border-red-800 dark:bg-red-950/20 px-4 py-3 text-sm text-red-800 dark:text-red-300">
                             <div class="font-medium mb-1">Please fix the following:</div>

@@ -5,6 +5,7 @@ namespace App\Http\Controllers;
 use App\Models\Category;
 use App\Models\InventoryPiece;
 use App\Models\Product;
+use App\Services\PricingService;
 use Illuminate\Http\Request;
 use Illuminate\Support\Collection;
 use Illuminate\Support\Facades\Schema;
@@ -29,28 +30,69 @@ class ShopController extends Controller
                 $q->where('is_active', true);
             });
 
+        app(PricingService::class)->applyProductAvailabilityFilter($productsQuery, $request->user());
+
         $search = trim((string) $request->input('q', ''));
 
         if ($search !== '') {
-            $productsQuery->where(function ($q) use ($search) {
+            $hasProductVariants = Schema::hasTable('product_variants');
+            $hasCategoryPivot = Schema::hasTable('categories') && Schema::hasTable('category_product');
+
+            $productsQuery->where(function ($q) use ($search, $hasProductVariants, $hasCategoryPivot) {
                 $like = '%' . $search . '%';
 
-                $q->where('name', 'like', $like);
+                $q->where('products.name', 'like', $like);
 
                 if (Schema::hasColumn('products', 'sku')) {
-                    $q->orWhere('sku', 'like', $like);
+                    $q->orWhere('products.sku', 'like', $like);
                 }
 
                 if (Schema::hasColumn('products', 'short_description')) {
-                    $q->orWhere('short_description', 'like', $like);
+                    $q->orWhere('products.short_description', 'like', $like);
                 }
 
                 if (Schema::hasColumn('products', 'description')) {
-                    $q->orWhere('description', 'like', $like);
+                    $q->orWhere('products.description', 'like', $like);
                 }
 
                 if (Schema::hasColumn('products', 'barcode')) {
-                    $q->orWhere('barcode', 'like', $like);
+                    $q->orWhere('products.barcode', 'like', $like);
+                }
+
+                if ($hasProductVariants) {
+                    $q->orWhereHas('variants', function ($variantQuery) use ($like) {
+                        $variantQuery->where(function ($variantSearch) use ($like) {
+                            if (Schema::hasColumn('product_variants', 'name')) {
+                                $variantSearch->where('product_variants.name', 'like', $like);
+                            }
+
+                            if (Schema::hasColumn('product_variants', 'sku')) {
+                                $method = Schema::hasColumn('product_variants', 'name') ? 'orWhere' : 'where';
+                                $variantSearch->{$method}('product_variants.sku', 'like', $like);
+                            }
+
+                            if (Schema::hasColumn('product_variants', 'barcode')) {
+                                $hasPrevious = Schema::hasColumn('product_variants', 'name')
+                                    || Schema::hasColumn('product_variants', 'sku');
+                                $method = $hasPrevious ? 'orWhere' : 'where';
+                                $variantSearch->{$method}('product_variants.barcode', 'like', $like);
+                            }
+                        });
+
+                        if (Schema::hasColumn('product_variants', 'is_active')) {
+                            $variantQuery->where('product_variants.is_active', true);
+                        }
+                    });
+                }
+
+                if ($hasCategoryPivot) {
+                    $q->orWhereHas('categories', function ($categoryQuery) use ($like) {
+                        $categoryQuery->where('categories.name', 'like', $like);
+
+                        if (Schema::hasColumn('categories', 'is_active')) {
+                            $categoryQuery->where('categories.is_active', true);
+                        }
+                    });
                 }
             });
         }
@@ -89,7 +131,7 @@ class ShopController extends Controller
         ));
     }
 
-    public function show(Product $product)
+    public function show(Request $request, Product $product)
     {
         // Only show active products
         if (! $product->is_active) {
@@ -102,6 +144,20 @@ class ShopController extends Controller
             },
             'variants.attributeValues.attribute',
         ]);
+
+        $pricing = app(PricingService::class);
+        if (! $pricing->productIsAvailableToUser($request->user(), $product)) {
+            abort(404);
+        }
+
+        if (($request->user()?->customer_type ?? 'b2c') === 'b2b') {
+            $product->setRelation(
+                'variants',
+                $product->variants
+                    ->filter(fn ($variant) => $pricing->variantIsAvailableToUser($request->user(), $product, $variant))
+                    ->values()
+            );
+        }
 
         $variants = $product->variants ?? collect();
 
@@ -154,7 +210,7 @@ class ShopController extends Controller
             ->whereIn('inventory_lots.product_id', $productIds)
             ->where('inventory_lots.is_saleable', true)
             ->where('inventory_lots.lot_status', 'available')
-            ->where('inventory_lots.inward_mode', 'pieces')
+            ->whereIn('inventory_lots.inward_mode', ['pieces', 'pieces_weight'])
             ->where(function ($q) {
                 $q->whereNull('inventory_lots.available_piece_count')
                     ->orWhere('inventory_lots.available_piece_count', '>', 0);
@@ -167,6 +223,7 @@ class ShopController extends Controller
             ->orderBy('inventory_lots.product_id')
             ->orderBy('inventory_pieces.weight_kg')
             ->get()
+            ->filter(fn ($piece) => (float) ($piece->weight_kg ?? 0) > 0)
             ->groupBy('product_id');
 
         foreach ($products as $product) {
@@ -183,23 +240,35 @@ class ShopController extends Controller
                 ->map(function ($bandPieces, $bandKey) use ($product) {
                     [$fromGrams, $toGrams] = $this->parseBandKey($bandKey);
 
-                    $effectivePrice = (float) ($product->effective_price ?? 0);
+                    $effectivePrice = round((float) app(\App\Services\PricingService::class)->priceFor(request()->user(), $product), 2);
                     $sellUnit = strtolower((string) ($product->sell_unit ?? 'piece'));
 
-                    if ($sellUnit === 'kg') {
-                        $priceMin = round($effectivePrice * ($fromGrams / 1000), 2);
-                        $priceMax = round($effectivePrice * ($toGrams / 1000), 2);
-                    } else {
-                        $priceMin = round($effectivePrice, 2);
-                        $priceMax = round($effectivePrice, 2);
-                    }
+                    $choices = collect($bandPieces)
+                        ->groupBy(fn ($piece) => number_format((float) $piece->weight_kg, 3, '.', ''))
+                        ->map(function ($sameWeightPieces, $weightKey) use ($effectivePrice, $sellUnit) {
+                            $weightKg = (float) $weightKey;
+                            $price = $sellUnit === 'kg'
+                                ? round($effectivePrice * $weightKg, 2)
+                                : round($effectivePrice, 2);
+
+                            return [
+                                'key' => $weightKey,
+                                'weight_kg' => $weightKg,
+                                'weight_label' => $this->formatWeightLabel($weightKg),
+                                'count' => $sameWeightPieces->count(),
+                                'price' => $price,
+                            ];
+                        })
+                        ->sortBy('weight_kg')
+                        ->values();
 
                     return [
                         'key' => $bandKey,
                         'label' => $fromGrams . '-' . $toGrams . ' g',
-                        'count' => $bandPieces->count(),
-                        'price_min' => $priceMin,
-                        'price_max' => $priceMax,
+                        'count' => (int) $choices->sum('count'),
+                        'price_min' => (float) ($choices->min('price') ?? 0),
+                        'price_max' => (float) ($choices->max('price') ?? 0),
+                        'choices' => $choices->all(),
                     ];
                 })
                 ->sortBy('key')
@@ -228,5 +297,14 @@ class ShopController extends Controller
         [$from, $to] = array_pad(explode('-', $key), 2, 0);
 
         return [(int) $from, (int) $to];
+    }
+
+    protected function formatWeightLabel(float $kg): string
+    {
+        if ($kg < 1) {
+            return round($kg * 1000) . ' g';
+        }
+
+        return rtrim(rtrim(number_format($kg, 3, '.', ''), '0'), '.') . ' kg';
     }
 }

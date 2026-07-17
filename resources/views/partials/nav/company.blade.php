@@ -146,6 +146,13 @@
                     </a>
                 @endif
             @endcan
+
+            @if($has('admin.reports.index'))
+                <a href="{{ route('admin.reports.index') }}"
+                   class="block px-2 py-1.5 rounded-md hover:bg-gray-100 dark:hover:bg-gray-800">
+                    Reports
+                </a>
+            @endif
         </div>
 
 
@@ -178,7 +185,14 @@
                 @if($has('admin.attributes.index'))
                     <a href="{{ route('admin.attributes.index') }}"
                        class="block px-2 py-1.5 rounded-md hover:bg-gray-100 dark:hover:bg-gray-800">
-                        Attributes
+                        Variant Options
+                    </a>
+                @endif
+
+                @if($has('admin.variant-option-values.index'))
+                    <a href="{{ route('admin.variant-option-values.index') }}"
+                       class="block px-2 py-1.5 rounded-md hover:bg-gray-100 dark:hover:bg-gray-800">
+                        Variant Option Values
                     </a>
                 @endif
 
@@ -216,7 +230,7 @@
                 @if($inventoryPacksUrl)
                     <a href="{{ $inventoryPacksUrl }}"
                        class="block px-2 py-1.5 rounded-md hover:bg-gray-100 dark:hover:bg-gray-800">
-                        Inventory Packs
+                        Transform Stock
                     </a>
                 @endif
 

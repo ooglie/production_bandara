@@ -3,7 +3,7 @@
 
 @section('body')
 
-@if(auth()->check() && session()->has('impersonator_id'))
+@if(auth()->check() && session()->has('impersonator_id') && \Illuminate\Support\Facades\Route::has('impersonation.stop'))
     <div class="bg-amber-100 text-amber-800 dark:bg-amber-900/60 dark:text-amber-100 text-[11px] px-4 py-2 flex items-center justify-between">
         <span>
             You are currently impersonating
@@ -22,7 +22,9 @@
 @include('partials.nav.customer')
 <div class="min-h-screen flex flex-col bg-gray-50 dark:bg-gray-950">
     {{-- Page content --}}
-    <main class="flex-1">
+    <main class="flex-1 pt-0 md:pt-14">
+        @include('partials.frontend.messages')
+
         @yield('content')
     </main>
 

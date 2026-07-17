@@ -67,10 +67,10 @@
 {{-- Add to cart / Choose option --}}
 @if($hasPieceSelector)
     @if($inStock)
-        @if($hasMultipleBands)
+        @if(!empty($pieceBands))
             <details class="relative js-card-option-menu js-slab-band-menu">
                 <summary
-                    title="Choose slab size"
+                    title="Choose slab"
                     class="list-none inline-flex items-center justify-center w-9 h-9 rounded-sm
                            border border-gray-200 dark:border-gray-700
                            bg-white/80 dark:bg-gray-950/70 backdrop-blur
@@ -85,33 +85,94 @@
                     </svg>
                 </summary>
 
-                <div class="absolute right-0 z-50 mt-2 w-64 rounded-xl border border-gray-200 dark:border-gray-800 bg-white dark:bg-gray-900 shadow-lg p-2">
+                <div class="absolute right-0 z-50 mt-2 w-72 max-h-96 overflow-y-auto rounded-xl border border-gray-200 dark:border-gray-800 bg-white dark:bg-gray-900 shadow-lg p-2">
                     <div class="px-2 pb-1 text-[10px] uppercase tracking-wide text-gray-400">
-                        Choose slab size
+                        Choose slab / piece
                     </div>
 
-                    <div class="space-y-1">
+                    <div class="space-y-2">
                         @foreach($pieceBands as $band)
-                            <a href="{{ route('product.show', $product) }}?band={{ urlencode($band['key']) }}#piece-selector-root"
-                               class="block rounded-lg px-3 py-2 hover:bg-gray-100 dark:hover:bg-gray-800">
-                                <div class="text-[12px] font-medium text-gray-900 dark:text-gray-50">
-                                    {{ $band['label'] }}
+                            @php
+                                $choices = collect($band['choices'] ?? []);
+                            @endphp
+
+                            @if($choices->isNotEmpty())
+                                <div class="rounded-lg border border-gray-100 dark:border-gray-800 p-1">
+                                    <div class="px-2 py-1 text-[10px] font-semibold uppercase tracking-wide text-gray-400">
+                                        {{ $band['label'] }} · {{ $band['count'] }} available
+                                    </div>
+
+                                    <div class="space-y-1">
+                                        @foreach($choices as $choice)
+                                            @if($cartAddUrl)
+                                                <form method="POST" action="{{ $cartAddUrl }}" class="block">
+                                                    @csrf
+                                                    <input type="hidden" name="product_id" value="{{ $product->id }}">
+                                                    <input type="hidden" name="piece_weight_kg" value="{{ number_format((float) $choice['weight_kg'], 3, '.', '') }}">
+                                                    <input type="hidden" name="quantity" value="1">
+
+                                                    <button type="submit"
+                                                            class="flex w-full items-center justify-between gap-3 rounded-lg px-3 py-2 text-left hover:bg-gray-100 dark:hover:bg-gray-800">
+                                                        <span class="min-w-0">
+                                                            <span class="block text-[12px] font-medium text-gray-900 dark:text-gray-50">
+                                                                {{ $choice['weight_label'] }}
+                                                                @if((int) ($choice['count'] ?? 1) > 1)
+                                                                    <span class="text-[10px] text-gray-400">× {{ (int) $choice['count'] }}</span>
+                                                                @endif
+                                                            </span>
+                                                            <span class="mt-0.5 block text-[10px] text-gray-500 dark:text-gray-400">
+                                                                Add this slab
+                                                            </span>
+                                                        </span>
+                                                        <span class="shrink-0 text-[12px] font-semibold text-gray-900 dark:text-gray-50">
+                                                            ₹{{ number_format((float) $choice['price'], 2) }}
+                                                        </span>
+                                                    </button>
+                                                </form>
+                                            @else
+                                                <a href="{{ route('product.show', $product) }}?band={{ urlencode($band['key']) }}&piece_weight_kg={{ urlencode(number_format((float) $choice['weight_kg'], 3, '.', '')) }}#piece-selector-root"
+                                                   class="flex items-center justify-between gap-3 rounded-lg px-3 py-2 hover:bg-gray-100 dark:hover:bg-gray-800">
+                                                    <span class="min-w-0">
+                                                        <span class="block text-[12px] font-medium text-gray-900 dark:text-gray-50">
+                                                            {{ $choice['weight_label'] }}
+                                                            @if((int) ($choice['count'] ?? 1) > 1)
+                                                                <span class="text-[10px] text-gray-400">× {{ (int) $choice['count'] }}</span>
+                                                            @endif
+                                                        </span>
+                                                        <span class="mt-0.5 block text-[10px] text-gray-500 dark:text-gray-400">
+                                                            Select exact size
+                                                        </span>
+                                                    </span>
+                                                    <span class="shrink-0 text-[12px] font-semibold text-gray-900 dark:text-gray-50">
+                                                        ₹{{ number_format((float) $choice['price'], 2) }}
+                                                    </span>
+                                                </a>
+                                            @endif
+                                        @endforeach
+                                    </div>
                                 </div>
-                                <div class="mt-0.5 text-[10px] text-gray-500 dark:text-gray-400">
-                                    {{ $band['count'] }} available ·
-                                    ₹{{ number_format((float) $band['price_min'], 2) }}
-                                    @if((float) $band['price_max'] > (float) $band['price_min'])
-                                        – ₹{{ number_format((float) $band['price_max'], 2) }}
-                                    @endif
-                                </div>
-                            </a>
+                            @else
+                                <a href="{{ route('product.show', $product) }}?band={{ urlencode($band['key']) }}#piece-selector-root"
+                                   class="block rounded-lg px-3 py-2 hover:bg-gray-100 dark:hover:bg-gray-800">
+                                    <div class="text-[12px] font-medium text-gray-900 dark:text-gray-50">
+                                        {{ $band['label'] }}
+                                    </div>
+                                    <div class="mt-0.5 text-[10px] text-gray-500 dark:text-gray-400">
+                                        {{ $band['count'] }} available ·
+                                        ₹{{ number_format((float) $band['price_min'], 2) }}
+                                        @if((float) $band['price_max'] > (float) $band['price_min'])
+                                            – ₹{{ number_format((float) $band['price_max'], 2) }}
+                                        @endif
+                                    </div>
+                                </a>
+                            @endif
                         @endforeach
                     </div>
                 </div>
             </details>
         @else
             <a href="{{ route('product.show', $product) }}#piece-selector-root"
-                title="Choose slab size"
+                title="Choose slab"
                 class="inline-flex items-center justify-center w-9 h-9 rounded-sm
                         border border-gray-200 dark:border-gray-700
                         bg-white/80 dark:bg-gray-950/70 backdrop-blur

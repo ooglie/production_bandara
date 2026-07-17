@@ -5,9 +5,7 @@
     /** @var \App\Services\PricingService $pricing */
     $pricing = app(\App\Services\PricingService::class);
 
-    // Unified storefront: all active products may appear for B2B users.
-    // Customer-specific rows override price/MOQ; they no longer gate catalogue visibility.
-    $products = \App\Models\Product::query()
+    $productsQuery = \App\Models\Product::query()
         ->where('is_active', true)
         ->when($q !== '', function ($p) use ($q) {
             $p->where(function ($x) use ($q) {
@@ -15,19 +13,29 @@
                   ->orWhere('sku', 'like', '%' . $q . '%')
                   ->orWhere('slug', 'like', '%' . $q . '%');
             });
-        })
+        });
+
+    $pricing->applyProductAvailabilityFilter($productsQuery, $user);
+
+    $products = $productsQuery
         ->orderBy('name')
         ->paginate(15, ['*'], 'b2b_page')
         ->withQueryString();
 
     $productIds = $products->getCollection()->pluck('id')->all();
+    $productsById = $products->getCollection()->keyBy('id');
 
     $variantsByProduct = collect();
     if (!empty($productIds)) {
         $variantsByProduct = \App\Models\ProductVariant::query()
             ->whereIn('product_id', $productIds)
             ->orderBy('id')
-            ->get(['id','product_id','sku'])
+            ->get()
+            ->filter(function ($variant) use ($pricing, $user, $productsById) {
+                $product = $productsById->get($variant->product_id);
+
+                return $product && $pricing->variantIsAvailableToUser($user, $product, $variant);
+            })
             ->groupBy('product_id');
     }
 @endphp
@@ -39,7 +47,7 @@
                 Quick Order (B2B)
             </h2>
             <p class="text-[11px] text-gray-500 dark:text-gray-400">
-                All active catalogue products are shown. Your B2B price and MOQ are applied automatically.
+                Only products with an active B2B price for your account are shown. Your MOQ is applied automatically.
             </p>
         </div>
 

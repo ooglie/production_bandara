@@ -10,6 +10,7 @@ use App\Models\Payment;
 use App\Services\BandaraCreditService;
 use App\Services\InvoicePdfService;
 use App\Services\OrderInventoryService;
+use App\Services\StockReservationService;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Facades\DB;
@@ -31,11 +32,48 @@ class PaymentController extends Controller
             abort(404);
         }
 
-        if ($order->payment_status !== 'pending') {
+        if (($order->payment_method ?? 'razorpay') === 'pay_later') {
             return redirect()
                 ->route('orders.show', $order)
-                ->with('status', 'This order is not pending payment.');
+                ->with('status', 'This order was placed on Pay Later terms.');
         }
+
+        $paymentStatus = strtolower((string) ($order->payment_status ?? 'pending'));
+        if ($paymentStatus === 'paid') {
+            return redirect()
+                ->route('orders.show', $order)
+                ->with('status', 'This order is already paid.');
+        }
+
+        if (! in_array($paymentStatus, ['pending', 'failed', 'expired'], true)) {
+            return redirect()
+                ->route('orders.show', $order)
+                ->with('status', 'This order is not available for online payment.');
+        }
+
+        $reservation = app(StockReservationService::class)->ensureOrderReservedForPayment($order);
+        if (! ($reservation['ok'] ?? false)) {
+            return redirect()
+                ->route('orders.show', $order)
+                ->withErrors(['payment' => $reservation['message'] ?? 'Stock is no longer available for this order. Please place the order again.']);
+        }
+
+        // A retry after a failed/expired payment must create a fresh Razorpay
+        // attempt, but only after stock has been re-checked and reserved again.
+        if ($order->status !== 'pending_payment' || $order->payment_status !== 'pending') {
+            $order->status = 'pending_payment';
+            $order->payment_status = 'pending';
+            $order->razorpay_order_id = null;
+            $order->razorpay_payment_id = null;
+            $order->razorpay_signature = null;
+            $order->save();
+        }
+
+        $reservationExpiresAt = $reservation['expires_at'] ?? null;
+        $reservationExpiresAt = $reservationExpiresAt ? \Illuminate\Support\Carbon::parse($reservationExpiresAt) : null;
+        $reservationTimeoutSeconds = $reservationExpiresAt
+            ? max(60, min(600, now()->diffInSeconds($reservationExpiresAt, false)))
+            : app(StockReservationService::class)->holdSeconds();
 
         $razorpayKey    = config('services.razorpay.key');
         $razorpaySecret = config('services.razorpay.secret');
@@ -100,6 +138,53 @@ class PaymentController extends Controller
             'razorpayOrderId' => $order->razorpay_order_id,
             'amountPaise'     => $amountPaise,
             'user'            => $user,
+            'reservationExpiresAt' => $reservationExpiresAt,
+            'reservationTimeoutSeconds' => $reservationTimeoutSeconds,
+        ]);
+    }
+
+    /**
+     * Mark an order payment attempt as failed from Razorpay's client-side
+     * failure event. This releases the short stock hold and keeps the order
+     * out of fulfillment until the customer retries with a fresh stock check.
+     */
+    public function handleRazorpayFailure(Request $request)
+    {
+        $data = $request->validate([
+            'razorpay_order_id' => ['required', 'string'],
+            'error' => ['nullable', 'array'],
+        ]);
+
+        $order = Order::where('razorpay_order_id', $data['razorpay_order_id'])->first();
+
+        if (! $order) {
+            return response()->json([
+                'status' => 'error',
+                'message' => 'Order not found.',
+            ], 404);
+        }
+
+        if (! Auth::check() || (int) Auth::id() !== (int) $order->user_id) {
+            return response()->json([
+                'status' => 'error',
+                'message' => 'Unauthorized.',
+            ], 403);
+        }
+
+        $payment = Payment::where('razorpay_order_id', $data['razorpay_order_id'])->latest()->first();
+
+        $this->markOnlinePaymentFailed(
+            $order,
+            $payment,
+            'payment_failed',
+            'failed',
+            'razorpay_payment_failed',
+            ['razorpay_failure' => $data['error'] ?? []]
+        );
+
+        return response()->json([
+            'status' => 'ok',
+            'redirect_url' => route('orders.show', $order),
         ]);
     }
 
@@ -116,6 +201,13 @@ class PaymentController extends Controller
 
         if (! $invoice->order || (int) $invoice->order->user_id !== (int) $user->id) {
             abort(404);
+        }
+
+        if (($invoice->order->payment_method ?? 'razorpay') !== 'pay_later'
+            && strtolower((string) ($invoice->order->payment_status ?? 'pending')) !== 'paid') {
+            return redirect()
+                ->route('orders.pay.razorpay', $invoice->order)
+                ->with('status', 'We will re-check stock availability before starting payment again.');
         }
 
         $balance = round((float) $invoice->balance_amount, 2);
@@ -267,29 +359,14 @@ class PaymentController extends Controller
         );
 
         if (! hash_equals($generatedSignature, $data['razorpay_signature'])) {
-            // Avoid changing a successfully paid order back to failed
-            if ($order->payment_status !== 'paid') {
-                $order->payment_status = 'failed';
-                $order->save();
-
-                try {
-                    app(BandaraCreditService::class)->releaseReservedRedemptionForOrder($order->fresh(), 'payment_verification_failed');
-                } catch (\Throwable $e) {
-                    Log::error('Failed to release Bandara Credit reservation after payment verification failure', [
-                        'order_id' => $order->id,
-                        'error' => $e->getMessage(),
-                    ]);
-                }
-            }
-
-            if ($payment) {
-                $payload = $payment->payment_data ?? [];
-                $payload['callback'] = $data;
-
-                $payment->status = 'failed';
-                $payment->payment_data = $payload;
-                $payment->save();
-            }
+            $this->markOnlinePaymentFailed(
+                $order,
+                $payment,
+                'payment_failed',
+                'failed',
+                'payment_verification_failed',
+                ['callback' => $data]
+            );
 
             return response()->json([
                 'status'  => 'error',
@@ -297,9 +374,40 @@ class PaymentController extends Controller
             ], 422);
         }
 
+        $stockHold = app(StockReservationService::class)->assertOrderStillReservedForPayment($order->fresh());
+        if (! ($stockHold['ok'] ?? false)) {
+            $this->markOnlinePaymentFailed(
+                $order,
+                $payment,
+                'payment_expired',
+                'expired',
+                'stock_reservation_expired_before_payment_verification',
+                [
+                    'callback' => $data,
+                    'stock_reservation_error' => [
+                        'message' => $stockHold['message'] ?? 'Stock hold expired before payment verification.',
+                        'at' => now()->toDateTimeString(),
+                    ],
+                ]
+            );
+
+            Log::warning('Razorpay payment callback arrived after stock reservation expired', [
+                'order_id' => $order->id,
+                'order_number' => $order->order_number,
+                'razorpay_order_id' => $data['razorpay_order_id'],
+                'razorpay_payment_id' => $data['razorpay_payment_id'],
+            ]);
+
+            return response()->json([
+                'status' => 'error',
+                'message' => $stockHold['message'] ?? 'The stock hold for this order has expired. If payment was debited, please contact support for help.',
+            ], 409);
+        }
+
         // Signature OK → mark order as paid (if not already)
         if ($order->payment_status !== 'paid') {
             $order->payment_status      = 'paid';
+            $order->status              = 'processing';
             $order->razorpay_payment_id = $data['razorpay_payment_id'];
             $order->razorpay_signature  = $data['razorpay_signature'];
             $order->save();
@@ -560,4 +668,47 @@ class PaymentController extends Controller
             'redirect_url' => route('invoices.show', $invoice),
         ]);
     }
+
+    protected function markOnlinePaymentFailed(Order $order, ?Payment $payment, string $orderStatus, string $paymentStatus, string $reason, array $payloadUpdates = []): void
+    {
+        if (strtolower((string) ($order->payment_status ?? '')) !== 'paid') {
+            $order->status = $orderStatus;
+            $order->payment_status = $paymentStatus;
+            $order->save();
+
+            try {
+                app(BandaraCreditService::class)->releaseReservedRedemptionForOrder($order->fresh(), $reason);
+            } catch (\Throwable $e) {
+                Log::error('Failed to release Bandara Credit reservation after online payment failure', [
+                    'order_id' => $order->id,
+                    'reason' => $reason,
+                    'error' => $e->getMessage(),
+                ]);
+            }
+
+            try {
+                app(StockReservationService::class)->releaseForOrder($order->fresh(), $reason);
+            } catch (\Throwable $e) {
+                Log::error('Failed to release stock reservation after online payment failure', [
+                    'order_id' => $order->id,
+                    'reason' => $reason,
+                    'error' => $e->getMessage(),
+                ]);
+            }
+        }
+
+        if ($payment) {
+            $payload = $payment->payment_data ?? [];
+            $payload['failure_reason'] = $reason;
+            $payload['failed_at'] = now()->toDateTimeString();
+            foreach ($payloadUpdates as $key => $value) {
+                $payload[$key] = $value;
+            }
+
+            $payment->status = 'failed';
+            $payment->payment_data = $payload;
+            $payment->save();
+        }
+    }
+
 }

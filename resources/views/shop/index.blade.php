@@ -30,23 +30,15 @@
         ->filter(fn ($cat) => in_array((string) $cat->id, $selectedCategoryIds, true))
         ->values();
 
-    // Guess/try common route names (adjust anytime)
     $cartAddUrl =
-        $has('cart.items.store') ? route('cart.items.store')
-        : ($has('cart.add') ? route('cart.add')
-        : ($has('cart.store') ? route('cart.store') : null));
+        $has('cart.add') ? route('cart.add')
+        : ($has('cart.store') ? route('cart.store') : null);
 
-    $cartUrl =
-        $has('cart.index') ? route('cart.index')
-        : ($has('cart.show') ? route('cart.show') : null);
+    $cartUrl = $has('cart.index') ? route('cart.index') : null;
 
-    $wishlistToggleUrl =
-        $has('wishlist.toggle') ? route('wishlist.toggle')
-        : ($has('wishlist.store') ? route('wishlist.store') : null);
+    $wishlistToggleUrl = $has('wishlist.store') ? route('wishlist.store') : null;
 
-    $wishlistUrl =
-        $has('wishlist.index') ? route('wishlist.index')
-        : ($has('wishlist') ? route('wishlist') : null);
+    $wishlistUrl = $has('wishlist.index') ? route('wishlist.index') : null;
 
     $loginUrl = $has('login') ? route('login') : null;
 
@@ -103,8 +95,14 @@
     <div class="flex flex-col sm:flex-row sm:items-end sm:justify-between gap-3">
         <div>
             <h1 class="text-lg font-semibold text-gray-900 dark:text-gray-50">
-                Shop
+                {{ filled($q) ? 'Search results' : 'Shop' }}
             </h1>
+
+            @if(filled($q))
+                <p class="mt-1 text-[11px] text-gray-500 dark:text-gray-400">
+                    Results for <span class="font-medium text-gray-800 dark:text-gray-200">“{{ $q }}”</span>
+                </p>
+            @endif
             <div>
                 {{-- <div class="text-[11px] font-medium text-gray-900 dark:text-gray-50">
                     Product results
@@ -283,13 +281,6 @@
             </div>
         @endif
     </div>
-
-    {{-- Status message --}}
-    @if(session('status'))
-        <div class="rounded border border-emerald-300 bg-emerald-50 px-3 py-2 text-[11px] text-emerald-800">
-            {{ session('status') }}
-        </div>
-    @endif
 
     {{-- Results --}}
     

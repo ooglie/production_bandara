@@ -29,7 +29,7 @@
 
 
 @section('body')
-    @if(auth()->check() && session()->has('impersonator_id'))
+    @if(auth()->check() && session()->has('impersonator_id') && \Illuminate\Support\Facades\Route::has('impersonation.stop'))
         <div class="bg-amber-100 text-amber-800 dark:bg-amber-900/60 dark:text-amber-100 text-[11px] px-4 py-2 flex items-center justify-between">
             <span>
                 You are currently impersonating

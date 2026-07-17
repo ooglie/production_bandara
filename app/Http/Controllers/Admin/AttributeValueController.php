@@ -26,7 +26,7 @@ class AttributeValueController extends Controller
 
     public function store(Request $request, Attribute $attribute)
     {
-        $data = $this->validatedData($request);
+        $data = $this->normalizedData($this->validatedData($request));
 
         $data['attribute_id'] = $attribute->id;
 
@@ -34,7 +34,7 @@ class AttributeValueController extends Controller
 
         return redirect()
             ->route('admin.attributes.values.index', $attribute)
-            ->with('status', 'Attribute value created.');
+            ->with('status', 'Variant option value created.');
     }
 
     public function edit(AttributeValue $value)
@@ -46,24 +46,36 @@ class AttributeValueController extends Controller
 
     public function update(Request $request, AttributeValue $value)
     {
-        $data = $this->validatedData($request);
+        $data = $this->normalizedData($this->validatedData($request));
 
         $value->update($data);
 
         return redirect()
             ->route('admin.attributes.values.index', $value->attribute)
-            ->with('status', 'Attribute value updated.');
+            ->with('status', 'Variant option value updated.');
     }
 
     public function destroy(AttributeValue $value)
     {
         $attribute = $value->attribute;
+        $usage = $value->usageCounts();
+
+        if (($usage['products'] ?? 0) > 0 || ($usage['variants'] ?? 0) > 0) {
+            return redirect()
+                ->route('admin.attributes.values.index', $attribute)
+                ->with('error', sprintf(
+                    'Cannot delete "%s" because it is used by %d product(s) and %d variant(s). Remove it from products/variants first.',
+                    $value->name,
+                    $usage['products'] ?? 0,
+                    $usage['variants'] ?? 0
+                ));
+        }
 
         $value->delete();
 
         return redirect()
             ->route('admin.attributes.values.index', $attribute)
-            ->with('status', 'Attribute value deleted.');
+            ->with('status', 'Variant option value deleted.');
     }
 
     protected function validatedData(Request $request): array
@@ -74,4 +86,16 @@ class AttributeValueController extends Controller
             'position' => ['nullable', 'integer'],
         ]);
     }
+
+    protected function normalizedData(array $data): array
+    {
+        $data['name'] = trim((string) ($data['name'] ?? ''));
+        $data['value'] = isset($data['value']) && trim((string) $data['value']) !== ''
+            ? trim((string) $data['value'])
+            : null;
+        $data['position'] = (int) ($data['position'] ?? 0);
+
+        return $data;
+    }
 }
+

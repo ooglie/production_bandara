@@ -1,20 +1,29 @@
 @extends('layouts.company')
 
-@section('title', 'Attributes')
+@section('title', 'Variant Options')
 
-@section('breadcrumb', 'Admin · Attributes')
+@section('breadcrumb', 'Admin · Variant Options')
 
 @section('content')
     <div class="space-y-4">
         <div class="flex items-center justify-between gap-3">
             <h1 class="text-lg font-semibold text-gray-900 dark:text-gray-50">
-                Attributes
+                Variant Options
             </h1>
 
-            <a href="{{ route('admin.attributes.create') }}"
-               class="inline-flex items-center px-3 py-1.5 text-xs rounded border border-gray-300 dark:border-gray-700 bg-gray-900 text-white dark:bg-gray-100 dark:text-gray-900 hover:bg-gray-800 dark:hover:bg-gray-200">
-                + New attribute
-            </a>
+            <div class="flex items-center gap-2">
+                @if(\Illuminate\Support\Facades\Route::has('admin.variant-option-values.index'))
+                    <a href="{{ route('admin.variant-option-values.index') }}"
+                       class="inline-flex items-center px-3 py-1.5 text-xs rounded border border-gray-300 dark:border-gray-700 hover:bg-gray-100 dark:hover:bg-gray-800">
+                        Manage option values
+                    </a>
+                @endif
+
+                <a href="{{ route('admin.attributes.create') }}"
+                   class="inline-flex items-center px-3 py-1.5 text-xs rounded border border-gray-300 dark:border-gray-700 bg-gray-900 text-white dark:bg-gray-100 dark:text-gray-900 hover:bg-gray-800 dark:hover:bg-gray-200">
+                    + New option group
+                </a>
+            </div>
         </div>
 
         @if(session('status'))
@@ -22,6 +31,13 @@
                 {{ session('status') }}
             </div>
         @endif
+        <div class="rounded-lg border border-amber-200 bg-amber-50/70 px-4 py-3 text-[12px] text-amber-900 dark:border-amber-900/50 dark:bg-amber-950/30 dark:text-amber-100">
+            Variant options are used only for products where customers choose a fixed option, such as
+            <span class="font-semibold">Dimsum pack size</span> or
+            <span class="font-semibold">Prawns size + pack weight</span>.
+            Do not use them for physical pieces like pork slabs, salmon cuts, tuna, or cheese blocks.
+        </div>
+
 
         <form method="GET" class="flex flex-wrap items-end gap-3 text-xs">
             <div>
@@ -53,9 +69,9 @@
                     <tr class="text-[11px] uppercase text-gray-500 dark:text-gray-400">
                         <th class="px-3 py-2 text-left">Name</th>
                         <th class="px-3 py-2 text-left">Slug</th>
-                        <th class="px-3 py-2 text-left">Frontend</th>
+                        <th class="px-3 py-2 text-left">Display</th>
                         <th class="px-3 py-2 text-center">Filterable</th>
-                        <th class="px-3 py-2 text-right">Values</th>
+                        <th class="px-3 py-2 text-right">Option values</th>
                         <th class="px-3 py-2 text-right">Actions</th>
                     </tr>
                 </thead>
@@ -92,7 +108,7 @@
                             <td class="px-3 py-2 align-top text-right text-gray-700 dark:text-gray-300">
                                 <a href="{{ route('admin.attributes.values.index', $attribute) }}"
                                    class="text-[11px] text-gray-600 dark:text-gray-300 hover:text-gray-900 dark:hover:text-gray-100">
-                                    {{ $attribute->values_count }} value(s)
+                                    {{ $attribute->values_count }} option value(s)
                                 </a>
                             </td>
                             <td class="px-3 py-2 align-top text-right">
@@ -103,7 +119,7 @@
                                     </a>
                                     <form method="POST"
                                           action="{{ route('admin.attributes.destroy', $attribute) }}"
-                                          onsubmit="return confirm('Delete this attribute? This will also affect products/variants using it.');">
+                                          onsubmit="return confirm('Delete this variant option group? This will also affect products/variants using it.');">
                                         @csrf
                                         @method('DELETE')
                                         <button type="submit"
@@ -117,7 +133,7 @@
                     @empty
                         <tr>
                             <td colspan="6" class="px-3 py-6 text-center text-xs text-gray-500 dark:text-gray-400">
-                                No attributes defined yet.
+                                No variant option groups defined yet.
                             </td>
                         </tr>
                     @endforelse

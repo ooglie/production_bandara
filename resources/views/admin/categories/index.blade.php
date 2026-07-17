@@ -7,9 +7,14 @@
 @section('content')
     <div class="space-y-4">
         <div class="flex items-center justify-between gap-3">
-            <h1 class="text-lg font-semibold text-gray-900 dark:text-gray-50">
-                Categories
-            </h1>
+            <div>
+                <h1 class="text-lg font-semibold text-gray-900 dark:text-gray-50">
+                    Categories
+                </h1>
+                <p class="mt-1 text-[11px] text-gray-500 dark:text-gray-400">
+                    Manage the storefront category hierarchy and display order.
+                </p>
+            </div>
 
             <a href="{{ route('admin.categories.create') }}"
                class="inline-flex items-center px-3 py-1.5 text-xs rounded border border-gray-300 dark:border-gray-700 bg-gray-900 text-white dark:bg-gray-100 dark:text-gray-900 hover:bg-gray-800 dark:hover:bg-gray-200">
@@ -21,6 +26,12 @@
         @if(session('status'))
             <div class="rounded border border-emerald-300 bg-emerald-50 px-3 py-2 text-[11px] text-emerald-800">
                 {{ session('status') }}
+            </div>
+        @endif
+
+        @if(session('error'))
+            <div class="rounded border border-red-300 bg-red-50 px-3 py-2 text-[11px] text-red-800">
+                {{ session('error') }}
             </div>
         @endif
 
@@ -71,6 +82,7 @@
                         <th class="px-3 py-2 text-left">Name</th>
                         <th class="px-3 py-2 text-left">Slug</th>
                         <th class="px-3 py-2 text-left">Parent</th>
+                        <th class="px-3 py-2 text-right">Products</th>
                         <th class="px-3 py-2 text-right">Position</th>
                         <th class="px-3 py-2 text-center">Status</th>
                         <th class="px-3 py-2 text-right">Actions</th>
@@ -96,6 +108,9 @@
                                 {{ $category->parent->name ?? '—' }}
                             </td>
                             <td class="px-3 py-2 align-top text-right text-gray-700 dark:text-gray-300">
+                                {{ $category->products_count ?? 0 }}
+                            </td>
+                            <td class="px-3 py-2 align-top text-right text-gray-700 dark:text-gray-300">
                                 {{ $category->position ?? 0 }}
                             </td>
                             <td class="px-3 py-2 align-top text-center">
@@ -111,27 +126,27 @@
                             </td>
                             <td class="px-3 py-2 align-top text-right">
                                 <div class="inline-flex items-center gap-2">
-                                    <a href="{{ route('admin.categories.edit', $category) }}"
-                                       class="text-[11px] text-gray-600 dark:text-gray-300 hover:text-gray-900 dark:hover:text-gray-100">
-                                        Edit
-                                    </a>
-                                    <form method="POST"
-                                          action="{{ route('admin.categories.destroy', $category) }}"
-                                          onsubmit="return confirm('Delete this category?');"
-                                    >
-                                        @csrf
-                                        @method('DELETE')
-                                        <button type="submit"
-                                                class="text-[11px] text-red-600 hover:text-red-700">
-                                            Delete
-                                        </button>
-                                    </form>
+                                        <a href="{{ route('admin.categories.edit', $category) }}"
+                                           class="text-[11px] text-gray-600 dark:text-gray-300 hover:text-gray-900 dark:hover:text-gray-100">
+                                            Edit
+                                        </a>
+                                        <form method="POST"
+                                              action="{{ route('admin.categories.destroy', $category) }}"
+                                              onsubmit="return confirm('Delete this category?');"
+                                        >
+                                            @csrf
+                                            @method('DELETE')
+                                            <button type="submit"
+                                                    class="text-[11px] text-red-600 hover:text-red-700">
+                                                Delete
+                                            </button>
+                                        </form>
                                 </div>
                             </td>
                         </tr>
                     @empty
                         <tr>
-                            <td colspan="6" class="px-3 py-6 text-center text-xs text-gray-500 dark:text-gray-400">
+                            <td colspan="7" class="px-3 py-6 text-center text-xs text-gray-500 dark:text-gray-400">
                                 No categories found.
                                 <a href="{{ route('admin.categories.create') }}" class="underline">
                                     Create the first one

@@ -9,6 +9,7 @@ use App\Models\HomeSectionItem;
 use App\Models\Product;
 use App\Models\ProductCollection;
 use App\Models\Recipe;
+use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Support\Collection;
 use Illuminate\Support\Facades\Storage;
 use Illuminate\Support\Str;
@@ -244,7 +245,7 @@ class HomePageService
             return $this->productsFromCategory((int) $section->getSetting('category_id'), $limit);
         }
 
-        $query = Product::query()
+        $query = $this->availableProductQuery()
             ->with(['images'])
             ->withCount('variants')
             ->where('is_active', true);
@@ -390,7 +391,7 @@ class HomePageService
             return $manualProducts;
         }
 
-        return Product::query()
+        return $this->availableProductQuery()
             ->with(['images', 'activeRecipes'])
             ->where('is_active', true)
             ->whereHas('activeRecipes')
@@ -404,7 +405,7 @@ class HomePageService
     {
         $manualRecipe = $this->linkedRecipes($section, 1)->first();
         if ($manualRecipe) {
-            $product = Product::query()
+            $product = $this->availableProductQuery()
                 ->with([
                     'images',
                     'activeRecipes' => fn ($query) => $query->where('recipes.id', $manualRecipe->id),
@@ -423,7 +424,7 @@ class HomePageService
             return $manualProduct;
         }
 
-        return Product::query()
+        return $this->availableProductQuery()
             ->with([
                 'images',
                 'activeRecipes' => function ($q) {
@@ -444,7 +445,7 @@ class HomePageService
             return collect();
         }
 
-        $products = Product::query()
+        $products = $this->availableProductQuery()
             ->with(['images', 'activeRecipes'])
             ->withCount('variants')
             ->where('is_active', true)
@@ -528,6 +529,8 @@ class HomePageService
         $collection = ProductCollection::query()
             ->active()
             ->with(['products' => function ($query) use ($limit) {
+                app(PricingService::class)->applyProductAvailabilityFilter($query->getQuery(), request()->user());
+
                 $query->with(['images'])
                     ->withCount('variants')
                     ->where('products.is_active', true)
@@ -540,7 +543,7 @@ class HomePageService
 
     protected function productsFromCategory(int $categoryId, int $limit): Collection
     {
-        return Product::query()
+        return $this->availableProductQuery()
             ->with(['images'])
             ->withCount('variants')
             ->where('is_active', true)
@@ -549,4 +552,11 @@ class HomePageService
             ->take(max($limit, 1))
             ->get();
     }
+    protected function availableProductQuery(): Builder
+    {
+        $query = Product::query();
+
+        return app(PricingService::class)->applyProductAvailabilityFilter($query, request()->user());
+    }
+
 }

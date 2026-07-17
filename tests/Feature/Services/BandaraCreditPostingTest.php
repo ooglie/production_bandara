@@ -94,7 +94,7 @@ class BandaraCreditPostingTest extends TestCase
 
         $result = $this->service()->postEarnForSuccessfulOrder($order);
 
-        $this->assertTrue($result['posted']);
+        $this->assertTrue($result['posted'], json_encode($result, JSON_PRETTY_PRINT));
         $this->assertSame(109, $result['total_posted']);
         $this->assertSame(109, $result['wallet_balance']);
         $this->assertSame('silver', $result['tier']);
@@ -134,7 +134,7 @@ class BandaraCreditPostingTest extends TestCase
 
         $result = $this->service()->postEarnForSuccessfulOrder($currentOrder);
 
-        $this->assertTrue($result['posted']);
+        $this->assertTrue($result['posted'], json_encode($result, JSON_PRETTY_PRINT));
         $this->assertSame(26, $result['total_posted']);
 
         $this->assertDatabaseHas('bandara_credit_transactions', [
@@ -302,7 +302,7 @@ class BandaraCreditPostingTest extends TestCase
 
         $result = $this->service()->postEarnForSuccessfulOrder($firstOrder);
 
-        $this->assertTrue($result['posted']);
+        $this->assertTrue($result['posted'], json_encode($result, JSON_PRETTY_PRINT));
         $this->assertSame(112, $result['total_posted']);
 
         $this->assertDatabaseHas('bandara_credit_transactions', [
@@ -477,7 +477,7 @@ class BandaraCreditPostingTest extends TestCase
 
         $result = $this->service()->postEarnForSuccessfulOrder($earlierOrder);
 
-        $this->assertTrue($result['posted']);
+        $this->assertTrue($result['posted'], json_encode($result, JSON_PRETTY_PRINT));
         $this->assertSame(12, $result['total_posted']);
         $this->assertDatabaseMissing('bandara_credit_transactions', [
             'order_id' => $earlierOrder->id,

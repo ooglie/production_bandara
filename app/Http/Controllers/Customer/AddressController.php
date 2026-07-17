@@ -307,8 +307,8 @@ class AddressController extends Controller
             return route('account.addresses.index', [], false);
         }
 
-        if (Route::has('customer.addresses.index')) {
-            return route('customer.addresses.index', [], false);
+        if (Route::has('account.addresses.index')) {
+            return route('account.addresses.index', [], false);
         }
 
         return '/account/addresses';

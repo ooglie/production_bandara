@@ -24,11 +24,25 @@
 
     $placeUrl = \Illuminate\Support\Facades\Route::has('checkout.place')
         ? route('checkout.place')
-        : (\Illuminate\Support\Facades\Route::has('checkout.store') ? route('checkout.store') : null);
+        : null;
 
     $backUrl = \Illuminate\Support\Facades\Route::has('cart.index') ? route('cart.index') : url('/');
 
     $backLabel = 'Back to cart';
+
+    $cartRoute = function (string $name, $parameter = null) use ($isB2BCheckoutUser) {
+        $routeName = $isB2BCheckoutUser && \Illuminate\Support\Facades\Route::has('b2b.' . $name)
+            ? 'b2b.' . $name
+            : $name;
+
+        return $parameter === null ? route($routeName) : route($routeName, $parameter);
+    };
+
+    $checkoutReturnTo = request()->getRequestUri();
+    $cartBulkDestroyUrl = \Illuminate\Support\Facades\Route::has($isB2BCheckoutUser ? 'b2b.cart.bulk-destroy' : 'cart.bulk-destroy')
+        ? $cartRoute('cart.bulk-destroy')
+        : url('/cart/items');
+    $cartDestroyUrl = fn ($itemId) => $cartRoute('cart.destroy', $itemId);
 
     $bandaraCredit = $bandaraCreditRedemption ?? [];
     $bandaraCreditEnabled = (bool) ($bandaraCredit['enabled'] ?? false);
@@ -41,7 +55,8 @@
 
     $payLaterOption = $payLater ?? ($payLaterOption ?? []);
     $payLaterEligible = (bool) ($payLaterOption['eligible'] ?? false);
-    $selectedPaymentMethod = old('payment_method', 'razorpay');
+    $requestedPaymentMethod = old('payment_method', request('payment_method', 'razorpay'));
+    $selectedPaymentMethod = ($requestedPaymentMethod === 'pay_later' && $payLaterEligible) ? 'pay_later' : 'razorpay';
 
     // BANDARA_CREDIT_RUNTIME_NORMALIZER_V1
     // Normalize Bandara Credit state across older/newer checkout controllers.
@@ -56,7 +71,7 @@
 
     try {
         $bandaraCreditUser = auth()->user();
-        if ($bandaraCreditUser) {
+        if ($bandaraCreditUser && ! $isB2BCheckoutUser) {
             $bandaraCreditService = app(\App\Services\BandaraCreditService::class);
             $bandaraCreditStatus = method_exists($bandaraCreditService, 'redemptionStatusForUser')
                 ? (array) $bandaraCreditService->redemptionStatusForUser($bandaraCreditUser)
@@ -108,6 +123,10 @@
         $bandaraCreditState = is_array($bandaraCreditState) ? $bandaraCreditState : [];
     }
 
+    if ($isB2BCheckoutUser) {
+        $bandaraCreditState = [];
+    }
+
     $bandaraCredit = $bandaraCreditRedemption = $bandaraCreditQuote = $bandaraCreditState;
     $bandaraCreditProgramEnabled = (bool) ($bandaraCreditState['program_enabled'] ?? ($bandaraCreditState['enabled'] ?? false));
     $bandaraCreditEligibleUser = (bool) ($bandaraCreditState['eligible_user'] ?? false);
@@ -154,15 +173,9 @@
         </div>
     </div>
 
-    @if(session('status'))
-        <div class="rounded-sm border border-emerald-300 bg-emerald-50 px-3 py-2 text-[11px] text-emerald-800">
-            {{ session('status') }}
-        </div>
-    @endif
-
     @if(!empty($pricingUpdatedCount) && $pricingUpdatedCount > 0)
         <div class="rounded-sm border border-gray-200 dark:border-gray-800 bg-white dark:bg-gray-900 px-3 py-2 text-[11px] text-gray-700 dark:text-gray-200">
-            Prices were updated for {{ $pricingUpdatedCount }} item(s) based on latest product pricing.
+            Your cart was updated for {{ $pricingUpdatedCount }} item(s) based on current availability and pricing.
         </div>
     @endif
 
@@ -186,16 +199,45 @@
 
         {{-- Items --}}
         <div class="lg:col-span-2 rounded-sm border border-gray-200 dark:border-gray-800 bg-white dark:bg-gray-900 overflow-hidden">
-            {{-- <div class="px-4 py-3 border-b border-gray-200 dark:border-gray-800">
-                <div class="font-semibold text-gray-900 dark:text-gray-50">Items</div>
-                <div class="text-[11px] text-gray-500 dark:text-gray-400">Qty + weight shown for every line</div>
-            </div> --}}
+            <form id="checkout-bulk-remove-form"
+                  method="POST"
+                  action="{{ $cartBulkDestroyUrl }}"
+                  data-bandara-confirm="Remove the selected item(s) from cart?"
+                  data-bandara-confirm-title="Remove selected items?"
+                  data-bandara-confirm-text="Remove selected"
+                  data-bandara-confirm-variant="danger">
+                @csrf
+                @method('DELETE')
+                <input type="hidden" name="return_to" value="{{ $checkoutReturnTo }}">
+            </form>
+
+            <div class="px-4 py-3 border-b border-gray-200 dark:border-gray-800 flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
+                <div>
+                    <div class="font-semibold text-gray-900 dark:text-gray-50">Items</div>
+                    <div class="text-[11px] text-gray-500 dark:text-gray-400">
+                        Review cart items before placing the order.
+                    </div>
+                </div>
+
+                <button type="submit"
+                        form="checkout-bulk-remove-form"
+                        data-checkout-bulk-remove-button
+                        disabled
+                        class="inline-flex items-center justify-center rounded-sm border border-red-200 dark:border-red-900 px-3 py-1 text-[10px] font-medium text-red-700 dark:text-red-300 hover:bg-red-50 dark:hover:bg-red-950/30 disabled:cursor-not-allowed disabled:opacity-50">
+                    Remove selected
+                </button>
+            </div>
 
             <div class="overflow-x-auto">
                 <table class="min-w-full text-[11px]">
                     <thead class="bg-gray-50 dark:bg-gray-950 border-b border-gray-200 dark:border-gray-800">
                     <tr class="text-left text-gray-600 dark:text-gray-300">
-                        <th class="px-4 py-2 font-medium">#</th>
+                        <th class="px-4 py-2 font-medium w-14">
+                            <input type="checkbox"
+                                   data-checkout-select-all
+                                   class="rounded border-gray-300 dark:border-gray-700"
+                                   aria-label="Select all checkout items">
+                        </th>
                         <th class="px-4 py-2 font-medium">Item</th>
                         <th class="px-4 py-2 font-medium">Qty</th>
                         @if(!$isB2BCheckoutUser)
@@ -203,6 +245,7 @@
                         @endif
                         <th class="px-4 py-2 font-medium">Unit</th>
                         <th class="px-4 py-2 font-medium text-right">Total</th>
+                        <th class="px-4 py-2 font-medium text-right">Remove</th>
                     </tr>
                     </thead>
                     <tbody class="divide-y divide-gray-100 dark:divide-gray-800">
@@ -255,7 +298,18 @@
                         @endphp
 
                         <tr class="text-gray-700 dark:text-gray-200">
-                            <td class="px-4 py-2 whitespace-nowrap align-top">{{ $loop->iteration }}</td>
+                            <td class="px-4 py-2 whitespace-nowrap align-top">
+                                <div class="flex items-center gap-2">
+                                    <input type="checkbox"
+                                           name="cart_item_ids[]"
+                                           value="{{ $it->id }}"
+                                           form="checkout-bulk-remove-form"
+                                           data-checkout-item-checkbox
+                                           class="rounded border-gray-300 dark:border-gray-700"
+                                           aria-label="Select {{ $p?->name ?? 'product' }} for removal">
+                                    <span class="text-[10px] text-gray-500 dark:text-gray-400">{{ $loop->iteration }}</span>
+                                </div>
+                            </td>
 
                             <td class="px-4 py-2">
                                 <div class="font-medium text-gray-900 dark:text-gray-50">
@@ -294,6 +348,23 @@
                             <td class="px-4 py-2 whitespace-nowrap text-right">
                                 ₹{{ number_format($displayLineTotal, 2) }}
                             </td>
+
+                            <td class="px-4 py-2 whitespace-nowrap text-right">
+                                <form method="POST"
+                                      action="{{ $cartDestroyUrl($it->id) }}"
+                                      data-bandara-confirm="Remove this item from cart?"
+                                      data-bandara-confirm-title="Remove item?"
+                                      data-bandara-confirm-text="Remove"
+                                      data-bandara-confirm-variant="danger">
+                                    @csrf
+                                    @method('DELETE')
+                                    <input type="hidden" name="return_to" value="{{ $checkoutReturnTo }}">
+                                    <button type="submit"
+                                            class="inline-flex items-center rounded-sm border border-gray-300 dark:border-gray-700 px-3 py-1 text-[10px] hover:bg-gray-100 dark:hover:bg-gray-800">
+                                        Remove
+                                    </button>
+                                </form>
+                            </td>
                         </tr>
                     @endforeach
                     </tbody>
@@ -310,10 +381,10 @@
             </div> --}}
 
             @if($placeUrl)
-                <form method="POST" action="{{ $placeUrl }}" class="space-y-3">
+                <form method="POST" action="{{ $placeUrl }}" class="space-y-3" data-checkout-form>
                     @csrf
 
-                    <input type="hidden" name="return_to" value="{{ request()->fullUrl() }}">
+                    <input type="hidden" name="return_to" value="{{ $checkoutReturnTo }}">
 
                     <div class="rounded-2xl border border-gray-200 dark:border-gray-800 bg-white dark:bg-gray-900 p-4 sm:p-5">
     <div class="flex items-start justify-between gap-3">
@@ -349,6 +420,7 @@
                             value="{{ $address->id }}"
                             class="mt-1 rounded border-gray-300 dark:border-gray-700"
                             @checked((int) old('address_id', $selectedAddressId) === (int) $address->id)
+                            data-checkout-address-radio
                         >
 
                         <div class="min-w-0 flex-1">
@@ -411,7 +483,7 @@
                               class="w-full rounded-sm border border-gray-300 dark:border-gray-700 bg-white dark:bg-gray-950 px-2 py-2 text-[11px]">{{ old('customer_note') }}</textarea>
 
                     @if($isB2BCheckoutUser)
-                        <div class="rounded-2xl border border-gray-200 dark:border-gray-800 bg-white dark:bg-gray-900 p-4 space-y-3">
+                        <div data-checkout-payment-methods class="rounded-2xl border border-gray-200 dark:border-gray-800 bg-white dark:bg-gray-900 p-4 space-y-3">
                             <div>
                                 <h2 class="text-sm font-semibold text-gray-900 dark:text-gray-50">Payment method</h2>
                                 <p class="mt-1 text-[11px] text-gray-500 dark:text-gray-400">
@@ -453,7 +525,7 @@
                     @endif
 
                     @if(!$isB2BCheckoutUser)
-                    <div class="rounded-2xl border border-gray-200 dark:border-gray-800 bg-white dark:bg-gray-900 p-4 space-y-3">
+                    <div data-bandara-credit-section class="rounded-2xl border border-gray-200 dark:border-gray-800 bg-white dark:bg-gray-900 p-4 space-y-3">
                         <div class="flex items-start justify-between gap-3">
                             <div>
                                 <h2 class="text-sm font-semibold text-gray-900 dark:text-gray-50">Bandara Credit</h2>
@@ -469,8 +541,8 @@
                             </div>
                         </div>
 
-                        @if($bandaraCreditEnabled && $bandaraCreditMaxPoints > 0)
-                            <div class="grid gap-3 sm:grid-cols-[1fr_auto]">
+                        @if($bandaraCreditEnabled && $bandaraCreditCanRedeem && $bandaraCreditMaxPoints > 0)
+                            <div class="space-y-3">
                                 <div>
                                     <label for="bandara_credit_points" class="block text-[11px] font-medium text-gray-700 dark:text-gray-200">
                                         Credits to redeem
@@ -483,6 +555,8 @@
                                         max="{{ $bandaraCreditMaxPoints }}"
                                         step="1"
                                         value="{{ $bandaraCreditRequested }}"
+                                        inputmode="numeric"
+                                        data-bandara-credit-input
                                         class="mt-1 w-full rounded-xl border border-gray-300 dark:border-gray-700 bg-white dark:bg-gray-950 px-3 py-2 text-xs"
                                     >
                                     <p class="mt-1 text-[11px] text-gray-500 dark:text-gray-400">
@@ -499,17 +573,61 @@
                                     @enderror
                                 </div>
 
-                                <button
-                                    type="button"
-                                    onclick="document.getElementById('bandara_credit_points').value='{{ $bandaraCreditMaxPoints }}'"
-                                    class="self-end inline-flex items-center justify-center rounded-xl border border-gray-300 dark:border-gray-700 px-3 py-2 text-[11px] font-medium text-gray-700 dark:text-gray-200 hover:bg-gray-50 dark:hover:bg-gray-800"
-                                >
-                                    Use maximum
-                                </button>
+                                <div class="flex flex-wrap items-center gap-2">
+                                    <button
+                                        type="submit"
+                                        formaction="{{ route('checkout.bandara-credit.apply') }}"
+                                        formmethod="POST"
+                                        formnovalidate
+                                        data-bandara-credit-apply
+                                        class="inline-flex items-center justify-center rounded-xl bg-gray-900 dark:bg-gray-100 px-3 py-2 text-[11px] font-medium text-white dark:text-gray-900 hover:bg-gray-800 dark:hover:bg-white"
+                                    >
+                                        Apply credit
+                                    </button>
+
+                                    <button
+                                        type="button"
+                                        data-bandara-credit-use-maximum
+                                        data-bandara-credit-maximum="{{ $bandaraCreditMaxPoints }}"
+                                        class="inline-flex items-center justify-center rounded-xl border border-gray-300 dark:border-gray-700 px-3 py-2 text-[11px] font-medium text-gray-700 dark:text-gray-200 hover:bg-gray-50 dark:hover:bg-gray-800"
+                                    >
+                                        Use maximum
+                                    </button>
+
+                                    @if($bandaraCreditAppliedPoints > 0 || $bandaraCreditRequested > 0)
+                                        <button
+                                            type="submit"
+                                            formaction="{{ route('checkout.bandara-credit.remove') }}"
+                                            formmethod="POST"
+                                            formnovalidate
+                                            name="_method"
+                                            value="DELETE"
+                                            data-bandara-credit-remove
+                                            class="inline-flex items-center justify-center rounded-xl border border-gray-300 dark:border-gray-700 px-3 py-2 text-[11px] font-medium text-gray-600 dark:text-gray-300 hover:bg-gray-50 dark:hover:bg-gray-800"
+                                        >
+                                            Remove credit
+                                        </button>
+                                    @endif
+                                </div>
+
+                                @if($bandaraCreditAppliedPoints > 0)
+                                    <div class="rounded-xl border border-emerald-200 dark:border-emerald-900 bg-emerald-50 dark:bg-emerald-950/25 px-3 py-2 text-[11px] text-emerald-800 dark:text-emerald-300">
+                                        {{ number_format($bandaraCreditAppliedPoints) }} credits applied
+                                        @if($bandaraCreditAppliedAmount > 0)
+                                            · ₹{{ number_format($bandaraCreditAppliedAmount, 2) }} will be reserved when you place the order.
+                                        @endif
+                                    </div>
+                                @endif
+
+                                @if($bandaraCreditMessage)
+                                    <div class="rounded-xl border border-amber-200 dark:border-amber-900 bg-amber-50 dark:bg-amber-950/25 px-3 py-2 text-[11px] text-amber-800 dark:text-amber-300">
+                                        {{ $bandaraCreditMessage }}
+                                    </div>
+                                @endif
                             </div>
                         @elseif($bandaraCreditEnabled)
                             <div class="rounded-xl border border-gray-200 dark:border-gray-800 bg-gray-50 dark:bg-gray-950/40 px-3 py-2 text-[11px] text-gray-600 dark:text-gray-300">
-                                You do not currently have enough eligible Bandara Credit for this order.
+                                {{ $bandaraCreditMessage ?: 'You do not currently have enough eligible Bandara Credit for this order.' }}
                             </div>
                         @else
                             <div class="rounded-xl border border-gray-200 dark:border-gray-800 bg-gray-50 dark:bg-gray-950/40 px-3 py-2 text-[11px] text-gray-600 dark:text-gray-300">
@@ -519,7 +637,7 @@
                     </div>
                     @endif
 
-                    <div class="border-t border-gray-200 dark:border-gray-800 pt-3 space-y-2">
+                    <div data-checkout-totals class="border-t border-gray-200 dark:border-gray-800 pt-3 space-y-2">
                         <div class="flex items-center justify-between text-[11px]">
                             <span class="text-gray-600 dark:text-gray-300">Subtotal <span class="text-[10px] text-gray-400">(excl GST)</span></span>
                             <span class="text-gray-900 dark:text-gray-50">₹{{ number_format($subtotal, 2) }}</span>
@@ -611,7 +729,7 @@
                             </div>
                         @endif
 
-                        @if(!empty($bandaraCredit['applied_points']))
+                        @if(! $isB2BCheckoutUser && !empty($bandaraCredit['applied_points']))
                             <div class="flex items-center justify-between text-[11px] text-emerald-700 dark:text-emerald-300">
                                 <span>Bandara Credit preview</span>
                                 <span>-₹{{ number_format((float) ($bandaraCredit['applied_amount'] ?? 0), 2) }}</span>
@@ -623,7 +741,7 @@
                             <span class="text-gray-900 dark:text-gray-50">₹{{ number_format($grandTotal, 2) }}</span>
                         </div>
                     
-                        @if(!empty($bandaraCredit['applied_points']))
+                        @if(! $isB2BCheckoutUser && !empty($bandaraCredit['applied_points']))
                             <div class="flex items-center justify-between text-[12px] font-semibold text-emerald-700 dark:text-emerald-300">
                                 <span>Payable after Bandara Credit</span>
                                 <span>₹{{ number_format((float) ($bandaraCredit['remaining_payable'] ?? $grandTotal), 2) }}</span>
@@ -654,11 +772,256 @@
                 </form>
             @else
                 <div class="rounded-sm border border-yellow-300 bg-yellow-50 px-3 py-2 text-[11px] text-yellow-800">
-                    Checkout place route not found. Expected route name: <code>checkout.place</code> or <code>checkout.store</code>
+                    Checkout place route not found. Expected route name: <code>checkout.place</code>
                 </div>
             @endif
         </div>
 
     </div>
 </div>
+
 @endsection
+
+@push('scripts')
+<script>
+(function () {
+    const checkboxes = Array.from(document.querySelectorAll('[data-checkout-item-checkbox]'));
+    const selectAll = document.querySelector('[data-checkout-select-all]');
+    const bulkButton = document.querySelector('[data-checkout-bulk-remove-button]');
+
+    if (!checkboxes.length || !bulkButton) {
+        return;
+    }
+
+    const updateBulkState = function () {
+        const selectedCount = checkboxes.filter((checkbox) => checkbox.checked).length;
+
+        bulkButton.disabled = selectedCount === 0;
+        bulkButton.textContent = selectedCount > 0
+            ? 'Remove selected (' + selectedCount + ')'
+            : 'Remove selected';
+
+        if (selectAll) {
+            selectAll.checked = selectedCount === checkboxes.length;
+            selectAll.indeterminate = selectedCount > 0 && selectedCount < checkboxes.length;
+        }
+    };
+
+    checkboxes.forEach((checkbox) => {
+        checkbox.addEventListener('change', updateBulkState);
+    });
+
+    if (selectAll) {
+        selectAll.addEventListener('change', function () {
+            checkboxes.forEach((checkbox) => {
+                checkbox.checked = selectAll.checked;
+            });
+            updateBulkState();
+        });
+    }
+
+    updateBulkState();
+})();
+</script>
+
+<script>
+(function () {
+    const form = document.querySelector('[data-checkout-form]');
+    if (!form || !window.URL) {
+        return;
+    }
+
+    let activeRequest = null;
+
+    const selectedPaymentValue = function () {
+        const checkedRadio = form.querySelector('input[type="radio"][name="payment_method"]:checked');
+        if (checkedRadio && checkedRadio.value) {
+            return checkedRadio.value;
+        }
+
+        const hiddenInput = form.querySelector('input[type="hidden"][name="payment_method"]');
+        return hiddenInput && hiddenInput.value ? hiddenInput.value : null;
+    };
+
+    const buildCheckoutUrl = function (addressId) {
+        const url = new URL(window.location.href);
+
+        if (addressId) {
+            url.searchParams.set('address_id', addressId);
+        } else {
+            url.searchParams.delete('address_id');
+        }
+
+        const creditInput = form.querySelector('input[name="bandara_credit_points"]');
+        const creditPoints = creditInput ? parseInt(creditInput.value || '0', 10) : 0;
+        if (creditInput && creditPoints > 0) {
+            url.searchParams.set('bandara_credit_points', String(creditPoints));
+        } else {
+            url.searchParams.delete('bandara_credit_points');
+        }
+
+        const paymentMethod = selectedPaymentValue();
+        if (paymentMethod) {
+            url.searchParams.set('payment_method', paymentMethod);
+        } else {
+            url.searchParams.delete('payment_method');
+        }
+
+        return url;
+    };
+
+    const updateReturnUrl = function (url) {
+        const localReturnTo = url.pathname + url.search + url.hash;
+        document.querySelectorAll('input[name="return_to"]').forEach((returnInput) => {
+            returnInput.value = localReturnTo;
+        });
+    };
+
+    const replaceSection = function (selector, nextDocument) {
+        const current = document.querySelector(selector);
+        const next = nextDocument.querySelector(selector);
+
+        if (current && next) {
+            current.replaceWith(next);
+        } else if (current && !next) {
+            current.remove();
+        }
+    };
+
+    const setRefreshing = function (isRefreshing) {
+        form.toggleAttribute('aria-busy', isRefreshing);
+
+        ['[data-checkout-totals]', '[data-bandara-credit-section]'].forEach((selector) => {
+            const section = document.querySelector(selector);
+            if (section) {
+                section.classList.toggle('opacity-60', isRefreshing);
+                section.classList.toggle('pointer-events-none', isRefreshing);
+            }
+        });
+    };
+
+    const selectedAddressValue = function () {
+        const selectedAddress = form.querySelector('[data-checkout-address-radio]:checked');
+        return selectedAddress && selectedAddress.value ? selectedAddress.value : null;
+    };
+
+    const refreshCheckout = async function (addressId = selectedAddressValue()) {
+        const url = buildCheckoutUrl(addressId);
+        updateReturnUrl(url);
+
+        if (!window.fetch || !window.DOMParser) {
+            window.location.assign(url.toString());
+            return;
+        }
+
+        if (activeRequest && activeRequest.abort) {
+            activeRequest.abort();
+        }
+
+        const controller = window.AbortController ? new AbortController() : null;
+        activeRequest = controller;
+        setRefreshing(true);
+
+        try {
+            const response = await fetch(url.toString(), {
+                method: 'GET',
+                credentials: 'same-origin',
+                headers: {
+                    'Accept': 'text/html',
+                    'X-Requested-With': 'XMLHttpRequest'
+                },
+                signal: controller ? controller.signal : undefined
+            });
+
+            if (!response.ok) {
+                throw new Error('Checkout refresh failed.');
+            }
+
+            const html = await response.text();
+            const nextDocument = new DOMParser().parseFromString(html, 'text/html');
+
+            replaceSection('[data-checkout-payment-methods]', nextDocument);
+            replaceSection('[data-bandara-credit-section]', nextDocument);
+            replaceSection('[data-checkout-totals]', nextDocument);
+
+            window.history.replaceState({}, '', url.toString());
+        } catch (error) {
+            if (error && error.name === 'AbortError') {
+                return;
+            }
+
+            window.location.assign(url.toString());
+        } finally {
+            if (activeRequest === controller) {
+                activeRequest = null;
+            }
+            setRefreshing(false);
+        }
+    };
+
+    document.addEventListener('click', function (event) {
+        const target = event.target instanceof Element ? event.target : null;
+        if (!target) {
+            return;
+        }
+
+        const applyButton = target.closest('[data-bandara-credit-apply]');
+        if (applyButton && form.contains(applyButton)) {
+            event.preventDefault();
+            refreshCheckout();
+            return;
+        }
+
+        const maximumButton = target.closest('[data-bandara-credit-use-maximum]');
+        if (maximumButton && form.contains(maximumButton)) {
+            event.preventDefault();
+
+            const creditInput = form.querySelector('[data-bandara-credit-input]');
+            if (creditInput) {
+                creditInput.value = maximumButton.getAttribute('data-bandara-credit-maximum') || '0';
+            }
+
+            refreshCheckout();
+            return;
+        }
+
+        const removeButton = target.closest('[data-bandara-credit-remove]');
+        if (removeButton && form.contains(removeButton)) {
+            event.preventDefault();
+
+            const creditInput = form.querySelector('[data-bandara-credit-input]');
+            if (creditInput) {
+                creditInput.value = '0';
+            }
+
+            refreshCheckout();
+        }
+    });
+
+    document.addEventListener('keydown', function (event) {
+        const target = event.target instanceof Element ? event.target : null;
+        const creditInput = target ? target.closest('[data-bandara-credit-input]') : null;
+
+        if (!creditInput || !form.contains(creditInput) || event.key !== 'Enter') {
+            return;
+        }
+
+        event.preventDefault();
+        refreshCheckout();
+    });
+
+    document.addEventListener('change', function (event) {
+        const target = event.target instanceof Element ? event.target : null;
+        const addressRadio = target ? target.closest('[data-checkout-address-radio]') : null;
+
+        if (!addressRadio || !form.contains(addressRadio) || !addressRadio.checked) {
+            return;
+        }
+
+        refreshCheckout(addressRadio.value);
+    });
+})();
+
+</script>
+@endpush
+

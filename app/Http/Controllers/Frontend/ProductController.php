@@ -24,8 +24,23 @@ class ProductController extends Controller
                 $q->orderBy('position')->orderBy('id');
             },
             'variants.attributeValues.attribute',
+            'variants.attributeValues.attributeValue',
             'activeRecipes',
         ]);
+
+        $pricing = app(PricingService::class);
+        if (! $pricing->productIsAvailableToUser($request->user(), $product)) {
+            abort(404);
+        }
+
+        if (($request->user()?->customer_type ?? 'b2c') === 'b2b') {
+            $product->setRelation(
+                'variants',
+                $product->variants
+                    ->filter(fn ($variant) => $pricing->variantIsAvailableToUser($request->user(), $product, $variant))
+                    ->values()
+            );
+        }
 
         $variants = $product->variants ?? collect();
         $pieceSelector = $this->buildPieceSelector($product, $request);
@@ -41,14 +56,25 @@ class ProductController extends Controller
 
         $product->loadMissing([
             'variants.attributeValues.attribute',
+            'variants.attributeValues.attributeValue',
         ]);
 
         $pricing = app(PricingService::class);
 
+        if (! $pricing->productIsAvailableToUser($request->user(), $product)) {
+            abort(404);
+        }
+
         $variants = ($product->variants ?? collect())
+            ->filter(fn ($variant) => $this->variantIsVisibleToCustomer($variant, $request->user()))
+            ->filter(fn ($variant) => $pricing->variantIsAvailableToUser($request->user(), $product, $variant))
             ->filter(fn ($variant) => $this->variantIsSelectable($variant))
             ->map(function ($variant) use ($product, $request, $pricing) {
-                $displayPrice = $pricing->priceFor($request->user(), $product, $variant);
+                $displayPrice = $this->displayPriceForSellUnit(
+                    $product,
+                    $variant,
+                    (float) $pricing->priceFor($request->user(), $product, $variant)
+                );
                 $name = $this->variantLabel($variant);
 
                 return [
@@ -58,6 +84,8 @@ class ProductController extends Controller
                     'price' => $displayPrice,
                     'price_label' => '₹' . number_format($displayPrice, 2),
                     'stock_label' => $this->variantStockLabel($variant),
+                    'customer_visibility' => (string) ($variant->customer_visibility ?? 'all'),
+                    'attribute_values' => $this->variantAttributePayload($variant),
                 ];
             })
             ->values();
@@ -75,11 +103,59 @@ class ProductController extends Controller
             return false;
         }
 
+        // Pack variants are independent saleable stock targets.
+        // Do not fall back to the parent product's Manage Stock flag, because
+        // parent products such as "Dimsum" may intentionally have zero stock.
+        if ($variant->stock_quantity !== null) {
+            return (float) $variant->stock_quantity > 0;
+        }
+
         if ((bool) ($variant->manage_stock ?? false)) {
-            return (float) ($variant->stock_quantity ?? 0) > 0;
+            return false;
         }
 
         return true;
+    }
+
+    protected function variantIsVisibleToCustomer($variant, $user): bool
+    {
+        $customerType = $user && (($user->customer_type ?? 'b2c') === 'b2b') ? 'b2b' : 'b2c';
+
+        if (method_exists($variant, 'isVisibleToCustomerType')) {
+            return $variant->isVisibleToCustomerType($customerType);
+        }
+
+        $visibility = (string) ($variant->customer_visibility ?? 'all');
+
+        return $visibility === 'all' || $visibility === $customerType;
+    }
+
+    protected function variantAttributePayload($variant): array
+    {
+        return collect($variant->attributeValues ?? [])
+            ->map(function ($value) {
+                $attribute = $value->attribute ?? null;
+                $attributeValue = $value->attributeValue ?? null;
+
+                $valueName = $value->value
+                    ?? $value->name
+                    ?? $attributeValue?->name
+                    ?? '';
+
+                if (trim((string) $valueName) === '') {
+                    return null;
+                }
+
+                return [
+                    'product_attribute_value_id' => (int) ($value->id ?? 0),
+                    'attribute_id' => (int) ($value->attribute_id ?? 0),
+                    'attribute_name' => (string) ($attribute?->display_name ?? $attribute?->name ?? 'Option'),
+                    'value_name' => (string) $valueName,
+                ];
+            })
+            ->filter()
+            ->values()
+            ->all();
     }
 
     /**
@@ -140,7 +216,7 @@ class ProductController extends Controller
 
         foreach (($variant->attributeValues ?? collect()) as $value) {
             $attributeName = $value->attribute->name ?? 'Option';
-            $valueName = $value->value ?? $value->name ?? '';
+            $valueName = $value->value ?? $value->name ?? $value->attributeValue?->name ?? '';
 
             if ($valueName !== '') {
                 $parts[] = $attributeName . ': ' . $valueName;
@@ -152,6 +228,23 @@ class ProductController extends Controller
         }
 
         return $variant->sku ?? ('Variant ' . $variant->id);
+    }
+
+    protected function displayPriceForSellUnit(Product $product, $variant, float $unitPrice): float
+    {
+        $pricingUnit = strtolower((string) ($variant?->pricing_unit ?? ($product->sell_unit === 'kg' ? 'kg' : 'pack')));
+        $pricingUnit = in_array($pricingUnit, ['kg', 'pack'], true) ? $pricingUnit : 'pack';
+
+        if ($pricingUnit !== 'kg') {
+            return round($unitPrice, 2);
+        }
+
+        $weightKg = round((float) ($variant?->product_weight ?? 0), 3);
+        if ($weightKg <= 0) {
+            $weightKg = round((float) ($product->product_weight ?? 0), 3);
+        }
+
+        return round($unitPrice * ($weightKg > 0 ? $weightKg : 1), 2);
     }
 
     protected function buildPieceSelector(Product $product, Request $request): array

@@ -1,65 +1,34 @@
 @extends('layouts.company')
 
-@section('title', 'Create pack stock')
+@section('title', 'Transform stock')
 
 @section('content')
 @php
     $lotSummary = function ($lot): string {
         $parts = [];
-        if ($lot->available_weight_kg !== null && (float) $lot->available_weight_kg > 0) {
-            $parts[] = number_format((float) $lot->available_weight_kg, 3) . ' kg';
+        $fullPacks = (int) ($lot->repack_available_pack_count ?? $lot->available_pack_count ?? 0);
+        $pieces = (float) ($lot->repack_available_piece_count ?? $lot->available_piece_count ?? 0);
+        $piecesPerUnit = (float) ($lot->repack_pieces_per_unit ?? $lot->pieces_per_pack ?? 0);
+        $weight = (float) ($lot->available_weight_kg ?? 0);
+        $quantity = (float) ($lot->available_quantity ?? 0);
+
+        if ($piecesPerUnit > 1 && $fullPacks > 0) {
+            $parts[] = number_format($fullPacks) . ' unopened box' . ($fullPacks === 1 ? '' : 'es');
+        } elseif ($fullPacks > 0) {
+            $parts[] = number_format($fullPacks) . ' unopened source unit' . ($fullPacks === 1 ? '' : 's');
         }
-        if ($lot->available_piece_count !== null && (int) $lot->available_piece_count > 0) {
-            $parts[] = number_format((float) $lot->available_piece_count, 0) . ' pcs';
+        if ($pieces > 0) {
+            $parts[] = number_format($pieces, 0) . ' pcs available';
         }
-        if ((float) ($lot->available_quantity ?? 0) > 0) {
-            $parts[] = number_format((float) $lot->available_quantity, 3) . ' source units';
+        if ($weight > 0 && $pieces <= 0) {
+            $parts[] = number_format($weight, 3) . ' kg available';
+        }
+        if ($fullPacks <= 0 && $pieces <= 0 && $quantity > 0) {
+            $parts[] = number_format($quantity, 3) . ' source units';
         }
 
         return $parts ? implode(' · ', array_unique($parts)) : 'No available quantity';
     };
-
-    $productMeta = collect($outputProducts ?? [])->mapWithKeys(function ($product) {
-        return [(string) $product->id => [
-            'id' => (int) $product->id,
-            'name' => (string) $product->name,
-            'sku' => (string) ($product->sku ?? ''),
-            'inventory_role' => (string) ($product->inventory_role ?? (($product->is_active ?? false) ? 'saleable' : 'internal')),
-            'pack_type' => (string) ($product->pack_type ?? 'quantity'),
-            'sell_unit' => (string) ($product->sell_unit ?? 'piece'),
-            'product_weight' => $product->product_weight !== null ? (float) $product->product_weight : 0,
-            'pieces_per_pack' => $product->pieces_per_pack !== null ? (float) $product->pieces_per_pack : 0,
-            'is_active' => (bool) $product->is_active,
-        ]];
-    });
-
-    $variantMeta = collect($outputVariants ?? [])->mapWithKeys(function ($rows, $productId) {
-        return [(string) $productId => collect($rows)->map(function ($variant) {
-            $label = trim((string) ($variant->name ?? ''));
-            if ($label === '') {
-                $packType = (string) ($variant->pack_type ?? '');
-                if ($packType === 'fixed_piece_pack' && (float) ($variant->pieces_per_pack ?? 0) > 0) {
-                    $label = rtrim(rtrim(number_format((float) $variant->pieces_per_pack, 3), '0'), '.') . ' pcs pack';
-                } elseif ($packType === 'fixed_weight_pack' && (float) ($variant->product_weight ?? 0) > 0) {
-                    $label = rtrim(rtrim(number_format((float) $variant->product_weight, 3), '0'), '.') . ' kg pack';
-                } else {
-                    $label = (string) ($variant->sku ?? ('Variant ' . $variant->id));
-                }
-            }
-
-            return [
-                'id' => (int) $variant->id,
-                'product_id' => (int) $variant->product_id,
-                'label' => $label,
-                'sku' => (string) ($variant->sku ?? ''),
-                'pack_type' => (string) ($variant->pack_type ?? 'quantity'),
-                'product_weight' => $variant->product_weight !== null ? (float) $variant->product_weight : 0,
-                'pieces_per_pack' => $variant->pieces_per_pack !== null ? (float) $variant->pieces_per_pack : 0,
-                'pricing_unit' => (string) ($variant->pricing_unit ?? 'pack'),
-                'is_active' => (bool) ($variant->is_active ?? true),
-            ];
-        })->values()->all()];
-    });
 
     $lotPiecesMeta = collect($lots ?? [])->mapWithKeys(function ($lot) {
         return [(string) $lot->id => collect($lot->pieces ?? [])->map(function ($piece) {
@@ -74,23 +43,50 @@
             ];
         })->filter(fn ($piece) => (float) ($piece['available_weight_kg'] ?? 0) > 0)->values()->all()];
     });
+
+    $sourcePiecesPerUnitForLot = function ($lot): float {
+        $value = (float) ($lot->repack_pieces_per_unit ?? 0);
+        if ($value <= 0) {
+            $value = (float) ($lot->pieces_per_pack ?? 0);
+        }
+        if ($value <= 0 && $lot->productVariant) {
+            $value = (float) ($lot->productVariant->pieces_per_pack ?? 0);
+        }
+        if ($value <= 0 && $lot->product) {
+            $value = (float) ($lot->product->pieces_per_pack ?? 0);
+        }
+
+        return $value > 0 ? round($value, 3) : 1.0;
+    };
+
+    $initialOutputs = old('outputs');
+    if (! is_array($initialOutputs) || $initialOutputs === []) {
+        $initialOutputs = [[
+            'output_product_id' => old('output_product_id'),
+            'output_product_variant_id' => old('output_product_variant_id'),
+            'pack_count' => old('pack_count', 1),
+            'pieces_per_pack' => old('pieces_per_pack'),
+            'output_weight_kg' => old('output_weight_kg'),
+        ]];
+    }
+    $initialOutputs = array_values($initialOutputs);
 @endphp
 
 <div class="max-w-6xl mx-auto px-4 py-6 space-y-4 text-xs">
-    <div class="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
+    <div class="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
         <div>
-            <h1 class="text-xl font-semibold text-gray-900 dark:text-gray-50">Create pack stock</h1>
+            <h1 class="text-xl font-semibold text-gray-900 dark:text-gray-50">Transform stock</h1>
             <p class="mt-1 text-[12px] text-gray-500 dark:text-gray-400">
-                Convert a raw/internal source lot into a normal saleable product. Example: Full Pork Belly lot → Pork Belly With Skin 500g Slice Pack product.
+                Convert one source lot into one or several finished products or pack variants in a single transaction.
             </p>
         </div>
         <a href="{{ route('admin.inventory.packs.index') }}" class="rounded border border-gray-300 px-3 py-2 text-xs hover:bg-gray-50 dark:border-gray-700 dark:hover:bg-gray-800">Back</a>
     </div>
 
     @if($errors->any())
-        <div class="rounded-xl border border-red-300 bg-red-50 px-4 py-3 text-[12px] text-red-800">
-            <div class="font-semibold mb-1">Please fix the following:</div>
-            <ul class="list-disc pl-5 space-y-0.5">
+        <div class="rounded-xl border border-red-300 bg-red-50 px-4 py-3 text-[12px] text-red-800 dark:border-red-900/60 dark:bg-red-950/30 dark:text-red-200">
+            <div class="mb-1 font-semibold">Please fix the following:</div>
+            <ul class="list-disc space-y-0.5 pl-5">
                 @foreach($errors->all() as $error)
                     <li>{{ $error }}</li>
                 @endforeach
@@ -98,122 +94,192 @@
         </div>
     @endif
 
-    <form method="POST" action="{{ route('admin.inventory.packs.store') }}" class="rounded-2xl border border-gray-200 bg-white p-5 space-y-5 dark:border-gray-800 dark:bg-gray-950">
+    <div class="rounded-xl border border-amber-200 bg-amber-50 px-4 py-3 text-[12px] text-amber-900 dark:border-amber-900/60 dark:bg-amber-950/25 dark:text-amber-100">
+        <div class="font-semibold">Master-carton inward rule</div>
+        <div class="mt-1">For one box containing 240 pieces, receive <strong>Stock Qty = 1</strong> and configure the source variant as <strong>240 pieces per pack</strong>. The system will then track one unopened carton plus its 240 internal pieces.</div>
+    </div>
+
+    <form method="POST" action="{{ route('admin.inventory.packs.store') }}" class="space-y-5 rounded-2xl border border-gray-200 bg-white p-5 dark:border-gray-800 dark:bg-gray-950" data-transform-stock-form data-output-options-url="{{ route('admin.inventory.packs.output-options') }}">
         @csrf
 
-        <div class="grid gap-4 md:grid-cols-4">
+        <section class="space-y-4">
             <div>
-                <label class="block text-[12px] font-medium text-gray-700 dark:text-gray-300 mb-1">Source lot</label>
-                <select id="source_inventory_lot_id" name="source_inventory_lot_id" required class="w-full rounded-lg border border-gray-300 bg-white px-3 py-2 text-[13px] dark:border-gray-700 dark:bg-gray-900">
-                    <option value="">Select raw lot…</option>
-                    @foreach($lots as $lot)
-                        <option value="{{ $lot->id }}"
-                                data-product-id="{{ $lot->product_id }}"
-                                data-available-qty="{{ (float) ($lot->available_quantity ?? 0) }}"
-                                data-available-weight="{{ (float) ($lot->available_weight_kg ?? 0) }}"
-                                data-available-pieces="{{ (float) ($lot->available_piece_count ?? 0) }}"
-                                data-batch="{{ $lot->batch_code }}"
-                                data-expiry="{{ optional($lot->expiry_date)->format('Y-m-d') }}"
-                                data-mode="{{ $lot->inward_mode }}"
-                                @selected((string) $selectedLotId === (string) $lot->id)>
-                            {{ $lot->product?->name ?? 'Product #' . $lot->product_id }} · Lot #{{ $lot->id }} · {{ $lotSummary($lot) }}
-                            @if($lot->batch_code) · Batch {{ $lot->batch_code }} @endif
-                        </option>
-                    @endforeach
-                </select>
-                <p class="mt-1 text-[11px] text-gray-500 dark:text-gray-400">Only repackable lots with available quantity are shown.</p>
+                <h2 class="text-sm font-semibold text-gray-900 dark:text-gray-50">1. Source stock</h2>
+                <p class="mt-1 text-[11px] text-gray-500 dark:text-gray-400">Choose the carton, bulk lot, piece, or existing stock that will be consumed.</p>
             </div>
 
-            <div id="source_piece_wrap" class="hidden">
-                <label class="block text-[12px] font-medium text-gray-700 dark:text-gray-300 mb-1">Specific source piece</label>
-                <select id="source_inventory_piece_id" name="source_inventory_piece_id" class="w-full rounded-lg border border-gray-300 bg-white px-3 py-2 text-[13px] dark:border-gray-700 dark:bg-gray-900">
-                    <option value="">Use whole source lot</option>
-                </select>
-                <p class="mt-1 text-[11px] text-gray-500 dark:text-gray-400">Optional. Use this when cutting from one belly/fillet piece and you want piece-level balance updated.</p>
+            <div class="grid gap-4 md:grid-cols-3">
+                <div class="md:col-span-2">
+                    <label class="mb-1 block text-[12px] font-medium text-gray-700 dark:text-gray-300">Source lot</label>
+                    <select id="source_inventory_lot_id" name="source_inventory_lot_id" required class="w-full rounded-lg border border-gray-300 bg-white px-3 py-2 text-[13px] dark:border-gray-700 dark:bg-gray-900">
+                        <option value="">Select source lot…</option>
+                        @foreach($lots as $lot)
+                            <option value="{{ $lot->id }}"
+                                    data-product-id="{{ $lot->product_id }}"
+                                    data-variant-id="{{ $lot->product_variant_id }}"
+                                    data-available-qty="{{ (float) ($lot->available_quantity ?? 0) }}"
+                                    data-available-weight="{{ (float) ($lot->available_weight_kg ?? 0) }}"
+                                    data-available-pieces="{{ (float) ($lot->repack_available_piece_count ?? $lot->available_piece_count ?? 0) }}"
+                                    data-available-full-packs="{{ (int) ($lot->repack_available_pack_count ?? $lot->available_pack_count ?? 0) }}"
+                                    data-source-pieces-per-unit="{{ $sourcePiecesPerUnitForLot($lot) }}"
+                                    data-source-unit-weight="{{ (float) ($lot->unit_weight_kg ?? ($lot->productVariant?->product_weight ?? $lot->product?->product_weight ?? 0)) }}"
+                                    data-batch="{{ $lot->batch_code }}"
+                                    data-expiry="{{ optional($lot->expiry_date)->format('Y-m-d') }}"
+                                    data-mode="{{ $lot->inward_mode }}"
+                                    @selected((string) $selectedLotId === (string) $lot->id)>
+                                {{ $lot->product?->name ?? 'Product #' . $lot->product_id }}
+                                @if($lot->productVariant)
+                                    — {{ $lot->productVariant->name ?: $lot->productVariant->sku }}
+                                @endif
+                                · Lot #{{ $lot->id }} · {{ $lotSummary($lot) }}
+                                @if($lot->batch_code) · Batch {{ $lot->batch_code }} @endif
+                            </option>
+                        @endforeach
+                    </select>
+                    <p class="mt-1 text-[11px] text-gray-500 dark:text-gray-400">Only variants explicitly enabled as Transform Stock sources are listed. Opened boxes remain available while they still contain loose pieces.</p>
+                </div>
+
+                <div id="source_pieces_wrap">
+                    <label class="mb-1 block text-[12px] font-medium text-gray-700 dark:text-gray-300">Pieces in one source unit</label>
+                    <input id="source_pieces_per_unit" name="source_pieces_per_unit" type="number" min="0.001" step="0.001" value="{{ old('source_pieces_per_unit', 1) }}" class="w-full rounded-lg border border-gray-300 bg-white px-3 py-2 text-[13px] dark:border-gray-700 dark:bg-gray-900">
+                    <p class="mt-1 text-[11px] text-gray-500 dark:text-gray-400">Auto-filled. A 240-piece master carton must show 240 here.</p>
+                </div>
+
+                <div id="source_piece_wrap" class="hidden md:col-span-2">
+                    <label class="mb-1 block text-[12px] font-medium text-gray-700 dark:text-gray-300">Specific source piece</label>
+                    <select id="source_inventory_piece_id" name="source_inventory_piece_id" class="w-full rounded-lg border border-gray-300 bg-white px-3 py-2 text-[13px] dark:border-gray-700 dark:bg-gray-900">
+                        <option value="">Use whole source lot</option>
+                    </select>
+                    <p class="mt-1 text-[11px] text-gray-500 dark:text-gray-400">Optional for weight-based cutting from a particular belly, fillet, or cheese block.</p>
+                </div>
+            </div>
+        </section>
+
+        <section class="space-y-4 border-t border-gray-200 pt-5 dark:border-gray-800">
+            <div class="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
+                <div>
+                    <h2 class="text-sm font-semibold text-gray-900 dark:text-gray-50">2. Output packs and variants</h2>
+                    <p class="mt-1 text-[11px] text-gray-500 dark:text-gray-400">Add one row for each finished variant. Example: 20 packs of 10 pcs plus 2 packs of 20 pcs.</p>
+                </div>
+                <button type="button" data-add-output class="inline-flex items-center justify-center rounded-lg bg-gray-900 px-4 py-2 text-xs font-semibold text-white shadow-sm hover:bg-gray-800 dark:bg-gray-100 dark:text-gray-900 dark:hover:bg-gray-200">+ Add another output variant</button>
+            </div>
+
+            <div class="rounded-lg border border-gray-200 bg-gray-50 px-3 py-2 dark:border-gray-800 dark:bg-gray-900">
+                <p id="transformation_hint" class="text-[11px] text-gray-500 dark:text-gray-400">Select a source lot. Only products associated with that source will be available as outputs.</p>
+            </div>
+
+            <div id="output_rows" class="space-y-3"></div>
+
+            <button type="button" data-add-output class="flex w-full items-center justify-center rounded-xl border border-dashed border-gray-300 px-4 py-3 text-xs font-semibold text-gray-700 hover:border-gray-400 hover:bg-gray-50 dark:border-gray-700 dark:text-gray-200 dark:hover:border-gray-600 dark:hover:bg-gray-900">
+                + Add another output variant from this same source box
+            </button>
+        </section>
+
+        <section class="space-y-4 border-t border-gray-200 pt-5 dark:border-gray-800">
+            <div>
+                <h2 class="text-sm font-semibold text-gray-900 dark:text-gray-50">3. Common pack details</h2>
+                <p class="mt-1 text-[11px] text-gray-500 dark:text-gray-400">These details apply to every output row created in this transform.</p>
+            </div>
+
+            <div class="grid gap-4 md:grid-cols-3">
+                <div>
+                    <label class="mb-1 block text-[12px] font-medium text-gray-700 dark:text-gray-300">Packed date</label>
+                    <input name="packed_date" type="date" value="{{ old('packed_date', now()->format('Y-m-d')) }}" class="w-full rounded-lg border border-gray-300 bg-white px-3 py-2 text-[13px] dark:border-gray-700 dark:bg-gray-900">
+                </div>
+                <div>
+                    <label class="mb-1 block text-[12px] font-medium text-gray-700 dark:text-gray-300">Expiry date</label>
+                    <input id="expiry_date" name="expiry_date" type="date" value="{{ old('expiry_date') }}" class="w-full rounded-lg border border-gray-300 bg-white px-3 py-2 text-[13px] dark:border-gray-700 dark:bg-gray-900">
+                </div>
+                <div>
+                    <label class="mb-1 block text-[12px] font-medium text-gray-700 dark:text-gray-300">Batch code</label>
+                    <input id="batch_code" name="batch_code" type="text" value="{{ old('batch_code') }}" class="w-full rounded-lg border border-gray-300 bg-white px-3 py-2 text-[13px] dark:border-gray-700 dark:bg-gray-900">
+                </div>
             </div>
 
             <div>
-                <label class="block text-[12px] font-medium text-gray-700 dark:text-gray-300 mb-1">Output product</label>
-                <select id="output_product_id" name="output_product_id" required class="w-full rounded-lg border border-gray-300 bg-white px-3 py-2 text-[13px] dark:border-gray-700 dark:bg-gray-900">
-                    <option value="">Select finished product…</option>
-                    @foreach($outputProducts as $product)
-                        @php
-                            $role = (string) ($product->inventory_role ?? (($product->is_active ?? false) ? 'saleable' : 'internal'));
-                            $packType = (string) ($product->pack_type ?? 'quantity');
-                        @endphp
-                        <option value="{{ $product->id }}" @selected((string) old('output_product_id') === (string) $product->id)>
-                            {{ $product->name }} @if($product->sku) ({{ $product->sku }}) @endif · {{ str_replace('_', ' ', $packType) }} @unless($product->is_active) · Internal/Draft @endunless
-                        </option>
-                    @endforeach
-                </select>
-                <p class="mt-1 text-[11px] text-gray-500 dark:text-gray-400">The output product is what the frontend/admin stock will show.</p>
+                <label class="mb-1 block text-[12px] font-medium text-gray-700 dark:text-gray-300">Notes</label>
+                <textarea name="notes" rows="3" class="w-full rounded-lg border border-gray-300 bg-white px-3 py-2 text-[13px] dark:border-gray-700 dark:bg-gray-900">{{ old('notes') }}</textarea>
             </div>
-
-            <div id="output_variant_wrap" class="hidden">
-                <label class="block text-[12px] font-medium text-gray-700 dark:text-gray-300 mb-1">Output pack variant</label>
-                <select id="output_product_variant_id" name="output_product_variant_id" class="w-full rounded-lg border border-gray-300 bg-white px-3 py-2 text-[13px] dark:border-gray-700 dark:bg-gray-900" disabled>
-                    <option value="">Product-level stock</option>
-                </select>
-                <p class="mt-1 text-[11px] text-gray-500 dark:text-gray-400">Use for Dimsum 10 pcs / 20 pcs style pack options. Leave blank for simple products and slab products.</p>
-            </div>
-        </div>
-
-        <div class="grid gap-4 md:grid-cols-4">
-            <div>
-                <label class="block text-[12px] font-medium text-gray-700 dark:text-gray-300 mb-1">Pack count to create</label>
-                <input id="pack_count" name="pack_count" type="number" min="1" step="1" value="{{ old('pack_count', 1) }}" required class="w-full rounded-lg border border-gray-300 bg-white px-3 py-2 text-[13px] dark:border-gray-700 dark:bg-gray-900">
-                <p class="mt-1 text-[11px] text-gray-500 dark:text-gray-400">Example: 40 packs or 8 weighed slabs.</p>
-            </div>
-
-            <div id="output_weight_wrap">
-                <label class="block text-[12px] font-medium text-gray-700 dark:text-gray-300 mb-1">Total output weight kg</label>
-                <input id="output_weight_kg" name="output_weight_kg" type="number" min="0.001" step="0.001" value="{{ old('output_weight_kg') }}" class="w-full rounded-lg border border-gray-300 bg-white px-3 py-2 text-[13px] dark:border-gray-700 dark:bg-gray-900">
-                <p class="mt-1 text-[11px] text-gray-500 dark:text-gray-400">For by-kg / variable-weight products. Fixed-weight products use product weight.</p>
-            </div>
-
-            <div id="pieces_per_pack_wrap">
-                <label class="block text-[12px] font-medium text-gray-700 dark:text-gray-300 mb-1">Pieces per pack</label>
-                <input id="pieces_per_pack" name="pieces_per_pack" type="number" min="0.001" step="0.001" value="{{ old('pieces_per_pack') }}" class="w-full rounded-lg border border-gray-300 bg-white px-3 py-2 text-[13px] dark:border-gray-700 dark:bg-gray-900">
-                <p class="mt-1 text-[11px] text-gray-500 dark:text-gray-400">Auto-filled from fixed-piece products like dimsum.</p>
-            </div>
-
-            <div id="source_pieces_wrap">
-                <label class="block text-[12px] font-medium text-gray-700 dark:text-gray-300 mb-1">Source pieces per source unit</label>
-                <input id="source_pieces_per_unit" name="source_pieces_per_unit" type="number" min="0.001" step="0.001" value="{{ old('source_pieces_per_unit', 1) }}" class="w-full rounded-lg border border-gray-300 bg-white px-3 py-2 text-[13px] dark:border-gray-700 dark:bg-gray-900">
-                <p class="mt-1 text-[11px] text-gray-500 dark:text-gray-400">Usually 1 for loose pieces.</p>
-            </div>
-        </div>
-
-        <div class="grid gap-4 md:grid-cols-3">
-            <div>
-                <label class="block text-[12px] font-medium text-gray-700 dark:text-gray-300 mb-1">Packed date</label>
-                <input name="packed_date" type="date" value="{{ old('packed_date', now()->format('Y-m-d')) }}" class="w-full rounded-lg border border-gray-300 bg-white px-3 py-2 text-[13px] dark:border-gray-700 dark:bg-gray-900">
-            </div>
-            <div>
-                <label class="block text-[12px] font-medium text-gray-700 dark:text-gray-300 mb-1">Expiry date</label>
-                <input id="expiry_date" name="expiry_date" type="date" value="{{ old('expiry_date') }}" class="w-full rounded-lg border border-gray-300 bg-white px-3 py-2 text-[13px] dark:border-gray-700 dark:bg-gray-900">
-            </div>
-            <div>
-                <label class="block text-[12px] font-medium text-gray-700 dark:text-gray-300 mb-1">Batch code</label>
-                <input id="batch_code" name="batch_code" type="text" value="{{ old('batch_code') }}" class="w-full rounded-lg border border-gray-300 bg-white px-3 py-2 text-[13px] dark:border-gray-700 dark:bg-gray-900">
-            </div>
-        </div>
-
-        <div>
-            <label class="block text-[12px] font-medium text-gray-700 dark:text-gray-300 mb-1">Notes</label>
-            <textarea name="notes" rows="3" class="w-full rounded-lg border border-gray-300 bg-white px-3 py-2 text-[13px] dark:border-gray-700 dark:bg-gray-900">{{ old('notes') }}</textarea>
-        </div>
+        </section>
 
         <div class="rounded-xl border border-gray-200 bg-gray-50 px-4 py-3 text-xs text-gray-700 dark:border-gray-800 dark:bg-gray-900 dark:text-gray-300">
-            <div class="font-semibold text-gray-900 dark:text-gray-50">Preview</div>
-            <div class="mt-1" id="source_qty_preview">Select a source lot and output product.</div>
+            <div class="font-semibold text-gray-900 dark:text-gray-50">Combined preview</div>
+            <div class="mt-2" id="source_qty_preview">Select a source lot and complete at least one output row.</div>
         </div>
 
         <div class="flex justify-end gap-2">
             <a href="{{ route('admin.inventory.packs.index') }}" class="rounded border border-gray-300 px-4 py-2 text-xs hover:bg-gray-50 dark:border-gray-700 dark:hover:bg-gray-800">Cancel</a>
-            <button class="rounded bg-gray-900 px-4 py-2 text-xs font-medium text-white hover:bg-gray-800 dark:bg-gray-100 dark:text-gray-900 dark:hover:bg-gray-200">Create stock</button>
+            <button type="submit" data-transform-stock-submit class="rounded bg-gray-900 px-4 py-2 text-xs font-medium text-white hover:bg-gray-800 dark:bg-gray-100 dark:text-gray-900 dark:hover:bg-gray-200">Review & create stock</button>
         </div>
     </form>
+
+    <template id="output_row_template">
+        <div data-output-row class="rounded-xl border border-gray-200 p-4 dark:border-gray-800">
+            <div class="mb-3 flex items-center justify-between gap-3">
+                <div class="text-[12px] font-semibold text-gray-900 dark:text-gray-50">Output <span data-output-number>1</span></div>
+                <button type="button" data-remove-output class="rounded border border-gray-200 px-2.5 py-1 text-[11px] text-gray-600 hover:bg-gray-50 dark:border-gray-700 dark:text-gray-300 dark:hover:bg-gray-900">Remove</button>
+            </div>
+
+            <div class="grid gap-4 md:grid-cols-5">
+                <div class="md:col-span-2">
+                    <label class="mb-1 block text-[12px] font-medium text-gray-700 dark:text-gray-300">Associated output product</label>
+                    <select data-output-product required class="w-full rounded-lg border border-gray-300 bg-white px-3 py-2 text-[13px] dark:border-gray-700 dark:bg-gray-900" disabled>
+                        <option value="">Select a source lot first…</option>
+                    </select>
+                    <p class="mt-1 text-[11px] text-gray-500 dark:text-gray-400">This list is rebuilt from the selected source lot only.</p>
+                </div>
+
+                <div data-output-variant-wrap class="hidden md:col-span-2">
+                    <label class="mb-1 block text-[12px] font-medium text-gray-700 dark:text-gray-300">Output pack variant</label>
+                    <select data-output-variant class="w-full rounded-lg border border-gray-300 bg-white px-3 py-2 text-[13px] dark:border-gray-700 dark:bg-gray-900" disabled>
+                        <option value="">Product-level stock</option>
+                    </select>
+                </div>
+
+                <div>
+                    <label class="mb-1 block text-[12px] font-medium text-gray-700 dark:text-gray-300">Pack count</label>
+                    <input data-pack-count type="number" min="1" step="1" value="1" required class="w-full rounded-lg border border-gray-300 bg-white px-3 py-2 text-[13px] dark:border-gray-700 dark:bg-gray-900">
+                </div>
+
+                <div data-pieces-per-pack-wrap class="hidden">
+                    <label class="mb-1 block text-[12px] font-medium text-gray-700 dark:text-gray-300">Pieces per pack</label>
+                    <input data-pieces-per-pack type="number" min="0.001" step="0.001" class="w-full rounded-lg border border-gray-300 bg-white px-3 py-2 text-[13px] dark:border-gray-700 dark:bg-gray-900">
+                    <p class="mt-1 text-[11px] text-gray-500 dark:text-gray-400">Auto-filled from the selected variant.</p>
+                </div>
+
+                <div data-output-weight-wrap class="hidden">
+                    <label class="mb-1 block text-[12px] font-medium text-gray-700 dark:text-gray-300">Total output weight kg</label>
+                    <input data-output-weight type="number" min="0.001" step="0.001" class="w-full rounded-lg border border-gray-300 bg-white px-3 py-2 text-[13px] dark:border-gray-700 dark:bg-gray-900">
+                    <p class="mt-1 text-[11px] text-gray-500 dark:text-gray-400">Used only for variable/by-kg output.</p>
+                </div>
+
+                <div class="md:col-span-5 rounded-lg bg-gray-50 px-3 py-2 text-[11px] text-gray-600 dark:bg-gray-900 dark:text-gray-400" data-output-row-summary>
+                    Select an output product or variant.
+                </div>
+            </div>
+        </div>
+    </template>
+
+    <div id="transform_confirm_modal" class="fixed inset-0 z-50 hidden items-center justify-center bg-gray-950/35 px-4 py-6" role="dialog" aria-modal="true" aria-labelledby="transform_confirm_title">
+        <div class="w-full max-w-xl rounded-2xl border border-gray-200 bg-white p-5 shadow-2xl dark:border-gray-800 dark:bg-gray-950">
+            <div class="flex items-start justify-between gap-3">
+                <div>
+                    <h2 id="transform_confirm_title" class="text-base font-semibold text-gray-900 dark:text-gray-50">Confirm stock transformation</h2>
+                    <p class="mt-1 text-[12px] text-gray-500 dark:text-gray-400">Review all output variants and the combined source consumption.</p>
+                </div>
+                <button type="button" data-transform-confirm-cancel class="rounded-full border border-gray-200 px-2 py-1 text-xs text-gray-500 hover:bg-gray-50 dark:border-gray-700 dark:hover:bg-gray-900" aria-label="Close">×</button>
+            </div>
+
+            <div id="transform_confirm_summary" class="mt-4 max-h-[60vh] overflow-y-auto rounded-xl border border-gray-200 bg-gray-50 px-4 py-3 text-[12px] text-gray-700 dark:border-gray-800 dark:bg-gray-900 dark:text-gray-300">
+                Review summary unavailable.
+            </div>
+
+            <div class="mt-4 flex flex-col-reverse gap-2 sm:flex-row sm:justify-end">
+                <button type="button" data-transform-confirm-cancel class="rounded-lg border border-gray-300 px-4 py-2 text-xs font-semibold hover:bg-gray-50 dark:border-gray-700 dark:hover:bg-gray-900">Go back</button>
+                <button type="button" data-transform-confirm-submit class="rounded-lg bg-gray-900 px-4 py-2 text-xs font-semibold text-white hover:bg-gray-800 dark:bg-gray-100 dark:text-gray-900 dark:hover:bg-gray-200">Confirm & create stock</button>
+            </div>
+        </div>
+    </div>
 
     @if($recentPacks->isNotEmpty())
         <div class="rounded-2xl border border-gray-200 bg-white p-4 dark:border-gray-800 dark:bg-gray-950">
@@ -232,82 +298,37 @@
 
 <script>
 (function () {
+    const form = document.querySelector('[data-transform-stock-form]');
     const source = document.getElementById('source_inventory_lot_id');
     const sourcePiece = document.getElementById('source_inventory_piece_id');
     const sourcePieceWrap = document.getElementById('source_piece_wrap');
-    const output = document.getElementById('output_product_id');
-    const outputVariant = document.getElementById('output_product_variant_id');
-    const outputVariantWrap = document.getElementById('output_variant_wrap');
-    const packCount = document.getElementById('pack_count');
-    const outputWeight = document.getElementById('output_weight_kg');
-    const pieces = document.getElementById('pieces_per_pack');
     const sourcePieces = document.getElementById('source_pieces_per_unit');
-    const outputWeightWrap = document.getElementById('output_weight_wrap');
-    const piecesWrap = document.getElementById('pieces_per_pack_wrap');
-    const sourcePiecesWrap = document.getElementById('source_pieces_wrap');
+    const outputRows = document.getElementById('output_rows');
+    const outputTemplate = document.getElementById('output_row_template');
+    const addOutputButtons = Array.from(document.querySelectorAll('[data-add-output]'));
+    const transformationHint = document.getElementById('transformation_hint');
     const preview = document.getElementById('source_qty_preview');
     const batch = document.getElementById('batch_code');
     const expiry = document.getElementById('expiry_date');
-    const productMeta = @json($productMeta);
-    const variantMeta = @json($variantMeta);
+    const confirmModal = document.getElementById('transform_confirm_modal');
+    const confirmSummary = document.getElementById('transform_confirm_summary');
+    const confirmSubmit = document.querySelector('[data-transform-confirm-submit]');
+    const confirmCancelButtons = Array.from(document.querySelectorAll('[data-transform-confirm-cancel]'));
+
+    const outputOptionsUrl = form?.dataset.outputOptionsUrl || '';
     const lotPiecesMeta = @json($lotPiecesMeta);
-    const oldOutputVariantId = @json(old('output_product_variant_id'));
+    const initialOutputs = @json($initialOutputs);
+    const oldSourcePiecesPerUnit = @json(old('source_pieces_per_unit'));
 
-    function selectedOption(select) {
-        return select && select.options[select.selectedIndex] ? select.options[select.selectedIndex] : null;
-    }
-
-    function selectedPiece() {
-        return sourcePiece && sourcePiece.value ? (lotPiecesMeta[String(source.value)] || []).find(piece => String(piece.id) === String(sourcePiece.value)) || null : null;
-    }
-
-    function selectedProduct() {
-        return output?.value ? productMeta[String(output.value)] || null : null;
-    }
-
-    function selectedVariant() {
-        const product = selectedProduct();
-        if (!product || !outputVariant?.value) return null;
-        return (variantMeta[String(product.id)] || []).find(variant => String(variant.id) === String(outputVariant.value)) || null;
-    }
-
-    function selectedOutputTarget() {
-        const product = selectedProduct();
-        if (!product) return null;
-        const variant = selectedVariant();
-        return variant ? { ...product, ...variant, product_id: product.id, variant_id: variant.id, name: product.name, variant_label: variant.label } : product;
-    }
-
-    function outputDisplayName(product, target) {
-        if (!product) return 'selected output';
-        if (target && target.variant_id) {
-            return product.name + ' - ' + (target.variant_label || target.sku || 'variant');
-        }
-        return product.name;
-    }
-
-    function populateOutputVariants() {
-        const product = selectedProduct();
-        const variants = product ? (variantMeta[String(product.id)] || []) : [];
-        const previous = outputVariant ? (outputVariant.value || oldOutputVariantId || '') : '';
-        if (!outputVariant) return;
-
-        outputVariant.innerHTML = '<option value="">Product-level stock</option>';
-        variants.forEach(variant => {
-            const option = document.createElement('option');
-            option.value = String(variant.id);
-            option.textContent = (variant.label || variant.sku || 'Variant') + (variant.is_active ? '' : ' — inactive');
-            outputVariant.appendChild(option);
-        });
-
-        const hasVariants = variants.length > 0;
-        outputVariantWrap?.classList.toggle('hidden', !hasVariants);
-        outputVariant.disabled = !hasVariants;
-        outputVariant.value = variants.some(variant => String(variant.id) === String(previous)) ? previous : '';
-    }
+    let confirmedSubmit = false;
+    let previewValid = false;
+    let outputOptionsLoading = false;
+    let outputOptionsError = '';
+    let outputOptionsRequestId = 0;
+    let currentOutputContext = { source_product_id: null, source_variant_id: null, products: [] };
 
     function n(value) {
-        const parsed = parseFloat(String(value || '').trim());
+        const parsed = parseFloat(String(value ?? '').trim());
         return Number.isFinite(parsed) ? parsed : 0;
     }
 
@@ -315,144 +336,614 @@
         return n(value).toLocaleString(undefined, { maximumFractionDigits: decimals });
     }
 
-    function mode(product) {
-        if (!product) return 'quantity';
-        const packType = product.pack_type || 'quantity';
-        if (packType === 'fixed_piece_pack' || n(product.pieces_per_pack) > 0) return 'piece';
-        if (product.sell_unit === 'kg' || packType === 'variable_weight') return 'variable_weight';
-        if (packType === 'fixed_weight_pack' || n(product.product_weight) > 0) return 'weight';
+    function inferPiecesPerPackFromText(...labels) {
+        for (const rawLabel of labels) {
+            const label = String(rawLabel || '').trim();
+            if (!label) continue;
+            const match = label.match(/(?:^|\D)(\d+(?:\.\d+)?)\s*(?:pc|pcs|piece|pieces)\b/i);
+            if (match && n(match[1]) > 0) return n(match[1]);
+        }
+        return 0;
+    }
+
+    function selectedOption(select) {
+        return select && select.options[select.selectedIndex] ? select.options[select.selectedIndex] : null;
+    }
+
+    function selectedPiece() {
+        if (!sourcePiece?.value || !source?.value) return null;
+        return (lotPiecesMeta[String(source.value)] || []).find(piece => String(piece.id) === String(sourcePiece.value)) || null;
+    }
+
+    function selectedSourceProductId() {
+        const option = selectedOption(source);
+        return option ? String(option.dataset.productId || '') : '';
+    }
+
+    function selectedSourceVariantId() {
+        const option = selectedOption(source);
+        return option ? String(option.dataset.variantId || '') : '';
+    }
+
+    function sourceSupportsPieceTransform() {
+        const option = selectedOption(source);
+        if (!option) return false;
+        return n(option.dataset.availablePieces) > 0
+            || n(option.dataset.sourcePiecesPerUnit) > 1
+            || n(sourcePieces?.value) > 1;
+    }
+
+    function targetPiecesPerPack(target) {
+        if (!target) return 0;
+        return n(target.pieces_per_pack)
+            || inferPiecesPerPackFromText(target.variant_label, target.label, target.name, target.sku);
+    }
+
+    function selectedOutputContext() {
+        if (!source?.value || !currentOutputContext || !Array.isArray(currentOutputContext.products)) {
+            return { source_product_id: null, source_variant_id: null, products: [] };
+        }
+
+        if (String(currentOutputContext.source_lot_id || '') !== String(source.value)) {
+            return { source_product_id: null, source_variant_id: null, products: [] };
+        }
+
+        return currentOutputContext;
+    }
+
+    function allowedProductsForSelectedSource() {
+        return selectedOutputContext().products || [];
+    }
+
+    function rowElements() {
+        return Array.from(outputRows?.querySelectorAll('[data-output-row]') || []);
+    }
+
+    function selectedProduct(row) {
+        const select = row.querySelector('[data-output-product]');
+        if (!select?.value) return null;
+
+        return allowedProductsForSelectedSource()
+            .find(product => String(product.id) === String(select.value)) || null;
+    }
+
+    function selectedVariant(row) {
+        const product = selectedProduct(row);
+        const select = row.querySelector('[data-output-variant]');
+        if (!product || !select?.value) return null;
+
+        return (product.variants || [])
+            .find(variant => String(variant.id) === String(select.value)) || null;
+    }
+
+    function selectedTarget(row) {
+        const product = selectedProduct(row);
+        if (!product) return null;
+        const variant = selectedVariant(row);
+        return variant
+            ? { ...product, ...variant, product_id: product.id, variant_id: variant.id, name: product.name, variant_label: variant.label }
+            : product;
+    }
+
+    function outputDisplayName(row) {
+        const product = selectedProduct(row);
+        const target = selectedTarget(row);
+        if (!product || !target) return 'selected output';
+        if (target.variant_id) return product.name + ' - ' + (target.variant_label || target.sku || 'variant');
+        return product.name;
+    }
+
+    function mode(target, row = null) {
+        if (!target) return 'quantity';
+        const packType = target.pack_type || 'quantity';
+        const enteredPieces = row ? n(row.querySelector('[data-pieces-per-pack]')?.value) : 0;
+        const configuredPieces = targetPiecesPerPack(target);
+
+        // Piece-count always wins over a stored/calculated pack weight. This keeps
+        // 10pc/20pc Dimsum outputs piece-based even when they also carry a kg value.
+        if (packType === 'fixed_piece_pack' || configuredPieces > 0 || (sourceSupportsPieceTransform() && enteredPieces > 0)) {
+            return 'piece';
+        }
+        if (target.sell_unit === 'kg' || packType === 'variable_weight') return 'variable_weight';
+        if (packType === 'fixed_weight_pack' || n(target.product_weight) > 0) return 'weight';
         return 'quantity';
     }
 
+    function populateOutputProducts(row, desiredProductId = null) {
+        const select = row.querySelector('[data-output-product]');
+        if (!select) return;
+
+        const products = allowedProductsForSelectedSource();
+        const previous = desiredProductId !== null
+            ? String(desiredProductId || '')
+            : String(row.dataset.requestedProductId || select.value || '');
+
+        if (desiredProductId !== null && String(desiredProductId || '') !== '') {
+            row.dataset.requestedProductId = String(desiredProductId);
+        }
+
+        // Always destroy every old option before adding the exact server result.
+        // This prevents options from another source product surviving a change.
+        select.replaceChildren();
+
+        const placeholder = document.createElement('option');
+        placeholder.value = '';
+        if (!source?.value) {
+            placeholder.textContent = 'Select a source lot first…';
+        } else if (outputOptionsLoading) {
+            placeholder.textContent = 'Loading associated output products…';
+        } else if (outputOptionsError) {
+            placeholder.textContent = 'Unable to load associated output products';
+        } else if (products.length > 0) {
+            placeholder.textContent = 'Select associated output product…';
+        } else {
+            placeholder.textContent = 'No associated output product configured';
+        }
+        select.appendChild(placeholder);
+
+        products.forEach(product => {
+            const option = document.createElement('option');
+            option.value = String(product.id);
+            option.textContent = product.name
+                + (product.sku ? ` (${product.sku})` : '')
+                + (product.is_active ? '' : ' · Internal/Draft');
+            select.appendChild(option);
+        });
+
+        select.disabled = !source?.value || outputOptionsLoading || Boolean(outputOptionsError) || products.length === 0;
+
+        const previousIsAllowed = products.some(product => String(product.id) === previous);
+        if (previousIsAllowed) {
+            select.value = previous;
+        } else if (products.length === 1) {
+            select.value = String(products[0].id);
+        } else {
+            select.value = '';
+        }
+
+        if (select.value) {
+            row.dataset.requestedProductId = String(select.value);
+        } else if (!outputOptionsLoading) {
+            delete row.dataset.requestedProductId;
+        }
+    }
+
+    function populateOutputVariants(row, desiredVariantId = null) {
+        const product = selectedProduct(row);
+        const select = row.querySelector('[data-output-variant]');
+        const wrap = row.querySelector('[data-output-variant-wrap]');
+        if (!select) return;
+
+        const variants = product ? (product.variants || []) : [];
+        const previous = desiredVariantId !== null
+            ? String(desiredVariantId || '')
+            : String(row.dataset.requestedVariantId || select.value || '');
+        if (desiredVariantId !== null && String(desiredVariantId || '') !== '') {
+            row.dataset.requestedVariantId = String(desiredVariantId);
+        }
+        const sourceProductId = selectedSourceProductId();
+        const sourceVariantId = selectedSourceVariantId();
+
+        select.innerHTML = '';
+        const productLevelOption = document.createElement('option');
+        productLevelOption.value = '';
+        productLevelOption.textContent = 'Product-level stock';
+        productLevelOption.disabled = Boolean(product) && String(product.id) === sourceProductId && sourceVariantId === '';
+        select.appendChild(productLevelOption);
+
+        variants.forEach(variant => {
+            const option = document.createElement('option');
+            const sameAsSource = String(product.id) === sourceProductId && String(variant.id) === sourceVariantId;
+            option.value = String(variant.id);
+            option.disabled = sameAsSource;
+            option.textContent = (variant.label || variant.sku || 'Variant')
+                + (variant.is_active ? '' : ' — inactive')
+                + (sameAsSource ? ' — source' : '');
+            select.appendChild(option);
+        });
+
+        const hasVariants = variants.length > 0;
+        wrap?.classList.toggle('hidden', !hasVariants);
+        select.disabled = !hasVariants;
+
+        const matchingOption = Array.from(select.options).find(option => option.value === previous && !option.disabled);
+        select.value = matchingOption ? previous : '';
+        if (select.value) {
+            row.dataset.requestedVariantId = String(select.value);
+        } else if (!outputOptionsLoading) {
+            delete row.dataset.requestedVariantId;
+        }
+    }
+
+    function updateOutputFields(row) {
+        const target = selectedTarget(row);
+        const piecesInput = row.querySelector('[data-pieces-per-pack]');
+        const piecesWrap = row.querySelector('[data-pieces-per-pack-wrap]');
+        const weightWrap = row.querySelector('[data-output-weight-wrap]');
+        const configuredPieces = targetPiecesPerPack(target);
+
+        if (piecesInput && configuredPieces > 0 && (!piecesInput.value || piecesInput.dataset.autoFilled === '1')) {
+            piecesInput.value = String(configuredPieces);
+            piecesInput.dataset.autoFilled = '1';
+        }
+
+        const outputMode = mode(target, row);
+        const showPieces = outputMode === 'piece' || configuredPieces > 0;
+        piecesWrap?.classList.toggle('hidden', !showPieces);
+        weightWrap?.classList.toggle('hidden', outputMode !== 'variable_weight');
+    }
+
+    function reindexRows() {
+        const rows = rowElements();
+        rows.forEach((row, index) => {
+            row.querySelector('[data-output-number]').textContent = String(index + 1);
+            row.querySelector('[data-output-product]').name = `outputs[${index}][output_product_id]`;
+            row.querySelector('[data-output-variant]').name = `outputs[${index}][output_product_variant_id]`;
+            row.querySelector('[data-pack-count]').name = `outputs[${index}][pack_count]`;
+            row.querySelector('[data-pieces-per-pack]').name = `outputs[${index}][pieces_per_pack]`;
+            row.querySelector('[data-output-weight]').name = `outputs[${index}][output_weight_kg]`;
+            row.querySelector('[data-remove-output]').classList.toggle('hidden', rows.length === 1);
+        });
+    }
+
+    function addOutputRow(values = {}) {
+        if (!outputTemplate || !outputRows) return;
+        const fragment = outputTemplate.content.cloneNode(true);
+        const row = fragment.querySelector('[data-output-row]');
+        outputRows.appendChild(fragment);
+
+        const productSelect = row.querySelector('[data-output-product]');
+        const variantSelect = row.querySelector('[data-output-variant]');
+        const packCount = row.querySelector('[data-pack-count]');
+        const piecesInput = row.querySelector('[data-pieces-per-pack]');
+        const weightInput = row.querySelector('[data-output-weight]');
+
+        packCount.value = values.pack_count ? String(values.pack_count) : '1';
+        piecesInput.value = values.pieces_per_pack ? String(values.pieces_per_pack) : '';
+        weightInput.value = values.output_weight_kg ? String(values.output_weight_kg) : '';
+        if (values.output_product_id) row.dataset.requestedProductId = String(values.output_product_id);
+        if (values.output_product_variant_id) row.dataset.requestedVariantId = String(values.output_product_variant_id);
+
+        populateOutputProducts(row, values.output_product_id || '');
+        populateOutputVariants(row, values.output_product_variant_id || '');
+        if (variantSelect && values.output_product_variant_id) {
+            variantSelect.value = String(values.output_product_variant_id);
+        }
+        updateOutputFields(row);
+        reindexRows();
+        updatePreview();
+    }
+
     function populateSourcePieces() {
-        const pieces = source && source.value ? lotPiecesMeta[String(source.value)] || [] : [];
-        const previous = sourcePiece ? sourcePiece.value : '';
+        const pieces = source?.value ? lotPiecesMeta[String(source.value)] || [] : [];
+        const previous = sourcePiece?.value || '';
         if (!sourcePiece) return;
 
         sourcePiece.innerHTML = '<option value="">Use whole source lot</option>';
         pieces.forEach(piece => {
             const option = document.createElement('option');
             option.value = String(piece.id);
-            option.dataset.availableWeight = String(piece.available_weight_kg || 0);
             option.textContent = (piece.label || ('Piece ' + piece.piece_no)) + ' · ' + fmt(piece.available_weight_kg) + ' kg available';
             sourcePiece.appendChild(option);
         });
-
         sourcePiece.value = pieces.some(piece => String(piece.id) === String(previous)) ? previous : '';
         sourcePieceWrap?.classList.toggle('hidden', pieces.length === 0);
+    }
+
+    function refreshAllRows() {
+        rowElements().forEach(row => {
+            const previousProduct = row.dataset.requestedProductId || row.querySelector('[data-output-product]')?.value || '';
+            const previousVariant = row.dataset.requestedVariantId || row.querySelector('[data-output-variant]')?.value || '';
+            populateOutputProducts(row, previousProduct);
+            populateOutputVariants(row, previousVariant);
+            updateOutputFields(row);
+        });
+    }
+
+    function updateTransformationHint() {
+        if (!transformationHint) return;
+        const products = allowedProductsForSelectedSource();
+
+        if (!source?.value) {
+            transformationHint.textContent = 'Select a source lot. Only products associated with that exact source will be loaded.';
+        } else if (outputOptionsLoading) {
+            transformationHint.textContent = 'Loading the output products associated with this source lot…';
+        } else if (outputOptionsError) {
+            transformationHint.textContent = outputOptionsError;
+        } else if (products.length > 1) {
+            transformationHint.textContent = `${products.length} products are associated with this source. Products from other source relationships are not loaded.`;
+        } else if (products.length === 1) {
+            transformationHint.textContent = `${products[0].name} is the only output product associated with this source. Choose its required output pack variant below.`;
+        } else {
+            transformationHint.textContent = 'No output product is associated with this source. Configure a product transformation before repacking.';
+        }
+    }
+
+    async function loadOutputOptionsForSelectedSource() {
+        const lotId = String(source?.value || '');
+        const requestId = ++outputOptionsRequestId;
+
+        currentOutputContext = { source_lot_id: null, source_product_id: null, source_variant_id: null, products: [] };
+        outputOptionsError = '';
+        outputOptionsLoading = Boolean(lotId);
+        refreshAllRows();
+        updateTransformationHint();
+        updatePreview();
+
+        if (!lotId) {
+            outputOptionsLoading = false;
+            refreshAllRows();
+            updateTransformationHint();
+            return;
+        }
+
+        if (!outputOptionsUrl) {
+            outputOptionsLoading = false;
+            outputOptionsError = 'The output-options route is missing. Clear the route cache after installing this update.';
+            refreshAllRows();
+            updateTransformationHint();
+            return;
+        }
+
+        try {
+            const url = new URL(outputOptionsUrl, window.location.origin);
+            url.searchParams.set('source_inventory_lot_id', lotId);
+            url.searchParams.set('_transform_options_version', '20260712-2');
+
+            const response = await fetch(url.toString(), {
+                method: 'GET',
+                headers: {
+                    'Accept': 'application/json',
+                    'X-Requested-With': 'XMLHttpRequest',
+                },
+                cache: 'no-store',
+                credentials: 'same-origin',
+            });
+
+            const payload = await response.json().catch(() => ({}));
+            if (!response.ok) {
+                throw new Error(payload.message || 'Unable to load associated output products.');
+            }
+            if (requestId !== outputOptionsRequestId || String(source?.value || '') !== lotId) return;
+            if (String(payload.source_lot_id || '') !== lotId || !Array.isArray(payload.products)) {
+                throw new Error('The server returned output products for a different source lot.');
+            }
+
+            currentOutputContext = payload;
+        } catch (error) {
+            if (requestId !== outputOptionsRequestId) return;
+            currentOutputContext = { source_lot_id: Number(lotId), source_product_id: null, source_variant_id: null, products: [] };
+            outputOptionsError = error instanceof Error ? error.message : 'Unable to load associated output products.';
+        } finally {
+            if (requestId !== outputOptionsRequestId) return;
+            outputOptionsLoading = false;
+            refreshAllRows();
+            updateTransformationHint();
+            updatePreview();
+        }
     }
 
     function applySourceDefaults() {
         populateSourcePieces();
         const src = selectedOption(source);
         if (src) {
-            if (!batch.value && src.dataset.batch) batch.value = src.dataset.batch;
-            if (!expiry.value && src.dataset.expiry) expiry.value = src.dataset.expiry;
+            if (batch && !batch.value && src.dataset.batch) batch.value = src.dataset.batch;
+            if (expiry && !expiry.value && src.dataset.expiry) expiry.value = src.dataset.expiry;
+            if (sourcePieces && (!oldSourcePiecesPerUnit || sourcePieces.dataset.autoFilled === '1' || !sourcePieces.value || sourcePieces.value === '1')) {
+                sourcePieces.value = String(src.dataset.sourcePiecesPerUnit || '1');
+                sourcePieces.dataset.autoFilled = '1';
+            }
         }
-        updatePreview();
+        void loadOutputOptionsForSelectedSource();
     }
 
-    function updateFieldsFromProduct() {
-        populateOutputVariants();
-        const target = selectedOutputTarget();
-        const productMode = mode(target);
-
-        outputWeightWrap.classList.toggle('hidden', productMode !== 'variable_weight');
-        piecesWrap.classList.toggle('hidden', productMode !== 'piece');
-        sourcePiecesWrap.classList.toggle('hidden', productMode !== 'piece');
-
-        if (target && productMode === 'piece' && n(target.pieces_per_pack) > 0) {
-            pieces.value = String(target.pieces_per_pack);
+    function updateRowSummary(row) {
+        const summary = row.querySelector('[data-output-row-summary]');
+        const target = selectedTarget(row);
+        const count = Math.max(0, parseInt(row.querySelector('[data-pack-count]')?.value || '0', 10));
+        if (!summary || !target || count <= 0) {
+            if (summary) summary.textContent = 'Select an output product or variant and enter its pack count.';
+            return null;
         }
 
-        updatePreview();
+        const outputMode = mode(target, row);
+        const piecesPerPack = n(row.querySelector('[data-pieces-per-pack]')?.value) || targetPiecesPerPack(target);
+        const outputWeight = n(row.querySelector('[data-output-weight]')?.value);
+        let detail = '';
+        let sourcePiecesRequired = 0;
+        let sourceWeightRequired = 0;
+        let sourceQuantityRequired = 0;
+
+        if (outputMode === 'piece') {
+            sourcePiecesRequired = count * piecesPerPack;
+            detail = `${fmt(count, 0)} pack(s) × ${fmt(piecesPerPack)} pcs = ${fmt(sourcePiecesRequired)} source pieces`;
+        } else if (outputMode === 'weight') {
+            sourceWeightRequired = count * n(target.product_weight);
+            detail = `${fmt(count, 0)} pack(s) × ${fmt(target.product_weight)} kg = ${fmt(sourceWeightRequired)} kg`;
+        } else if (outputMode === 'variable_weight') {
+            sourceWeightRequired = outputWeight || (count * n(target.product_weight));
+            detail = `${fmt(count, 0)} pack row(s), ${fmt(sourceWeightRequired)} kg total`;
+        } else {
+            sourceQuantityRequired = count;
+            detail = `${fmt(count, 0)} source unit(s)`;
+        }
+
+        summary.innerHTML = `<strong>${outputDisplayName(row)}</strong> · ${detail}`;
+        return {
+            row,
+            target,
+            mode: outputMode,
+            count,
+            piecesPerPack,
+            sourcePiecesRequired,
+            sourceWeightRequired,
+            sourceQuantityRequired,
+        };
     }
 
     function updatePreview() {
         const src = selectedOption(source);
-        const product = selectedProduct();
-        const target = selectedOutputTarget();
-        const count = Math.max(0, parseInt(packCount.value || '0', 10));
+        const summaries = rowElements().map(updateRowSummary).filter(Boolean);
+        previewValid = false;
 
-        if (!src || !product || !target || count <= 0) {
-            preview.textContent = 'Select a source lot, output product, and pack count.';
+        if (!src || summaries.length === 0) {
+            preview.textContent = 'Select a source lot and complete at least one output row.';
             return;
         }
 
-        const productMode = mode(target);
-        const piece = selectedPiece();
         const availableQty = n(src.dataset.availableQty);
-        const availableWeight = piece ? n(piece.available_weight_kg) : (n(src.dataset.availableWeight) || availableQty);
-        const availablePieces = n(src.dataset.availablePieces) || availableQty;
-        const outName = outputDisplayName(product, target);
-        let html = '<div>Creates <strong>' + fmt(count, 0) + '</strong> pack/stock row(s) for <strong>' + outName + '</strong>.</div>';
-        if (piece) {
-            html += '<div>Using source piece: <strong>' + (piece.label || ('Piece ' + piece.piece_no)) + '</strong> with <strong>' + fmt(piece.available_weight_kg) + ' kg</strong> available.</div>';
+        const availableWeight = selectedPiece() ? n(selectedPiece().available_weight_kg) : n(src.dataset.availableWeight);
+        const availablePieces = n(src.dataset.availablePieces);
+        const availableFullPacks = Math.max(0, parseInt(src.dataset.availableFullPacks || '0', 10));
+        const sourcePpu = n(sourcePieces?.value || src.dataset.sourcePiecesPerUnit) || 1;
+        const modes = new Set(summaries.map(item => item.mode));
+        const targetKeys = new Set();
+        let duplicateTarget = false;
+        let totalPacks = 0;
+        let totalPieces = 0;
+        let totalWeight = 0;
+        let totalQuantity = 0;
+        const lines = [];
+
+        summaries.forEach(item => {
+            const targetKey = String(item.target.product_id || item.target.id) + ':' + String(item.target.variant_id || 0);
+            if (targetKeys.has(targetKey)) duplicateTarget = true;
+            targetKeys.add(targetKey);
+            totalPacks += item.count;
+            totalPieces += item.sourcePiecesRequired;
+            totalWeight += item.sourceWeightRequired;
+            totalQuantity += item.sourceQuantityRequired;
+            lines.push(`<li><strong>${fmt(item.count, 0)} × ${outputDisplayName(item.row)}</strong></li>`);
+        });
+
+        let html = `<div>Creates <strong>${fmt(totalPacks, 0)} pack(s)</strong> across <strong>${fmt(summaries.length, 0)} output variant(s)</strong>:</div>`;
+        html += `<ul class="mt-1 list-disc space-y-0.5 pl-5">${lines.join('')}</ul>`;
+
+        if (modes.size > 1) {
+            html += '<div class="mt-2 text-red-700 dark:text-red-300">All rows in one transaction must use the same basis: pieces, weight, or quantity.</div>';
+        }
+        if (duplicateTarget) {
+            html += '<div class="mt-2 text-red-700 dark:text-red-300">The same output variant is listed more than once. Keep one row and increase its pack count.</div>';
         }
 
-        if (src.dataset.productId && String(src.dataset.productId) !== String(product.id)) {
-            html += '<div class="mt-1 text-amber-700">Cross-product repack: source lot stock is consumed, and stock is added to the selected output product.</div>';
+        let enough = true;
+        if (modes.size === 1 && modes.has('piece')) {
+            enough = availablePieces + 0.0005 >= totalPieces;
+            const remainingPieces = Math.max(availablePieces - totalPieces, 0);
+            const unopenedPieces = Math.min(availablePieces, availableFullPacks * sourcePpu);
+            const alreadyLoosePieces = Math.max(availablePieces - unopenedPieces, 0);
+            const piecesNeedingNewCartons = Math.max(totalPieces - alreadyLoosePieces, 0);
+            const cartonsOpened = piecesNeedingNewCartons > 0 ? Math.ceil(piecesNeedingNewCartons / sourcePpu) : 0;
+            const fullPacksAfter = Math.max(availableFullPacks - cartonsOpened, 0);
+
+            html += '<div class="mt-3 grid gap-2 sm:grid-cols-3">';
+            html += `<div class="rounded-lg border border-gray-200 bg-white px-3 py-2 dark:border-gray-700 dark:bg-gray-950"><span class="block text-[10px] uppercase tracking-wide text-gray-500">Total source</span><strong>${fmt(availablePieces)} pc</strong></div>`;
+            html += `<div class="rounded-lg border border-gray-200 bg-white px-3 py-2 dark:border-gray-700 dark:bg-gray-950"><span class="block text-[10px] uppercase tracking-wide text-gray-500">Created / packed</span><strong>${fmt(totalPieces)} pc</strong></div>`;
+            html += `<div class="rounded-lg border border-gray-200 bg-white px-3 py-2 dark:border-gray-700 dark:bg-gray-950"><span class="block text-[10px] uppercase tracking-wide text-gray-500">Available after</span><strong>${fmt(remainingPieces)} pc</strong></div>`;
+            html += '</div>';
+            html += `<div class="mt-2 text-[11px] text-gray-500 dark:text-gray-400">Unopened boxes: ${fmt(availableFullPacks, 0)} before → ${fmt(fullPacksAfter, 0)} after. Source-unit equivalent used: ${fmt(totalPieces / sourcePpu)}.</div>`;
+
+            if (cartonsOpened > 0 && remainingPieces > 0) {
+                html += `<div class="mt-1 text-amber-700 dark:text-amber-300">${fmt(cartonsOpened, 0)} full carton(s) will be removed from sale because they are opened; the unused ${fmt(remainingPieces)} pieces remain available for the next transform.</div>`;
+            }
+        } else if (modes.size === 1 && (modes.has('weight') || modes.has('variable_weight'))) {
+            enough = availableWeight + 0.0005 >= totalWeight;
+            html += `<div class="mt-2">Combined source consumption: <strong>${fmt(totalWeight)} kg</strong>.</div>`;
+            html += `<div>Available source weight: <strong>${fmt(availableWeight)} kg</strong>; remaining: <strong>${fmt(Math.max(availableWeight - totalWeight, 0))} kg</strong>.</div>`;
+        } else if (modes.size === 1) {
+            enough = availableQty + 0.0005 >= totalQuantity;
+            html += `<div class="mt-2">Combined source consumption: <strong>${fmt(totalQuantity)} source unit(s)</strong>.</div>`;
+            html += `<div>Available source quantity: <strong>${fmt(availableQty)}</strong>; remaining: <strong>${fmt(Math.max(availableQty - totalQuantity, 0))}</strong>.</div>`;
         }
 
-        if (productMode === 'weight') {
-            const packWeight = n(target.product_weight || outputWeight.value);
-            const requiredWeight = count * packWeight;
-            const enough = availableWeight + 0.0005 >= requiredWeight;
-            html += '<div>Fixed weight output. Consumes <strong>' + fmt(requiredWeight) + ' kg</strong> from source.</div>';
-            html += '<div>Available source weight: <strong>' + fmt(availableWeight) + ' kg</strong>.</div>';
-            html += '<div>Output product stock increases by <strong>' + fmt(count, 0) + '</strong> pack(s).</div>';
-            if (!packWeight) html += '<div class="mt-1 text-red-700">Set product weight or enter output weight.</div>';
-            if (!enough) html += '<div class="mt-1 text-red-700">Not enough source weight available.</div>';
-        } else if (productMode === 'variable_weight') {
-            let requiredWeight = n(outputWeight.value);
-            if (requiredWeight <= 0 && n(target.product_weight) > 0) requiredWeight = count * n(target.product_weight);
-            const enough = availableWeight + 0.0005 >= requiredWeight;
-            html += '<div>Variable/by-kg output. Consumes <strong>' + fmt(requiredWeight) + ' kg</strong> from source.</div>';
-            html += '<div>Available source weight: <strong>' + fmt(availableWeight) + ' kg</strong>.</div>';
-            html += '<div>Output product stock increases by <strong>' + fmt(requiredWeight) + ' kg</strong>.</div>';
-            if (!requiredWeight) html += '<div class="mt-1 text-red-700">Enter total output weight.</div>';
-            if (!enough) html += '<div class="mt-1 text-red-700">Not enough source weight available.</div>';
-        } else if (productMode === 'piece') {
-            const piecesPerPack = n(pieces.value || target.pieces_per_pack);
-            const sourcePpu = n(sourcePieces.value) || 1;
-            const requiredPieces = count * piecesPerPack;
-            const requiredUnits = requiredPieces / sourcePpu;
-            const enough = availablePieces > 0
-                ? availablePieces + 0.0005 >= requiredPieces
-                : availableQty + 0.0005 >= requiredUnits;
-            html += '<div>Fixed piece output. Consumes <strong>' + fmt(requiredPieces) + ' piece(s)</strong>, equal to <strong>' + fmt(requiredUnits) + '</strong> source unit(s).</div>';
-            html += '<div>Available source pieces/units: <strong>' + fmt(availablePieces) + '</strong> / <strong>' + fmt(availableQty) + '</strong>.</div>';
-            html += '<div>Output product stock increases by <strong>' + fmt(count, 0) + '</strong> pack(s).</div>';
-            if (!piecesPerPack) html += '<div class="mt-1 text-red-700">Pieces per pack is required.</div>';
-            if (!enough) html += '<div class="mt-1 text-red-700">Not enough source quantity available.</div>';
-        } else {
-            const enough = availableQty + 0.0005 >= count;
-            html += '<div>Quantity output. Consumes <strong>' + fmt(count, 0) + '</strong> source unit(s).</div>';
-            html += '<div>Available source quantity: <strong>' + fmt(availableQty) + '</strong>.</div>';
-            html += '<div>Output product stock increases by <strong>' + fmt(count, 0) + '</strong>.</div>';
-            if (!enough) html += '<div class="mt-1 text-red-700">Not enough source quantity available.</div>';
+        if (!enough) {
+            html += '<div class="mt-2 text-red-700 dark:text-red-300">The combined output rows exceed the available source stock.</div>';
         }
 
+        previewValid = modes.size === 1 && !duplicateTarget && enough && summaries.length === rowElements().length;
         preview.innerHTML = html;
     }
 
+    addOutputButtons.forEach(button => button.addEventListener('click', () => addOutputRow({ pack_count: 1 })));
+
+    outputRows?.addEventListener('change', event => {
+        const row = event.target.closest('[data-output-row]');
+        if (!row) return;
+        if (event.target.matches('[data-output-product]')) {
+            row.dataset.requestedProductId = String(event.target.value || '');
+            delete row.dataset.requestedVariantId;
+            populateOutputVariants(row);
+            updateOutputFields(row);
+        } else if (event.target.matches('[data-output-variant]')) {
+            row.dataset.requestedVariantId = String(event.target.value || '');
+            updateOutputFields(row);
+        }
+        updatePreview();
+    });
+
+    outputRows?.addEventListener('input', event => {
+        if (event.target.matches('[data-pieces-per-pack]')) event.target.dataset.autoFilled = '0';
+        if (event.target.matches('[data-pack-count], [data-pieces-per-pack], [data-output-weight]')) updatePreview();
+    });
+
+    outputRows?.addEventListener('click', event => {
+        const button = event.target.closest('[data-remove-output]');
+        if (!button) return;
+        const rows = rowElements();
+        if (rows.length <= 1) return;
+        button.closest('[data-output-row]')?.remove();
+        reindexRows();
+        updatePreview();
+    });
+
     source?.addEventListener('change', applySourceDefaults);
     sourcePiece?.addEventListener('change', updatePreview);
-    output?.addEventListener('change', updateFieldsFromProduct);
-    outputVariant?.addEventListener('change', () => {
-        const target = selectedOutputTarget();
-        if (target && n(target.pieces_per_pack) > 0) {
-            pieces.value = String(target.pieces_per_pack);
-        }
-        updateFieldsFromProduct();
+    sourcePieces?.addEventListener('input', () => {
+        sourcePieces.dataset.autoFilled = '0';
+        updatePreview();
     });
-    packCount?.addEventListener('input', updatePreview);
-    outputWeight?.addEventListener('input', updatePreview);
-    pieces?.addEventListener('input', updatePreview);
-    sourcePieces?.addEventListener('input', updatePreview);
+    function openConfirmModal() {
+        updatePreview();
+        if (!previewValid || !confirmModal || !confirmSummary) {
+            preview?.scrollIntoView({ behavior: 'smooth', block: 'center' });
+            return false;
+        }
+        confirmSummary.innerHTML = preview.innerHTML;
+        confirmModal.classList.remove('hidden');
+        confirmModal.classList.add('flex');
+        confirmSubmit?.focus();
+        return true;
+    }
 
+    function closeConfirmModal() {
+        if (!confirmModal) return;
+        confirmModal.classList.add('hidden');
+        confirmModal.classList.remove('flex');
+    }
+
+    form?.addEventListener('submit', function (event) {
+        if (confirmedSubmit) return;
+        event.preventDefault();
+        if (!this.reportValidity || this.reportValidity()) openConfirmModal();
+    });
+
+    confirmSubmit?.addEventListener('click', function () {
+        if (!form) return;
+        confirmedSubmit = true;
+        closeConfirmModal();
+        form.submit();
+    });
+
+    confirmCancelButtons.forEach(button => button.addEventListener('click', closeConfirmModal));
+    confirmModal?.addEventListener('click', event => {
+        if (event.target === confirmModal) closeConfirmModal();
+    });
+    document.addEventListener('keydown', event => {
+        if (event.key === 'Escape') closeConfirmModal();
+    });
+
+    (initialOutputs.length ? initialOutputs : [{ pack_count: 1 }]).forEach(addOutputRow);
     applySourceDefaults();
-    updateFieldsFromProduct();
 })();
 </script>
 @endsection

@@ -29,7 +29,7 @@
 
             <div>
                 <label class="block text-xs font-medium text-gray-700 dark:text-gray-300">
-                    Raw value (optional)
+                    Internal value / code (optional)
                 </label>
                 <input
                     type="text"
@@ -66,7 +66,7 @@
                 type="submit"
                 class="inline-flex items-center justify-center rounded border border-gray-900 dark:border-gray-100 bg-gray-900 text-white dark:bg-gray-100 dark:text-gray-900 px-4 py-1.5 text-xs font-medium hover:bg-gray-800 dark:hover:bg-gray-200"
             >
-                {{ $isEdit ? 'Update value' : 'Create value' }}
+                {{ $isEdit ? 'Update option value' : 'Create option value' }}
             </button>
 
             <a href="{{ route('admin.attributes.values.index', $attribute) }}"

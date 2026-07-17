@@ -8,11 +8,13 @@ use App\Models\DeliveryDistanceRule;
 use App\Models\DeliveryZone;
 use App\Models\DeliveryZonePincode;
 use App\Models\HandlingChargeRule;
+use App\Models\HsnCode;
+use App\Services\DeliveryTaxSettingsService;
 use Illuminate\Http\Request;
 
 class DeliverySettingsController extends Controller
 {
-    public function index()
+    public function index(DeliveryTaxSettingsService $taxSettings)
     {
         return view('admin.delivery.index', [
             'zones' => DeliveryZone::query()
@@ -30,7 +32,42 @@ class DeliverySettingsController extends Controller
                 ->orderBy('temperature_mode')
                 ->orderBy('min_order_value')
                 ->get(),
+            'hsnCodes' => HsnCode::query()
+                ->where('is_active', true)
+                ->orderBy('code')
+                ->get(),
+            'deliveryTaxSettings' => $taxSettings->current(),
         ]);
+    }
+
+    public function updateTaxSettings(Request $request, DeliveryTaxSettingsService $taxSettings)
+    {
+        $data = $request->validate([
+            'delivery_hsn_code_id' => ['nullable', 'integer', 'exists:hsn_codes,id'],
+            'handling_hsn_code_id' => ['nullable', 'integer', 'exists:hsn_codes,id'],
+            'sync_delivery_rules' => ['nullable', 'boolean'],
+            'sync_handling_rules' => ['nullable', 'boolean'],
+        ]);
+
+        $updated = $taxSettings->update(
+            deliveryHsnCodeId: $data['delivery_hsn_code_id'] ?? null,
+            handlingHsnCodeId: $data['handling_hsn_code_id'] ?? null,
+            syncDeliveryRules: $request->boolean('sync_delivery_rules'),
+            syncHandlingRules: $request->boolean('sync_handling_rules'),
+        );
+
+        $message = 'Delivery HSN/SAC settings updated.';
+
+        if (($updated['delivery_zone_rules'] + $updated['delivery_distance_rules'] + $updated['handling_rules']) > 0) {
+            $message .= sprintf(
+                ' Synced GST rate on %d zone rules, %d distance rules and %d cold-chain rules.',
+                $updated['delivery_zone_rules'],
+                $updated['delivery_distance_rules'],
+                $updated['handling_rules'],
+            );
+        }
+
+        return back()->with('success', $message);
     }
 
     public function storeZone(Request $request)
@@ -73,6 +110,10 @@ class DeliverySettingsController extends Controller
 
     public function storePincode(Request $request, DeliveryZone $zone)
     {
+        $request->merge([
+            'pincode' => preg_replace('/\D+/', '', (string) $request->input('pincode')),
+        ]);
+
         $data = $request->validate([
             'pincode' => ['required', 'string', 'max:10', 'unique:delivery_zone_pincodes,pincode'],
             'city' => ['nullable', 'string', 'max:120'],
@@ -80,7 +121,6 @@ class DeliverySettingsController extends Controller
             'is_active' => ['nullable', 'boolean'],
         ]);
 
-        $data['pincode'] = preg_replace('/\D+/', '', $data['pincode']);
         $data['is_active'] = $request->boolean('is_active', true);
 
         $zone->pincodes()->create($data);
@@ -120,7 +160,6 @@ class DeliverySettingsController extends Controller
             'customer_type' => ['required', 'in:all,guest,b2c,b2b'],
             'min_order_value' => ['nullable', 'numeric', 'min:0'],
             'delivery_fee' => ['nullable', 'numeric', 'min:0'],
-            'included_distance_km' => ['nullable', 'numeric', 'min:0'],
             'free_delivery_above' => ['nullable', 'numeric', 'min:0'],
             'tax_rate' => ['nullable', 'numeric', 'min:0', 'max:100'],
             'is_active' => ['nullable', 'boolean'],
@@ -148,7 +187,7 @@ class DeliverySettingsController extends Controller
             'customer_type' => ['required', 'in:all,guest,b2c,b2b'],
             'min_order_value' => ['nullable', 'numeric', 'min:0'],
             'min_distance_km' => ['nullable', 'numeric', 'min:0'],
-            'max_distance_km' => ['nullable', 'numeric', 'min:0'],
+            'max_distance_km' => ['nullable', 'numeric', 'min:0', 'gte:min_distance_km'],
             'delivery_fee' => ['nullable', 'numeric', 'min:0'],
             'included_distance_km' => ['nullable', 'numeric', 'min:0'],
             'per_km_fee' => ['nullable', 'numeric', 'min:0'],
@@ -171,7 +210,7 @@ class DeliverySettingsController extends Controller
             'customer_type' => ['required', 'in:all,guest,b2c,b2b'],
             'min_order_value' => ['nullable', 'numeric', 'min:0'],
             'min_distance_km' => ['nullable', 'numeric', 'min:0'],
-            'max_distance_km' => ['nullable', 'numeric', 'min:0'],
+            'max_distance_km' => ['nullable', 'numeric', 'min:0', 'gte:min_distance_km'],
             'delivery_fee' => ['nullable', 'numeric', 'min:0'],
             'included_distance_km' => ['nullable', 'numeric', 'min:0'],
             'per_km_fee' => ['nullable', 'numeric', 'min:0'],
@@ -266,7 +305,9 @@ class DeliverySettingsController extends Controller
             : round((float) $perKmFee, 2);
 
         $data['free_delivery_above'] = $request->filled('free_delivery_above') ? round((float) $data['free_delivery_above'], 2) : null;
-        $data['tax_rate'] = round((float) ($data['tax_rate'] ?? 0), 2);
+        $data['tax_rate'] = app(DeliveryTaxSettingsService::class)->deliveryTaxRate(
+            isset($data['tax_rate']) ? (float) $data['tax_rate'] : null
+        );
         $data['is_active'] = $request->boolean('is_active');
 
         return $data;
@@ -277,7 +318,10 @@ class DeliverySettingsController extends Controller
         $data['min_order_value'] = round((float) ($data['min_order_value'] ?? 0), 2);
         $data[$feeField] = round((float) ($data[$feeField] ?? 0), 2);
         $data[$freeAboveField] = $request->filled($freeAboveField) ? round((float) $data[$freeAboveField], 2) : null;
-        $data['tax_rate'] = round((float) ($data['tax_rate'] ?? 0), 2);
+        $isHandlingRule = $feeField === 'handling_fee';
+        $data['tax_rate'] = $isHandlingRule
+            ? app(DeliveryTaxSettingsService::class)->handlingTaxRate(isset($data['tax_rate']) ? (float) $data['tax_rate'] : null)
+            : app(DeliveryTaxSettingsService::class)->deliveryTaxRate(isset($data['tax_rate']) ? (float) $data['tax_rate'] : null);
         $data['is_active'] = $request->boolean('is_active');
 
         return $data;

@@ -6,7 +6,6 @@ use App\Http\Controllers\Controller;
 use App\Models\CustomerProductPrice;
 use App\Models\Product;
 use App\Models\ProductVariant;
-use App\Models\ProductSellUnit;
 use App\Models\User;
 use Illuminate\Http\Request;
 
@@ -26,7 +25,7 @@ class B2BCustomerPriceController extends Controller
         $productId = $request->integer('product_id') ?: null;
 
         $prices = CustomerProductPrice::query()
-            ->with(['product', 'productVariant', 'sellUnit'])
+            ->with(['product', 'productVariant'])
             ->where('user_id', $user->id)
             ->when($productId, fn($q) => $q->where('product_id', $productId))
             ->orderByDesc('valid_from')
@@ -35,7 +34,6 @@ class B2BCustomerPriceController extends Controller
             ->withQueryString();
 
         $products = Product::query()
-            ->with(['sellUnits' => fn ($q) => $q->where('is_active', true)->where('is_b2b_visible', true)->orderBy('sort_order')->orderBy('name')])
             ->orderBy('name')
             ->get(['id', 'name', 'sku']);
 
@@ -47,7 +45,6 @@ class B2BCustomerPriceController extends Controller
         $this->ensureB2B($user);
 
         $products = Product::query()
-            ->with(['sellUnits' => fn ($q) => $q->where('is_active', true)->where('is_b2b_visible', true)->orderBy('sort_order')->orderBy('name')])
             ->orderBy('name')
             ->get(['id', 'name', 'sku']);
 
@@ -61,7 +58,6 @@ class B2BCustomerPriceController extends Controller
         $data = $request->validate([
             'product_id'         => ['required', 'integer', 'exists:products,id'],
             'product_variant_id' => ['nullable', 'integer', 'exists:product_variants,id'],
-            'product_sell_unit_id' => ['nullable', 'integer', 'exists:product_sell_units,id'],
             'price'              => ['required', 'numeric', 'min:0'],
             'currency'           => ['nullable', 'string', 'max:3'],
             'valid_from'         => ['nullable', 'date'],
@@ -70,24 +66,6 @@ class B2BCustomerPriceController extends Controller
         ]);
 
         $variantId = !empty($data['product_variant_id']) ? (int) $data['product_variant_id'] : null;
-        $sellUnitId = !empty($data['product_sell_unit_id']) ? (int) $data['product_sell_unit_id'] : null;
-
-
-        if ($sellUnitId && $variantId) {
-            return back()
-                ->withErrors(['product_sell_unit_id' => 'Choose either a sellable unit price or a variant price, not both.'])
-                ->withInput();
-        }
-
-        // Ensure variant/sell unit belongs to product
-        if ($sellUnitId) {
-            $sellUnit = ProductSellUnit::query()->findOrFail($sellUnitId);
-            if ((int) $sellUnit->product_id !== (int) $data['product_id']) {
-                return back()
-                    ->withErrors(['product_sell_unit_id' => 'Selected sellable unit does not belong to the selected product.'])
-                    ->withInput();
-            }
-        }
 
         if ($variantId) {
             $variant = ProductVariant::query()->findOrFail($variantId);
@@ -106,7 +84,6 @@ class B2BCustomerPriceController extends Controller
         $existing = CustomerProductPrice::query()
             ->where('user_id', $user->id)
             ->where('product_id', (int) $data['product_id'])
-            ->when($sellUnitId, fn($q) => $q->where('product_sell_unit_id', $sellUnitId), fn($q) => $q->whereNull('product_sell_unit_id'))
             ->when($variantId, fn($q) => $q->where('product_variant_id', $variantId), fn($q) => $q->whereNull('product_variant_id'))
             ->where(function ($q) use ($data) {
                 if (!empty($data['valid_from'])) {
@@ -140,7 +117,6 @@ class B2BCustomerPriceController extends Controller
         $row->user_id = $user->id;
         $row->product_id = (int) $data['product_id'];
         $row->product_variant_id = $variantId;
-        $row->product_sell_unit_id = $sellUnitId;
         $row->price = $storedPrice;
         $row->currency = $data['currency'] ?? 'INR';
         $row->valid_from = $data['valid_from'] ?? null;
@@ -164,7 +140,6 @@ class B2BCustomerPriceController extends Controller
         }
 
         $products = Product::query()
-            ->with(['sellUnits' => fn ($q) => $q->where('is_active', true)->where('is_b2b_visible', true)->orderBy('sort_order')->orderBy('name')])
             ->orderBy('name')
             ->get(['id', 'name', 'sku']);
 
@@ -182,7 +157,6 @@ class B2BCustomerPriceController extends Controller
         $data = $request->validate([
             'product_id'         => ['required', 'integer', 'exists:products,id'],
             'product_variant_id' => ['nullable', 'integer', 'exists:product_variants,id'],
-            'product_sell_unit_id' => ['nullable', 'integer', 'exists:product_sell_units,id'],
             'price'              => ['required', 'numeric', 'min:0'],
             'currency'           => ['nullable', 'string', 'max:3'],
             'valid_from'         => ['nullable', 'date'],
@@ -191,22 +165,6 @@ class B2BCustomerPriceController extends Controller
         ]);
 
         $variantId = !empty($data['product_variant_id']) ? (int) $data['product_variant_id'] : null;
-        $sellUnitId = !empty($data['product_sell_unit_id']) ? (int) $data['product_sell_unit_id'] : null;
-
-        if ($sellUnitId && $variantId) {
-            return back()
-                ->withErrors(['product_sell_unit_id' => 'Choose either a sellable unit price or a variant price, not both.'])
-                ->withInput();
-        }
-
-        if ($sellUnitId) {
-            $sellUnit = ProductSellUnit::query()->findOrFail($sellUnitId);
-            if ((int) $sellUnit->product_id !== (int) $data['product_id']) {
-                return back()
-                    ->withErrors(['product_sell_unit_id' => 'Selected sellable unit does not belong to the selected product.'])
-                    ->withInput();
-            }
-        }
 
         if ($variantId) {
             $variant = ProductVariant::query()->findOrFail($variantId);
@@ -222,7 +180,6 @@ class B2BCustomerPriceController extends Controller
 
         $price->product_id = (int) $data['product_id'];
         $price->product_variant_id = $variantId;
-        $price->product_sell_unit_id = $sellUnitId;
         $price->price = $storedPrice;
         $price->currency = $data['currency'] ?? ($price->currency ?? 'INR');
         $price->valid_from = $data['valid_from'] ?? null;
@@ -235,7 +192,6 @@ class B2BCustomerPriceController extends Controller
             ->route('admin.b2b.prices.index', $user)
             ->with('status', 'Price override saved.');
     }
-
 
     protected function normalizeStoredB2BPrice(mixed $value, Product $product): float
     {

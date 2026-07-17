@@ -22,7 +22,9 @@
     $pieceBands = data_get($pieceSelector, 'bands', []);
 
     $isVariable = (string)($product->type ?? 'simple') === 'variable';
-    $inStock = !(bool)($product->manage_stock ?? false) || ((float)($product->stock_quantity ?? 0) > 0);
+    $inStock = $hasPieceSelector
+        ? true
+        : (!(bool)($product->manage_stock ?? false) || ((float)($product->stock_quantity ?? 0) > 0));
 
     $coCode = strtoupper(trim((string)($product->country_of_origin ?? '')));
     $flag = isset($flagEmoji) ? $flagEmoji($coCode) : null;

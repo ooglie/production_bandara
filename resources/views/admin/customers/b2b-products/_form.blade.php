@@ -9,27 +9,28 @@
     @unless($isEdit)
         <div>
             <label class="block text-[11px] font-medium text-gray-700 dark:text-gray-300 mb-1">
-                Product / sellable unit
+                Product / variant option
             </label>
             <select name="assignment_target"
                     class="w-full rounded border border-gray-300 dark:border-gray-700 bg-white dark:bg-gray-950 px-2 py-1.5 text-xs focus:outline-none focus:ring-1 focus:ring-gray-400 dark:focus:ring-gray-500"
                     required>
-                <option value="">Select product or sellable unit…</option>
+                <option value="">Select product or variant…</option>
                 @foreach($products as $p)
                     <optgroup label="{{ $p->name }}@if($p->sku) ({{ $p->sku }})@endif">
                         <option value="product:{{ $p->id }}" @selected(old('assignment_target') === 'product:' . $p->id)>
                             Product-level access
                         </option>
-                        @foreach($p->sellUnits as $unit)
-                            <option value="unit:{{ $unit->id }}" @selected(old('assignment_target') === 'unit:' . $unit->id)>
-                                {{ $unit->display_label }} @if($unit->sku) · {{ $unit->sku }} @endif
+                        @foreach($p->variants as $variant)
+                            @php($variantLabel = $variant->name ?: ($variant->sku ?: ('Variant #' . $variant->id)))
+                            <option value="variant:{{ $variant->id }}" @selected(old('assignment_target') === 'variant:' . $variant->id)>
+                                {{ $variantLabel }} @if($variant->sku) · {{ $variant->sku }} @endif
                             </option>
                         @endforeach
                     </optgroup>
                 @endforeach
             </select>
             <p class="mt-1 text-[10px] text-gray-400">
-                Use product-level access for legacy/simple B2B terms. Use sellable units for pack/box-specific MOQ and pricing.
+                Use product-level access for simple products. Use variants for pack choices such as Dimsum 10 pcs / 20 pcs.
             </p>
             @error('assignment_target')
                 <p class="mt-1 text-[11px] text-red-600">{{ $message }}</p>
@@ -42,8 +43,8 @@
                 <span class="font-medium">{{ $row->product?->name ?? ('Product #' . $row->product_id) }}</span>
             </div>
             <div class="mt-0.5">
-                <span class="text-gray-500 dark:text-gray-400">Sellable unit:</span>
-                <span class="font-medium">{{ $row->sellUnit?->display_label ?? 'Product-level access' }}</span>
+                <span class="text-gray-500 dark:text-gray-400">Variant:</span>
+                <span class="font-medium">{{ $row->productVariant?->name ?: ($row->productVariant?->sku ?: 'Product-level access') }}</span>
             </div>
         </div>
     @endunless
@@ -60,7 +61,7 @@
                    value="{{ old('min_order_quantity', $row->min_order_quantity ?? 1) }}"
                    class="w-full rounded border border-gray-300 dark:border-gray-700 bg-white dark:bg-gray-950 px-2 py-1.5 text-xs focus:outline-none focus:ring-1 focus:ring-gray-400 dark:focus:ring-gray-500">
             <p class="mt-1 text-[10px] text-gray-400">
-                Applies to this product option only. Default is 1.
+                Applies to this product or variant only. Default is 1.
             </p>
             @error('min_order_quantity')
                 <p class="mt-1 text-[11px] text-red-600">{{ $message }}</p>
@@ -79,7 +80,7 @@
                    placeholder="Leave blank to keep existing/fallback"
                    class="w-full rounded border border-gray-300 dark:border-gray-700 bg-white dark:bg-gray-950 px-2 py-1.5 text-xs focus:outline-none focus:ring-1 focus:ring-gray-400 dark:focus:ring-gray-500">
             <p class="mt-1 text-[10px] text-gray-400">
-                Saved as a customer-specific product/sell-unit price.
+                Saved as a customer-specific product/variant price.
             </p>
             @error('price')
                 <p class="mt-1 text-[11px] text-red-600">{{ $message }}</p>

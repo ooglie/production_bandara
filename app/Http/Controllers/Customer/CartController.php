@@ -8,7 +8,6 @@ use App\Models\Coupon;
 use App\Models\CustomerAddress;
 use App\Models\InventoryPiece;
 use App\Models\Product;
-use App\Models\ProductSellUnit;
 use App\Models\ProductVariant;
 use App\Services\CartService;
 use App\Services\DeliveryChargeService;
@@ -178,7 +177,6 @@ class CartController extends Controller
         $data = $request->validate([
             'product_id'         => ['required', 'integer', 'exists:products,id'],
             'product_variant_id' => ['nullable', 'integer', 'exists:product_variants,id'],
-            'product_sell_unit_id' => ['nullable', 'integer', 'exists:product_sell_units,id'],
             'quantity'           => ['nullable', 'numeric', 'min:0.01'],
             'inventory_piece_id' => ['nullable', 'integer', 'exists:inventory_pieces,id'],
             'piece_weight_kg'    => ['nullable', 'numeric', 'min:0.001'],
@@ -186,7 +184,6 @@ class CartController extends Controller
 
         $productId = (int) $data['product_id'];
         $variantId = !empty($data['product_variant_id']) ? (int) $data['product_variant_id'] : null;
-        $sellUnitId = !empty($data['product_sell_unit_id']) ? (int) $data['product_sell_unit_id'] : null;
 
         try {
             /** @var Product|null $product */
@@ -200,32 +197,6 @@ class CartController extends Controller
             $user = $request->user();
             $isB2B = $user && (($user->customer_type ?? 'b2c') === 'b2b');
 
-            $requestedSellUnit = null;
-            if ($isB2B && $sellUnitId) {
-                $requestedSellUnit = ProductSellUnit::query()
-                    ->where('id', $sellUnitId)
-                    ->where('product_id', $product->id)
-                    ->where('is_active', true)
-                    ->where('is_b2b_visible', true)
-                    ->first();
-
-                if (! $requestedSellUnit) {
-                    throw ValidationException::withMessages([
-                        'product_sell_unit_id' => 'Selected B2B buying option is not available for this product.',
-                    ]);
-                }
-
-                if (! $variantId) {
-                    $linkedVariant = $this->singleLinkedVariantForSellUnit($requestedSellUnit);
-                    if ($linkedVariant) {
-                        $variantId = (int) $linkedVariant->id;
-                    } elseif ($this->productHasVariants($product)) {
-                        throw ValidationException::withMessages([
-                            'product_sell_unit_id' => 'This B2B buying option is not linked to a single orderable variant yet. Please contact the team.',
-                        ]);
-                    }
-                }
-            }
 
             if ($isB2B && (! empty($data['inventory_piece_id']) || ! empty($data['piece_weight_kg']))) {
                 throw ValidationException::withMessages([
@@ -247,7 +218,13 @@ class CartController extends Controller
                     ->firstOrFail();
             }
 
-            if ($isB2B && ! app(\App\Services\B2BTermsService::class)->canBuy($user, $product, $requestedSellUnit ?: $variant?->sellUnit, $variant)) {
+            if ($variant && ! $this->variantVisibleToUser($variant, $user)) {
+                throw ValidationException::withMessages([
+                    'product_variant_id' => 'This option is not available for your customer type.',
+                ]);
+            }
+
+            if ($isB2B && ! app(\App\Services\B2BTermsService::class)->canBuy($user, $product, $variant)) {
                 throw ValidationException::withMessages([
                     'product_id' => 'B2B price is not configured for this product option. Please contact the team.',
                 ]);
@@ -255,6 +232,7 @@ class CartController extends Controller
 
             $sellUnit = strtolower((string) ($product->sell_unit ?? 'piece'));
             $isKg = ($sellUnit === 'kg');
+            $usesFixedWeightUnit = $this->usesFixedWeightKgUnit($product, $variant);
 
             $pieceSelectable = ! $isB2B && $this->productRequiresPieceSelection($productId);
 
@@ -333,7 +311,7 @@ class CartController extends Controller
 
             // Standard product / variant flow
             $qty = (float) ($data['quantity'] ?? 1);
-            $qty = $this->normalizeQty($qty, $isKg);
+            $qty = $this->normalizeQty($qty, $isKg && ! $usesFixedWeightUnit);
 
             $itemWeight = $this->calculateStandardItemWeight($product, $variant, $qty);
 
@@ -486,24 +464,28 @@ class CartController extends Controller
 
         $sellUnit = strtolower((string) ($item->product?->sell_unit ?? 'piece'));
         $isKg = $sellUnit === 'kg';
+        $usesFixedWeightUnit = $item->product
+            ? $this->usesFixedWeightKgUnit($item->product, $item->productVariant)
+            : false;
 
-        $qty = $this->normalizeQty($qty, $isKg);
+        $qty = $this->normalizeQty($qty, $isKg && ! $usesFixedWeightUnit);
 
         $user = $request->user();
         $moqNotice = null;
 
         if ($user && (($user->customer_type ?? 'b2c') === 'b2b') && $item->product) {
-            $min = (float) app(\App\Services\B2BTermsService::class)->minOrderQty($user, $item->product, $item->productVariant?->sellUnit, $item->productVariant);
+            $min = (float) app(\App\Services\B2BTermsService::class)->minOrderQty($user, $item->product, $item->productVariant);
+            $stockQuantityIsWeight = $isKg && ! $usesFixedWeightUnit;
 
             if ($min <= 0) {
-                $min = $isKg ? 0.01 : 1;
+                $min = $stockQuantityIsWeight ? 0.01 : 1;
             }
 
-            $min = $this->normalizeQty($min, $isKg);
+            $min = $this->normalizeQty($min, $stockQuantityIsWeight);
 
             if ($qty < $min) {
                 $qty = $min;
-                $minLabel = $isKg
+                $minLabel = $stockQuantityIsWeight
                     ? rtrim(rtrim(number_format($min, 2), '0'), '.')
                     : (string) (int) $min;
 
@@ -512,7 +494,7 @@ class CartController extends Controller
         }
 
         $limitedNotice = null;
-        [$maxQty, $hasMax] = $this->stockMaxForItem($item, $isKg);
+        [$maxQty, $hasMax] = $this->stockMaxForItem($item, $isKg && ! $usesFixedWeightUnit);
 
         if ($hasMax && $maxQty !== null && $maxQty >= 0 && $qty > ($maxQty + 1e-9)) {
             $qty = $maxQty;
@@ -555,9 +537,76 @@ class CartController extends Controller
             ->firstOrFail();
 
         $this->removeSessionPieceMeta($item->id);
-
         $item->delete();
 
+        return $this->finishCartRemoval($request, $cart, $cartService, 'Item removed from cart.');
+    }
+
+    public function bulkDestroy(Request $request, CartService $cartService)
+    {
+        $cart = $cartService->currentCart(false);
+        if (! $cart) {
+            return redirect()
+                ->route($this->cartIndexRouteName($request))
+                ->with('status', 'Your cart is already empty.');
+        }
+
+        $ids = $this->cartItemIdsFromBulkRequest($request);
+
+        if (empty($ids)) {
+            return back()->withErrors([
+                'cart_items' => 'Please select at least one item to remove.',
+            ]);
+        }
+
+        $items = CartItem::query()
+            ->where('cart_id', $cart->id)
+            ->whereIn('id', $ids)
+            ->get();
+
+        if ($items->isEmpty()) {
+            return back()->withErrors([
+                'cart_items' => 'The selected cart items could not be found.',
+            ]);
+        }
+
+        foreach ($items as $item) {
+            $this->removeSessionPieceMeta($item->id);
+            $item->delete();
+        }
+
+        $removedCount = $items->count();
+        $message = $removedCount === 1
+            ? 'Selected item removed from cart.'
+            : $removedCount . ' selected items removed from cart.';
+
+        return $this->finishCartRemoval($request, $cart, $cartService, $message);
+    }
+
+    private function cartItemIdsFromBulkRequest(Request $request): array
+    {
+        $rawValues = array_merge(
+            (array) $request->input('cart_item_ids', []),
+            (array) $request->input('item_ids', []),
+            (array) $request->input('cart_item_keys', [])
+        );
+
+        $ids = [];
+
+        foreach ($rawValues as $value) {
+            foreach (explode(',', (string) $value) as $candidate) {
+                $candidate = trim($candidate);
+                if ($candidate !== '' && ctype_digit($candidate)) {
+                    $ids[] = (int) $candidate;
+                }
+            }
+        }
+
+        return array_values(array_unique(array_filter($ids, fn (int $id) => $id > 0)));
+    }
+
+    private function finishCartRemoval(Request $request, $cart, CartService $cartService, string $message)
+    {
         $remaining = (int) CartItem::where('cart_id', $cart->id)->count();
 
         if ($remaining === 0) {
@@ -567,41 +616,73 @@ class CartController extends Controller
 
             return redirect()
                 ->route($this->cartIndexRouteName($request))
-                ->with('status', 'Item removed. Your cart is now empty.');
+                ->with('status', $message . ' Your cart is now empty.');
         }
 
         $cart->touch();
+        $this->reapplySelectedPiecePricing($cart);
 
         $subtotal = $cartService->subtotal($cart);
         $couponNotice = $cartService->ensureCouponStillValid($cart, $subtotal, $request->user());
 
-        $msg = 'Item removed from cart.';
-        if ($couponNotice) $msg .= ' ' . $couponNotice;
+        if ($couponNotice) {
+            $message .= ' ' . $couponNotice;
+        }
 
-        return redirect()
-            ->route($this->cartIndexRouteName($request))
-            ->with('status', $msg);
+        return $this->redirectAfterCartMutation($request, $message);
     }
 
+    private function redirectAfterCartMutation(Request $request, string $message)
+    {
+        $returnTo = $this->safeCartReturnUrl($request);
+
+        if ($returnTo) {
+            return redirect()->to($returnTo)->with('status', $message);
+        }
+
+        return back()->with('status', $message);
+    }
+
+    private function safeCartReturnUrl(Request $request): ?string
+    {
+        $returnTo = trim((string) $request->input('return_to', ''));
+
+        if ($returnTo === '') {
+            return null;
+        }
+
+        if (preg_match('/^[a-z][a-z0-9+\-.]*:/i', $returnTo) || str_starts_with($returnTo, '//')) {
+            return null;
+        }
+
+        if (! str_starts_with($returnTo, '/')) {
+            return null;
+        }
+
+        return $returnTo;
+    }
+
+
+    private function variantVisibleToUser(?ProductVariant $variant, ?\App\Models\User $user): bool
+    {
+        if (! $variant) {
+            return true;
+        }
+
+        $customerType = $user && (($user->customer_type ?? 'b2c') === 'b2b') ? 'b2b' : 'b2c';
+
+        if (method_exists($variant, 'isVisibleToCustomerType')) {
+            return $variant->isVisibleToCustomerType($customerType);
+        }
+
+        $visibility = (string) ($variant->customer_visibility ?? 'all');
+
+        return $visibility === 'all' || $visibility === $customerType;
+    }
 
     private function cartIndexRouteName(Request $request): string
     {
         return 'cart.index';
-    }
-
-
-    private function singleLinkedVariantForSellUnit(ProductSellUnit $sellUnit): ?ProductVariant
-    {
-        $variants = ProductVariant::query()
-            ->where('product_sell_unit_id', $sellUnit->id)
-            ->where(function ($query) {
-                $query->where('is_active', true)->orWhereNull('is_active');
-            })
-            ->orderBy('id')
-            ->limit(2)
-            ->get();
-
-        return $variants->count() === 1 ? $variants->first() : null;
     }
 
     private function productHasVariants(Product $product): bool
@@ -699,15 +780,14 @@ class CartController extends Controller
         $manageStock = false;
         $available = null;
 
-        if ($variant && (bool) ($variant->manage_stock ?? false)) {
-            $manageStock = true;
-            $available = (float) ($variant->stock_quantity ?? 0);
+        if ($variant) {
+            if ($variant->stock_quantity !== null || (bool) ($variant->manage_stock ?? false)) {
+                $manageStock = true;
+                $available = (float) ($variant->stock_quantity ?? 0);
+            }
         } elseif ($product && (bool) ($product->manage_stock ?? false)) {
             $manageStock = true;
             $available = (float) ($product->stock_quantity ?? 0);
-        } elseif ($variant && $variant->stock_quantity !== null && (float) $variant->stock_quantity > 0) {
-            $manageStock = true;
-            $available = (float) $variant->stock_quantity;
         } elseif ($product && $product->stock_quantity !== null && (float) $product->stock_quantity > 0) {
             $manageStock = true;
             $available = (float) $product->stock_quantity;
@@ -747,8 +827,11 @@ class CartController extends Controller
 
         $sellUnit = strtolower((string) ($item->product?->sell_unit ?? 'piece'));
         $isKg = $sellUnit === 'kg';
+        $usesFixedWeightUnit = $item->product
+            ? $this->usesFixedWeightKgUnit($item->product, $item->productVariant)
+            : false;
 
-        [$maxQty, $hasMax] = $this->stockMaxForItem($item, $isKg);
+        [$maxQty, $hasMax] = $this->stockMaxForItem($item, $isKg && ! $usesFixedWeightUnit);
 
         if ($hasMax && $maxQty !== null && $maxQty >= 0) {
             $current = (float) $item->quantity;
@@ -783,7 +866,7 @@ class CartController extends Controller
             ->where('inventory_lots.product_id', $productId)
             ->where('inventory_lots.is_saleable', true)
             ->where('inventory_lots.lot_status', 'available')
-            ->where('inventory_lots.inward_mode', 'pieces')
+            ->whereIn('inventory_lots.inward_mode', ['pieces', 'pieces_weight'])
             ->where(function ($q) {
                 $q->whereNull('inventory_lots.available_piece_count')
                   ->orWhere('inventory_lots.available_piece_count', '>', 0);
@@ -803,7 +886,7 @@ class CartController extends Controller
                   ->when($variantId, fn ($sub) => $sub->where('product_variant_id', $variantId))
                   ->where('is_saleable', true)
                   ->where('lot_status', 'available')
-                  ->where('inward_mode', 'pieces');
+                  ->whereIn('inward_mode', ['pieces', 'pieces_weight']);
             })
             ->first();
     }
@@ -820,7 +903,7 @@ class CartController extends Controller
                   ->when($variantId, fn ($sub) => $sub->where('product_variant_id', $variantId))
                   ->where('is_saleable', true)
                   ->where('lot_status', 'available')
-                  ->where('inward_mode', 'pieces');
+                  ->whereIn('inward_mode', ['pieces', 'pieces_weight']);
             })
             ->orderBy('id')
             ->limit($limit)
@@ -838,7 +921,7 @@ class CartController extends Controller
                   ->where('product_variant_id', $variantId)
                   ->where('is_saleable', true)
                   ->where('lot_status', 'available')
-                  ->where('inward_mode', 'pieces');
+                  ->whereIn('inward_mode', ['pieces', 'pieces_weight']);
             })
             ->orderBy('id')
             ->limit($limit)
@@ -882,7 +965,7 @@ class CartController extends Controller
         $resolvedVariant = $resolvedVariantId ? ProductVariant::query()->find($resolvedVariantId) : null;
         $unitPrice = $overrideUnitPrice !== null
             ? (float) $overrideUnitPrice
-            : (float) app(\App\Services\PricingService::class)->cartUnitPriceFor($this->requestUser(), $product, $resolvedVariant, $resolvedVariant?->sellUnit);
+            : (float) app(\App\Services\PricingService::class)->cartUnitPriceFor($this->requestUser(), $product, $resolvedVariant);
 
         $item = new CartItem();
         $item->cart_id = $cartId;
@@ -980,7 +1063,7 @@ class CartController extends Controller
             $isKg = $sellUnit === 'kg';
 
             $unitPrice = $item->product
-                ? (float) app(\App\Services\PricingService::class)->cartUnitPriceFor($this->requestUser(), $item->product, $item->productVariant, $item->productVariant?->sellUnit)
+                ? (float) app(\App\Services\PricingService::class)->cartUnitPriceFor($this->requestUser(), $item->product, $item->productVariant)
                 : (float) ($item->unit_price ?? 0);
             $newTotal = $isKg
                 ? round($unitPrice * $weightKg, 2)
@@ -1199,15 +1282,23 @@ class CartController extends Controller
         return in_array($unit, ['kg', 'pack'], true) ? $unit : 'pack';
     }
 
+    private function usesFixedWeightKgUnit(Product $product, ?ProductVariant $variant = null): bool
+    {
+        return $this->resolvePricingUnit($product, $variant) === 'kg'
+            && $this->resolveStandardUnitWeightKg($product, $variant) > 0;
+    }
+
     private function calculateStandardItemWeight(Product $product, ?ProductVariant $variant, float $qty): ?float
     {
-        $sellUnit = strtolower((string) ($product->sell_unit ?? 'piece'));
+        $unitWeightKg = $this->resolveStandardUnitWeightKg($product, $variant);
 
-        if ($sellUnit === 'kg') {
+        if ($this->resolvePricingUnit($product, $variant) === 'kg') {
+            if ($unitWeightKg > 0) {
+                return round($qty * $unitWeightKg, 3);
+            }
+
             return round($qty, 3);
         }
-
-        $unitWeightKg = $this->resolveStandardUnitWeightKg($product, $variant);
 
         return $unitWeightKg > 0
             ? round($qty * $unitWeightKg, 3)

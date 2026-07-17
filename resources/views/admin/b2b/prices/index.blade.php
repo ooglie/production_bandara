@@ -101,11 +101,9 @@
                         </div>
                     </td>
                     <td class="px-3 py-2 text-gray-700 dark:text-gray-200">
-                        @if($row->product_sell_unit_id)
-                            <div class="font-medium">{{ $row->sellUnit?->display_label ?? ('Sell unit #' . $row->product_sell_unit_id) }}</div>
-                            <div class="text-[10px] text-gray-400">Sellable unit</div>
-                        @elseif($row->product_variant_id)
-                            {{ $row->productVariant?->sku ?? ('Variant #' . $row->product_variant_id) }}
+                        @if($row->product_variant_id)
+                            {{ $row->productVariant?->name ?: ($row->productVariant?->sku ?? ('Variant #' . $row->product_variant_id)) }}
+                            <div class="text-[10px] text-gray-400">Variant</div>
                         @else
                             <span class="text-[10px] px-2 py-0.5 rounded-full border border-gray-300 dark:border-gray-700 text-gray-600 dark:text-gray-300">
                                 Product-level

@@ -5,14 +5,16 @@ namespace App\Http\Controllers\Admin;
 use App\Http\Controllers\Controller;
 use App\Models\Category;
 use Illuminate\Http\Request;
-use Illuminate\Validation\Rule;
 use Illuminate\Support\Str;
+use Illuminate\Validation\Rule;
 
 class CategoryController extends Controller
 {
     public function index(Request $request)
     {
-        $query = Category::query()->with('parent');
+        $query = Category::query()
+            ->with('parent')
+            ->withCount('products');
 
         if ($search = $request->get('q')) {
             $query->where('name', 'like', "%{$search}%");
@@ -45,7 +47,6 @@ class CategoryController extends Controller
     public function store(Request $request)
     {
         $data = $this->validatedData($request);
-        $statusmessage = '';
 
         if (empty($data['slug'])) {
             $data['slug'] = Str::slug($data['name']);
@@ -53,26 +54,11 @@ class CategoryController extends Controller
 
         $data['is_active'] = $request->boolean('is_active');
 
-        $category = Category::withTrashed()
-            ->where('slug', $data['name'])
-            ->first();
-
-        // if ($category) {
-        //     if ($category->trashed()) {
-        //         $category->restore(); // undelete
-        //         $statusmessage = 'Existing Category restored.';
-        //     } else {
-        //         $statusmessage = 'Category already exists. No action taken.';
-        //     }
-        // } else {
-        //     Category::create($data);
-        //     $statusmessage = 'Category created';
-        // }
         Category::create($data);
 
         return redirect()
             ->route('admin.categories.index')
-            ->with('status', $statusmessage);
+            ->with('status', 'Category created.');
     }
 
     public function edit(Category $category)

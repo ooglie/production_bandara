@@ -29,46 +29,84 @@ class ProductImageController extends Controller
 
     public function store(Request $request, Product $product)
     {
-        
+        $this->throwIfPhpUploadFailed('images');
         $this->throwIfPhpUploadFailed('image');
 
         $data = $request->validate([
-            'image'      => ['required', 'image', 'max:10240'], // 10 MB
-            'alt_text'   => ['nullable', 'string', 'max:255'],
-            'position'   => ['nullable', 'integer', 'min:0'],
-            'is_primary' => ['nullable', 'boolean'],
+            'images'      => ['required_without:image', 'array', 'min:1', 'max:25'],
+            'images.*'    => ['image', 'max:10240'], // 10 MB each
+            'image'       => ['required_without:images', 'nullable', 'image', 'max:10240'], // Backward-compatible single upload
+            'alt_text'    => ['nullable', 'string', 'max:255'],
+            'position'    => ['nullable', 'integer', 'min:0'],
+            'is_primary'  => ['nullable', 'boolean'],
         ]);
 
-        $disk = $this->mediaDisk();
-        $path = $request->file('image')->store('products', $disk);
+        $files = collect($request->file('images', []))
+            ->filter()
+            ->values();
 
-        $position = array_key_exists('position', $data) && $data['position'] !== null
-            ? (int) $data['position']
-            : ((int) $product->images()->max('position') + 1);
+        if ($files->isEmpty() && $request->hasFile('image')) {
+            $files = collect([$request->file('image')]);
+        }
+
+        if ($files->isEmpty()) {
+            throw ValidationException::withMessages([
+                'images' => 'Please choose at least one product image.',
+            ]);
+        }
+
+        $disk = $this->mediaDisk();
+        $storedPaths = [];
+        $createdImages = collect();
 
         try {
-            DB::transaction(function () use ($product, $data, $path, $position, $request) {
-                $image = new ProductImage([
-                    'file_path'  => $path,
-                    'alt_text'   => $data['alt_text'] ?? null,
-                    'position'   => $position,
-                    'is_primary' => $request->boolean('is_primary'),
-                ]);
+            DB::transaction(function () use ($request, $product, $data, $files, $disk, &$storedPaths, &$createdImages) {
+                $startPosition = array_key_exists('position', $data) && $data['position'] !== null
+                    ? (int) $data['position']
+                    : ((int) $product->images()->max('position') + 1);
 
-                $product->images()->save($image);
+                $hasPrimaryImage = $product->images()->where('is_primary', true)->exists()
+                    || filled($product->primary_image);
 
-                if ($image->is_primary) {
-                    $this->setPrimaryImage($product, $image);
+                foreach ($files as $index => $file) {
+                    $path = $file->store('products', $disk);
+                    $storedPaths[] = $path;
+
+                    $image = new ProductImage([
+                        'file_path'  => $path,
+                        'alt_text'   => $data['alt_text'] ?? null,
+                        'position'   => $startPosition + $index,
+                        'is_primary' => false,
+                    ]);
+
+                    $product->images()->save($image);
+                    $createdImages->push($image);
+                }
+
+                $primaryImage = null;
+
+                if ($request->boolean('is_primary')) {
+                    $primaryImage = $createdImages->first();
+                } elseif (! $hasPrimaryImage) {
+                    // Product cards read products.primary_image directly. Make the
+                    // first uploaded image primary when the product has no primary yet.
+                    $primaryImage = $createdImages->first();
+                }
+
+                if ($primaryImage) {
+                    $this->setPrimaryImage($product, $primaryImage);
                 }
             });
         } catch (\Throwable $e) {
-            Storage::disk($disk)->delete($path);
+            Storage::disk($disk)->delete($storedPaths);
             throw $e;
         }
 
+        $count = $createdImages->count();
+
         return redirect()
             ->route('admin.products.images.index', $product)
-            ->with('status', 'Image uploaded.');
+            ->with('status', $count === 1 ? 'Image uploaded.' : $count . ' images uploaded.');
     }
 
     public function edit(ProductImage $image)
@@ -152,6 +190,22 @@ class ProductImageController extends Controller
             ->with('status', 'Image updated.');
     }
 
+
+    public function makePrimary(ProductImage $image)
+    {
+        $product = $image->product;
+
+        abort_unless($product, 404);
+
+        DB::transaction(function () use ($product, $image) {
+            $this->setPrimaryImage($product, $image);
+        });
+
+        return redirect()
+            ->route('admin.products.images.index', $product)
+            ->with('status', 'Primary image updated.');
+    }
+
     public function destroy(ProductImage $image)
     {
         $product = $image->product;
@@ -212,15 +266,37 @@ class ProductImageController extends Controller
             return;
         }
 
-        $error = (int) ($_FILES[$field]['error'] ?? UPLOAD_ERR_OK);
+        $errors = $_FILES[$field]['error'] ?? UPLOAD_ERR_OK;
 
-        if (in_array($error, [UPLOAD_ERR_OK, UPLOAD_ERR_NO_FILE], true)) {
-            return;
+        foreach ($this->flattenUploadErrors($errors) as $error) {
+            $error = (int) $error;
+
+            if (in_array($error, [UPLOAD_ERR_OK, UPLOAD_ERR_NO_FILE], true)) {
+                continue;
+            }
+
+            throw ValidationException::withMessages([
+                $field => $this->phpUploadErrorMessage($error),
+            ]);
+        }
+    }
+
+    /**
+     * @return array<int, int|string>
+     */
+    protected function flattenUploadErrors(mixed $errors): array
+    {
+        if (! is_array($errors)) {
+            return [$errors];
         }
 
-        throw ValidationException::withMessages([
-            $field => $this->phpUploadErrorMessage($error),
-        ]);
+        $flat = [];
+
+        array_walk_recursive($errors, function ($error) use (&$flat) {
+            $flat[] = $error;
+        });
+
+        return $flat;
     }
 
     protected function phpUploadErrorMessage(int $error): string
