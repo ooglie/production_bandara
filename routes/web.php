@@ -434,10 +434,6 @@ Route::middleware(['auth', 'role:Admin|Manager|Accountant|CAAccountant|Stores'])
         Route::get('products/{product}/barcode-label', [ProductController::class, 'barcodeLabel'])
             ->name('products.barcodeLabel');
 
-        Route::post('categories/{category}/collage', [CategoryController::class, 'generateCollage'])
-            ->name('categories.collage.generate');
-        Route::delete('categories/{category}/collage', [CategoryController::class, 'removeCollage'])
-            ->name('categories.collage.destroy');
         Route::resource('categories', CategoryController::class);
         Route::resource('vendors', VendorController::class);
 

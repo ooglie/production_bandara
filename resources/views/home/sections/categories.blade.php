@@ -13,14 +13,9 @@
     @else
         <div class="grid grid-cols-4 sm:grid-cols-6 lg:grid-cols-8 gap-3">
             @foreach($topCategories as $cat)
-                @php($categoryImageUrl = $cat->display_image_url)
                 <a href="{{ $categoryUrl($cat) }}" class="group rounded-lg border border-gray-200 dark:border-gray-800 bg-white dark:bg-gray-900 p-3 hover:bg-gray-50 dark:hover:bg-gray-900/60 transition">
-                    <div class="aspect-square rounded-sm bg-gray-100 dark:bg-gray-800 flex items-center justify-center text-lg font-semibold text-gray-400 group-hover:text-gray-700 dark:group-hover:text-gray-200 overflow-hidden">
-                        @if($categoryImageUrl)
-                            <img src="{{ $categoryImageUrl }}" alt="{{ $cat->name }}" class="h-full w-full object-contain p-1">
-                        @else
-                            {{ mb_substr($cat->name, 0, 1) }}
-                        @endif
+                    <div class="aspect-square rounded-sm bg-gray-100 dark:bg-gray-800 flex items-center justify-center text-lg font-semibold text-gray-400 group-hover:text-gray-700 dark:group-hover:text-gray-200">
+                        {{ mb_substr($cat->name, 0, 1) }}
                     </div>
                     <div class="mt-2 text-[11px] font-medium text-gray-800 dark:text-gray-100 line-clamp-2">{{ $cat->name }}</div>
                     @if($section->getSetting('show_counts', true))

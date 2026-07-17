@@ -936,7 +936,10 @@ class BandaraCreditService
 
         $pointValue = max(0.01, (float) config('bandara_credit.redemption.point_value', 1));
         $minimumPoints = max(0, (int) config('bandara_credit.redemption.minimum_points', 500));
-        $maxOrderPercent = max(0, min(100, (float) config('bandara_credit.redemption.max_order_percent', 20)));
+        $maxOrderPercent = max(0, min(100, (float) config(
+            'bandara_credit.redemption.max_order_percentage',
+            config('bandara_credit.redemption.max_order_percent', 20)
+        )));
         $reservedPoints = $this->reservedRedemptionPointsForUser($userId);
         $wallet = $this->getOrCreateWallet($userId);
         $availablePoints = max(0, (int) $wallet->balance - $reservedPoints);
@@ -970,6 +973,9 @@ class BandaraCreditService
         } elseif ($maxRedeemablePoints <= 0) {
             $reason = 'order_cap_zero';
             $message = 'Bandara Credit cannot be applied to this order amount.';
+        } elseif ($minimumPoints > 0 && $maxRedeemablePoints < $minimumPoints) {
+            $reason = 'order_cap_below_minimum';
+            $message = 'This order allows up to '.number_format($maxRedeemablePoints).' Bandara Credit points, which is below the minimum redemption of '.number_format($minimumPoints).' points.';
         } elseif ($requestedPoints > 0) {
             if ($minimumPoints > 0 && $requestedPoints < $minimumPoints) {
                 $reason = 'requested_below_minimum';
@@ -989,7 +995,10 @@ class BandaraCreditService
         return [
             'enabled' => $enabled,
             'eligible_user' => $eligibleUser,
-            'can_redeem' => $enabled && $eligibleUser && $maxRedeemablePoints > 0 && ($minimumPoints <= 0 || $availablePoints >= $minimumPoints),
+            'can_redeem' => $enabled
+                && $eligibleUser
+                && $maxRedeemablePoints > 0
+                && ($minimumPoints <= 0 || ($availablePoints >= $minimumPoints && $maxRedeemablePoints >= $minimumPoints)),
             'reason' => $reason,
             'message' => $message,
             'wallet_balance' => (int) $wallet->balance,

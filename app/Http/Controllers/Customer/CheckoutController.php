@@ -769,7 +769,7 @@ class CheckoutController extends Controller
     }
 
 
-    public function applyBandaraCredit(Request $request, CartService $cartService)
+    public function applyBandaraCredit(Request $request)
     {
         $user = $request->user();
         if (! $user) {
@@ -783,6 +783,7 @@ class CheckoutController extends Controller
         $data = $request->validate([
             'bandara_credit_points' => ['nullable', 'integer', 'min:0'],
             'address_id' => ['nullable', 'integer'],
+            'payment_method' => ['nullable', 'in:razorpay,pay_later'],
         ]);
 
         $params = [];
@@ -791,6 +792,9 @@ class CheckoutController extends Controller
         }
         if ((int) ($data['bandara_credit_points'] ?? 0) > 0) {
             $params['bandara_credit_points'] = (int) $data['bandara_credit_points'];
+        }
+        if (! empty($data['payment_method'])) {
+            $params['payment_method'] = (string) $data['payment_method'];
         }
 
         return redirect()->route('checkout.index', $params);
@@ -802,9 +806,17 @@ class CheckoutController extends Controller
             return redirect()->route('checkout.index');
         }
 
+        $data = $request->validate([
+            'address_id' => ['nullable', 'integer'],
+            'payment_method' => ['nullable', 'in:razorpay,pay_later'],
+        ]);
+
         $params = [];
-        if ($request->filled('address_id')) {
-            $params['address_id'] = (int) $request->input('address_id');
+        if (! empty($data['address_id'])) {
+            $params['address_id'] = (int) $data['address_id'];
+        }
+        if (! empty($data['payment_method'])) {
+            $params['payment_method'] = (string) $data['payment_method'];
         }
 
         return redirect()->route('checkout.index', $params)

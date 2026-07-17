@@ -541,8 +541,8 @@
                             </div>
                         </div>
 
-                        @if($bandaraCreditEnabled && $bandaraCreditMaxPoints > 0)
-                            <div class="grid gap-3 sm:grid-cols-[1fr_auto]">
+                        @if($bandaraCreditEnabled && $bandaraCreditCanRedeem && $bandaraCreditMaxPoints > 0)
+                            <div class="space-y-3">
                                 <div>
                                     <label for="bandara_credit_points" class="block text-[11px] font-medium text-gray-700 dark:text-gray-200">
                                         Credits to redeem
@@ -555,6 +555,8 @@
                                         max="{{ $bandaraCreditMaxPoints }}"
                                         step="1"
                                         value="{{ $bandaraCreditRequested }}"
+                                        inputmode="numeric"
+                                        data-bandara-credit-input
                                         class="mt-1 w-full rounded-xl border border-gray-300 dark:border-gray-700 bg-white dark:bg-gray-950 px-3 py-2 text-xs"
                                     >
                                     <p class="mt-1 text-[11px] text-gray-500 dark:text-gray-400">
@@ -571,17 +573,61 @@
                                     @enderror
                                 </div>
 
-                                <button
-                                    type="button"
-                                    onclick="document.getElementById('bandara_credit_points').value='{{ $bandaraCreditMaxPoints }}'"
-                                    class="self-end inline-flex items-center justify-center rounded-xl border border-gray-300 dark:border-gray-700 px-3 py-2 text-[11px] font-medium text-gray-700 dark:text-gray-200 hover:bg-gray-50 dark:hover:bg-gray-800"
-                                >
-                                    Use maximum
-                                </button>
+                                <div class="flex flex-wrap items-center gap-2">
+                                    <button
+                                        type="submit"
+                                        formaction="{{ route('checkout.bandara-credit.apply') }}"
+                                        formmethod="POST"
+                                        formnovalidate
+                                        data-bandara-credit-apply
+                                        class="inline-flex items-center justify-center rounded-xl bg-gray-900 dark:bg-gray-100 px-3 py-2 text-[11px] font-medium text-white dark:text-gray-900 hover:bg-gray-800 dark:hover:bg-white"
+                                    >
+                                        Apply credit
+                                    </button>
+
+                                    <button
+                                        type="button"
+                                        data-bandara-credit-use-maximum
+                                        data-bandara-credit-maximum="{{ $bandaraCreditMaxPoints }}"
+                                        class="inline-flex items-center justify-center rounded-xl border border-gray-300 dark:border-gray-700 px-3 py-2 text-[11px] font-medium text-gray-700 dark:text-gray-200 hover:bg-gray-50 dark:hover:bg-gray-800"
+                                    >
+                                        Use maximum
+                                    </button>
+
+                                    @if($bandaraCreditAppliedPoints > 0 || $bandaraCreditRequested > 0)
+                                        <button
+                                            type="submit"
+                                            formaction="{{ route('checkout.bandara-credit.remove') }}"
+                                            formmethod="POST"
+                                            formnovalidate
+                                            name="_method"
+                                            value="DELETE"
+                                            data-bandara-credit-remove
+                                            class="inline-flex items-center justify-center rounded-xl border border-gray-300 dark:border-gray-700 px-3 py-2 text-[11px] font-medium text-gray-600 dark:text-gray-300 hover:bg-gray-50 dark:hover:bg-gray-800"
+                                        >
+                                            Remove credit
+                                        </button>
+                                    @endif
+                                </div>
+
+                                @if($bandaraCreditAppliedPoints > 0)
+                                    <div class="rounded-xl border border-emerald-200 dark:border-emerald-900 bg-emerald-50 dark:bg-emerald-950/25 px-3 py-2 text-[11px] text-emerald-800 dark:text-emerald-300">
+                                        {{ number_format($bandaraCreditAppliedPoints) }} credits applied
+                                        @if($bandaraCreditAppliedAmount > 0)
+                                            · ₹{{ number_format($bandaraCreditAppliedAmount, 2) }} will be reserved when you place the order.
+                                        @endif
+                                    </div>
+                                @endif
+
+                                @if($bandaraCreditMessage)
+                                    <div class="rounded-xl border border-amber-200 dark:border-amber-900 bg-amber-50 dark:bg-amber-950/25 px-3 py-2 text-[11px] text-amber-800 dark:text-amber-300">
+                                        {{ $bandaraCreditMessage }}
+                                    </div>
+                                @endif
                             </div>
                         @elseif($bandaraCreditEnabled)
                             <div class="rounded-xl border border-gray-200 dark:border-gray-800 bg-gray-50 dark:bg-gray-950/40 px-3 py-2 text-[11px] text-gray-600 dark:text-gray-300">
-                                You do not currently have enough eligible Bandara Credit for this order.
+                                {{ $bandaraCreditMessage ?: 'You do not currently have enough eligible Bandara Credit for this order.' }}
                             </div>
                         @else
                             <div class="rounded-xl border border-gray-200 dark:border-gray-800 bg-gray-50 dark:bg-gray-950/40 px-3 py-2 text-[11px] text-gray-600 dark:text-gray-300">
@@ -845,14 +891,21 @@
     const setRefreshing = function (isRefreshing) {
         form.toggleAttribute('aria-busy', isRefreshing);
 
-        const totals = document.querySelector('[data-checkout-totals]');
-        if (totals) {
-            totals.classList.toggle('opacity-60', isRefreshing);
-            totals.classList.toggle('pointer-events-none', isRefreshing);
-        }
+        ['[data-checkout-totals]', '[data-bandara-credit-section]'].forEach((selector) => {
+            const section = document.querySelector(selector);
+            if (section) {
+                section.classList.toggle('opacity-60', isRefreshing);
+                section.classList.toggle('pointer-events-none', isRefreshing);
+            }
+        });
     };
 
-    const refreshCheckoutForAddress = async function (addressId) {
+    const selectedAddressValue = function () {
+        const selectedAddress = form.querySelector('[data-checkout-address-radio]:checked');
+        return selectedAddress && selectedAddress.value ? selectedAddress.value : null;
+    };
+
+    const refreshCheckout = async function (addressId = selectedAddressValue()) {
         const url = buildCheckoutUrl(addressId);
         updateReturnUrl(url);
 
@@ -906,6 +959,57 @@
         }
     };
 
+    document.addEventListener('click', function (event) {
+        const target = event.target instanceof Element ? event.target : null;
+        if (!target) {
+            return;
+        }
+
+        const applyButton = target.closest('[data-bandara-credit-apply]');
+        if (applyButton && form.contains(applyButton)) {
+            event.preventDefault();
+            refreshCheckout();
+            return;
+        }
+
+        const maximumButton = target.closest('[data-bandara-credit-use-maximum]');
+        if (maximumButton && form.contains(maximumButton)) {
+            event.preventDefault();
+
+            const creditInput = form.querySelector('[data-bandara-credit-input]');
+            if (creditInput) {
+                creditInput.value = maximumButton.getAttribute('data-bandara-credit-maximum') || '0';
+            }
+
+            refreshCheckout();
+            return;
+        }
+
+        const removeButton = target.closest('[data-bandara-credit-remove]');
+        if (removeButton && form.contains(removeButton)) {
+            event.preventDefault();
+
+            const creditInput = form.querySelector('[data-bandara-credit-input]');
+            if (creditInput) {
+                creditInput.value = '0';
+            }
+
+            refreshCheckout();
+        }
+    });
+
+    document.addEventListener('keydown', function (event) {
+        const target = event.target instanceof Element ? event.target : null;
+        const creditInput = target ? target.closest('[data-bandara-credit-input]') : null;
+
+        if (!creditInput || !form.contains(creditInput) || event.key !== 'Enter') {
+            return;
+        }
+
+        event.preventDefault();
+        refreshCheckout();
+    });
+
     document.addEventListener('change', function (event) {
         const target = event.target instanceof Element ? event.target : null;
         const addressRadio = target ? target.closest('[data-checkout-address-radio]') : null;
@@ -914,7 +1018,7 @@
             return;
         }
 
-        refreshCheckoutForAddress(addressRadio.value);
+        refreshCheckout(addressRadio.value);
     });
 })();
 

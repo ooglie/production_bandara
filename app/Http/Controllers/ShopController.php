@@ -35,25 +35,64 @@ class ShopController extends Controller
         $search = trim((string) $request->input('q', ''));
 
         if ($search !== '') {
-            $productsQuery->where(function ($q) use ($search) {
+            $hasProductVariants = Schema::hasTable('product_variants');
+            $hasCategoryPivot = Schema::hasTable('categories') && Schema::hasTable('category_product');
+
+            $productsQuery->where(function ($q) use ($search, $hasProductVariants, $hasCategoryPivot) {
                 $like = '%' . $search . '%';
 
-                $q->where('name', 'like', $like);
+                $q->where('products.name', 'like', $like);
 
                 if (Schema::hasColumn('products', 'sku')) {
-                    $q->orWhere('sku', 'like', $like);
+                    $q->orWhere('products.sku', 'like', $like);
                 }
 
                 if (Schema::hasColumn('products', 'short_description')) {
-                    $q->orWhere('short_description', 'like', $like);
+                    $q->orWhere('products.short_description', 'like', $like);
                 }
 
                 if (Schema::hasColumn('products', 'description')) {
-                    $q->orWhere('description', 'like', $like);
+                    $q->orWhere('products.description', 'like', $like);
                 }
 
                 if (Schema::hasColumn('products', 'barcode')) {
-                    $q->orWhere('barcode', 'like', $like);
+                    $q->orWhere('products.barcode', 'like', $like);
+                }
+
+                if ($hasProductVariants) {
+                    $q->orWhereHas('variants', function ($variantQuery) use ($like) {
+                        $variantQuery->where(function ($variantSearch) use ($like) {
+                            if (Schema::hasColumn('product_variants', 'name')) {
+                                $variantSearch->where('product_variants.name', 'like', $like);
+                            }
+
+                            if (Schema::hasColumn('product_variants', 'sku')) {
+                                $method = Schema::hasColumn('product_variants', 'name') ? 'orWhere' : 'where';
+                                $variantSearch->{$method}('product_variants.sku', 'like', $like);
+                            }
+
+                            if (Schema::hasColumn('product_variants', 'barcode')) {
+                                $hasPrevious = Schema::hasColumn('product_variants', 'name')
+                                    || Schema::hasColumn('product_variants', 'sku');
+                                $method = $hasPrevious ? 'orWhere' : 'where';
+                                $variantSearch->{$method}('product_variants.barcode', 'like', $like);
+                            }
+                        });
+
+                        if (Schema::hasColumn('product_variants', 'is_active')) {
+                            $variantQuery->where('product_variants.is_active', true);
+                        }
+                    });
+                }
+
+                if ($hasCategoryPivot) {
+                    $q->orWhereHas('categories', function ($categoryQuery) use ($like) {
+                        $categoryQuery->where('categories.name', 'like', $like);
+
+                        if (Schema::hasColumn('categories', 'is_active')) {
+                            $categoryQuery->where('categories.is_active', true);
+                        }
+                    });
                 }
             });
         }

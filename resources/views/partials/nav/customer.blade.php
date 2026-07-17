@@ -92,7 +92,7 @@
             </div>
 
             {{-- Desktop nav --}}
-            <div class="hidden md:flex items-center gap-6 text-[11px]">
+            <div class="hidden md:flex shrink-0 items-center gap-5 text-[11px]">
                 <a href="{{ route('shop.index') }}"
                    class="text-gray-700 dark:text-gray-200 hover:text-gray-900 dark:hover:text-gray-50">
                     Shop
@@ -116,8 +116,13 @@
                 </a>
             </div>
 
+            {{-- Wide desktop search --}}
+            <div class="hidden xl:block min-w-0 flex-1 max-w-[300px] px-1">
+                <x-storefront.search-bar />
+            </div>
+
             {{-- Actions --}}
-            <div class="flex items-center gap-2 sm:gap-3">
+            <div class="flex shrink-0 items-center gap-2 sm:gap-3">
                 @if(config('features.wishlist', true) && $wishlistUrl)
                     <a href="{{ $wishlistUrl }}"
                        class="relative hidden md:inline-flex items-center justify-center h-8 w-8 rounded-sm border border-gray-200 dark:border-gray-700 hover:bg-gray-100 dark:hover:bg-gray-800"
@@ -375,6 +380,11 @@
                     </div>
                 </div>
             </div>
+        </div>
+
+        {{-- Tablet search row: keeps navigation and actions from becoming cramped. --}}
+        <div class="hidden md:flex xl:hidden justify-center pb-2">
+            <x-storefront.search-bar tablet />
         </div>
     </div>
 </nav>

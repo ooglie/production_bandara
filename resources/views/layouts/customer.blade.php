@@ -50,8 +50,30 @@
             @endif
         </div>
 
+        {{-- Mobile top search. The existing primary mobile navigation remains at the bottom. --}}
+        <header class="sticky top-0 z-40 border-b border-gray-200 bg-white/95 backdrop-blur dark:border-gray-800 dark:bg-gray-900/95 md:hidden">
+            <div class="mx-auto max-w-7xl px-3 pb-2 pt-2">
+                <div class="mb-2 flex h-9 items-center justify-between">
+                    <a href="{{ route('home') }}" class="inline-flex items-center gap-2" aria-label="Bandara home">
+                        <img
+                            src="{{ asset('storage/images/logo-bandara.png') }}"
+                            alt="Bandara"
+                            class="h-9 w-9 object-contain invert-0 dark:invert"
+                        >
+                        <span class="text-[12px] font-medium text-gray-700 dark:text-gray-200">Bandara</span>
+                    </a>
+
+                    <a href="{{ route('shop.index') }}" class="text-[11px] text-gray-500 hover:text-gray-900 dark:text-gray-400 dark:hover:text-gray-100">
+                        Shop all
+                    </a>
+                </div>
+
+                <x-storefront.search-bar mobile />
+            </div>
+        </header>
+
         {{-- Main content --}}
-        <main class="flex-1 pt-0 md:pt-14 pb-20 md:pb-0">
+        <main class="flex-1 pt-0 md:pt-24 xl:pt-14 pb-20 md:pb-0">
             @include('partials.frontend.messages')
 
             @hasSection('content')

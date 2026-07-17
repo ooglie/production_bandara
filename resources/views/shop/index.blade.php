@@ -95,8 +95,14 @@
     <div class="flex flex-col sm:flex-row sm:items-end sm:justify-between gap-3">
         <div>
             <h1 class="text-lg font-semibold text-gray-900 dark:text-gray-50">
-                Shop
+                {{ filled($q) ? 'Search results' : 'Shop' }}
             </h1>
+
+            @if(filled($q))
+                <p class="mt-1 text-[11px] text-gray-500 dark:text-gray-400">
+                    Results for <span class="font-medium text-gray-800 dark:text-gray-200">“{{ $q }}”</span>
+                </p>
+            @endif
             <div>
                 {{-- <div class="text-[11px] font-medium text-gray-900 dark:text-gray-50">
                     Product results
