@@ -7,11 +7,14 @@
                 {{-- Column 1: Brand / About --}}
                 <div class="space-y-2">
                     <div class="flex items-center gap-2">
-                        <span class="inline-block h-10 w-10 border-gray-300 dark:border-gray-700">
-                            <img src="{{ asset('storage/images/logo-bandara.png') }}" alt="Bandara Logo" class="h-full w-full invert-0 dark:invert">
-                        </span>
-                        <span class="font-semibold tracking-tight text-gray-900 dark:text-gray-50 text-sm">
-                            Bandara LLP
+                        <span class="hidden sm:flex items-center gap-2 min-w-0">
+                            <span class="inline-block h-12 w-12 border-gray-300 dark:border-gray-700">
+                                <img src="{{ asset('storage/images/logo-bandara.png') }}" alt="Bandara Logo" class="h-full w-full invert-0 dark:invert">
+                            </span>
+                            <span class="font-semibold tracking-tight text-gray-900 dark:text-gray-50 text-sm">
+                                Bandara LLP<br>
+                                bhāṇḍāra
+                            </span>
                         </span>
                     </div>
                     <p class="text-[11px] text-gray-500 dark:text-gray-400">
@@ -19,9 +22,10 @@
                     </p>
                     <br>
                     <span class="space-y-2 text-[11px] text-gray-600 dark:text-gray-300">
-                        <a href="#" class="hover:text-gray-900 dark:hover:text-gray-100">About Us</a> | 
-                        <a href="#" class="hover:text-gray-900 dark:hover:text-gray-100">Terms & Conditions</a> | 
-                        <a href="#" class="hover:text-gray-900 dark:hover:text-gray-100">Privacy Policy</a>
+                        <a href="{{ route('content.about') }}" class="hover:text-gray-900 dark:hover:text-gray-100">About Us</a> | 
+                        <a href="{{ route('content.terms') }}" class="hover:text-gray-900 dark:hover:text-gray-100">Terms &amp; Conditions</a> | 
+                        <a href="{{ route('content.privacy') }}" class="hover:text-gray-900 dark:hover:text-gray-100">Privacy Policy</a> | 
+                        <a href="{{ route('content.help') }}" class="hover:text-gray-900 dark:hover:text-gray-100">Help &amp; FAQs</a>
                     </span>
                     
                 </div>
@@ -85,7 +89,7 @@
 
             <div class="border-t border-gray-200 dark:border-gray-800 pt-3 flex flex-col sm:flex-row items-center justify-between gap-2 text-[11px] text-gray-500 dark:text-gray-400">
                 <span>
-                    &copy; {{ date('Y') }} Frozen - Bandara. All rights reserved.
+                    &copy; {{ date('Y') }} - {{ date('Y')+1 }} Bandara LLP (bhāṇḍāra). All rights reserved.
                 </span>
                 <span class="flex flex-wrap gap-3">
                     <span>Made with care by 
@@ -97,4 +101,4 @@
                 </span>
             </div>
         </div>
-    </footer>
+</footer>

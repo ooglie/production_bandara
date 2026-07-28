@@ -3,6 +3,7 @@
 @section('title', config('app.name') . ' - Home')
 
 @section('content')
+    @include('home.partials.phase-one-enhancements')
 @php
     use Illuminate\Support\Facades\Route;
 
@@ -88,9 +89,9 @@
                         @include('home.sections.chef-picks', ['section' => $section])
                         @break
 
-                    @case('trust_cards')
+                    {{-- @case('trust_cards')
                         @include('home.sections.trust', ['section' => $section])
-                        @break
+                        @break --}}
 
                     @case('support_cta')
                         @include('home.sections.support-cta', ['section' => $section])

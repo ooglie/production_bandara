@@ -103,5 +103,6 @@
     @stack('modals')
     @stack('scripts')
     @yield('scripts')
+    @include('partials.storefront-ui-refinement-v3')
 </body>
 </html>

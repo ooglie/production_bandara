@@ -1,0 +1,15 @@
+[Unit]
+Description=Bandara Laravel scheduler
+After=network.target mysql.service
+
+[Service]
+Type=oneshot
+User=bandara
+Group=www-data
+WorkingDirectory=/var/www/bandara/current
+ExecStart=/usr/bin/php8.5 artisan schedule:run
+Nice=5
+PrivateTmp=true
+NoNewPrivileges=true
+ProtectSystem=full
+ReadWritePaths=/var/www/bandara/current/storage /var/www/bandara/current/bootstrap/cache

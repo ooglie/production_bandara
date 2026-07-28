@@ -11,7 +11,11 @@ class DatabaseSeeder extends Seeder
         $this->call([
             RolesAndPermissionsSeeder::class,
             SettingsSeeder::class,
-            AdminUserSeeder::class,
         ]);
+
+        $this->command?->warn(
+            'AdminUserSeeder is intentionally not run automatically. '.
+            'Set ADMIN_EMAIL, ADMIN_PASSWORD and ADMIN_NAME, then run it explicitly.'
+        );
     }
 }

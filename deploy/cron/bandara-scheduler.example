@@ -1,0 +1,3 @@
+# Install as /etc/cron.d/bandara-scheduler and replace paths/user if needed.
+# Use this OR the systemd scheduler timer, never both.
+* * * * * bandara cd /var/www/bandara/current && /usr/bin/php8.5 artisan schedule:run >> /dev/null 2>&1

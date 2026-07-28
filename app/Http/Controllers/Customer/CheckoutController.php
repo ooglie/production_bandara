@@ -3,6 +3,7 @@
 namespace App\Http\Controllers\Customer;
 
 use App\Http\Controllers\Controller;
+use App\Support\SafeRedirect;
 use App\Models\CartItem;
 use App\Models\Coupon;
 use App\Models\CouponRedemption;
@@ -1046,37 +1047,7 @@ class CheckoutController extends Controller
 
     protected function sanitizeReturnUrl(Request $request, ?string $url): ?string
     {
-        $url = trim((string) $url);
-
-        if ($url === '') {
-            return null;
-        }
-
-        if (str_starts_with($url, '/')) {
-            return $url;
-        }
-
-        $parts = parse_url($url);
-        if (! is_array($parts) || empty($parts['host'])) {
-            return null;
-        }
-
-        $allowedHosts = array_filter([
-            parse_url($request->getSchemeAndHttpHost(), PHP_URL_HOST),
-            parse_url(config('app.url'), PHP_URL_HOST),
-            '127.0.0.1',
-            'localhost',
-        ]);
-
-        if (! in_array($parts['host'], $allowedHosts, true)) {
-            return null;
-        }
-
-        $path = $parts['path'] ?? '/';
-        $query = isset($parts['query']) ? '?' . $parts['query'] : '';
-        $fragment = isset($parts['fragment']) ? '#' . $parts['fragment'] : '';
-
-        return $path . $query . $fragment;
+        return SafeRedirect::local($request, $url);
     }
 
     protected function appendQueryParameter(string $url, string $key, string $value): string

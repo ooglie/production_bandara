@@ -1,69 +1,182 @@
 @php
-    $fallbackImages = (array)($section->getSetting('fallback_images', []) ?? []);
-    $heroImage = $resolveMediaUrl(array_values(array_filter(array_merge([$section->image_path, $section->mobile_image_path], $fallbackImages))));
-    $overlayEyebrow = $section->getSetting('overlay_eyebrow', 'From freezer to table');
-    $overlayTitle = $section->getSetting('overlay_title', 'Practical frozen products for everyday cooking, entertaining, and repeat ordering.');
+    /*
+     | The homepage is DB-driven. Keep the existing section record authoritative,
+     | while accepting the variable names used by older Bandara homepage builds.
+     */
+    $heroSource = $section ?? $homeSection ?? $hero ?? [];
+
+    if (is_array($heroSource) && array_key_exists('section', $heroSource)) {
+        $heroSource = $heroSource['section'];
+    }
+
+    $rawSettings = data_get($heroSource, 'settings', []);
+    $heroSettings = is_array($rawSettings)
+        ? $rawSettings
+        : (json_decode((string) $rawSettings, true) ?: []);
+
+    $heroEyebrow = data_get($heroSource, 'eyebrow')
+        ?: data_get($heroSettings, 'overlay_eyebrow')
+        ?: 'Curated by Bandara';
+
+    $heroTitle = data_get($heroSource, 'title')
+        ?: data_get($heroSettings, 'overlay_title')
+        ?: 'Food worth keeping, ready when you are.';
+
+    $heroCopy = data_get($heroSource, 'subtitle')
+        ?: data_get($heroSource, 'body')
+        ?: 'Premium frozen and chilled foods selected with care for home kitchens, retailers, hotels and professional tables.';
+
+    $shopUrl = \Illuminate\Support\Facades\Route::has('shop.index')
+        ? route('shop.index')
+        : url('/shop');
+
+    $primaryLabel = data_get($heroSource, 'cta_text') ?: 'Shop all products';
+    $primaryUrl = data_get($heroSource, 'cta_url') ?: $shopUrl;
+    $secondaryLabel = data_get($heroSource, 'secondary_cta_text') ?: 'Explore categories';
+    $secondaryUrl = data_get($heroSource, 'secondary_cta_url') ?: url('/#home-categories');
+
+    $resolveHeroImage = static function (?string $path): ?string {
+        if (blank($path)) {
+            return null;
+        }
+
+        $path = trim($path);
+
+        if (\Illuminate\Support\Str::startsWith($path, ['http://', 'https://', '//', 'data:'])) {
+            return $path;
+        }
+
+        $cleanPath = ltrim($path, '/');
+
+        if (is_file(public_path($cleanPath))) {
+            return asset($cleanPath);
+        }
+
+        if (\Illuminate\Support\Str::startsWith($cleanPath, 'storage/')) {
+            return asset($cleanPath);
+        }
+
+        try {
+            if (\Illuminate\Support\Facades\Storage::disk('public')->exists($cleanPath)) {
+                return \Illuminate\Support\Facades\Storage::disk('public')->url($cleanPath);
+            }
+        } catch (\Throwable) {
+            // A missing public disk should never prevent the homepage from rendering.
+        }
+
+        return null;
+    };
+
+    $fallbackImages = data_get($heroSettings, 'fallback_images', []);
+    $fallbackImages = is_array($fallbackImages) ? $fallbackImages : [];
+
+    $desktopCandidates = array_values(array_filter([
+        data_get($heroSource, 'image_url'),
+        data_get($heroSource, 'image_path'),
+        ...$fallbackImages,
+    ]));
+
+    $mobileCandidates = array_values(array_filter([
+        data_get($heroSource, 'mobile_image_url'),
+        data_get($heroSource, 'mobile_image_path'),
+        data_get($heroSource, 'image_url'),
+        data_get($heroSource, 'image_path'),
+        ...$fallbackImages,
+    ]));
+
+    $heroImage = null;
+    foreach ($desktopCandidates as $candidate) {
+        $resolved = $resolveHeroImage((string) $candidate);
+        if ($resolved) {
+            $heroImage = $resolved;
+            break;
+        }
+    }
+
+    $heroMobileImage = null;
+    foreach ($mobileCandidates as $candidate) {
+        $resolved = $resolveHeroImage((string) $candidate);
+        if ($resolved) {
+            $heroMobileImage = $resolved;
+            break;
+        }
+    }
+
+    $heroImageAlt = data_get($heroSettings, 'image_alt')
+        ?: data_get($heroSource, 'image_alt')
+        ?: 'A carefully selected product from the Bandara range';
+
+    $heroImageLabel = data_get($heroSettings, 'image_label') ?: 'Selected with care';
 @endphp
 
-<section class="grid gap-4 lg:grid-cols-[1.05fr,0.95fr] items-stretch">
-    <div class="rounded-lg border border-gray-200 dark:border-gray-800 bg-gradient-to-br from-white via-slate-50 to-sky-50 dark:from-gray-900 dark:via-gray-900 dark:to-slate-900 p-6 sm:p-8 flex flex-col justify-between min-h-[320px]">
-        <div class="space-y-5">
-            @if($section->eyebrow)
-                <span class="inline-flex items-center rounded-sm border border-gray-200 dark:border-gray-700 bg-white/90 dark:bg-gray-950/50 px-3 py-1 text-[11px] font-medium uppercase tracking-[0.14em] text-gray-600 dark:text-gray-300">
-                    {{ $section->eyebrow }}
-                </span>
-            @endif
+<section
+    class="bandara-phase1-hero relative overflow-hidden border-b border-stone-200 bg-stone-50 text-slate-800 dark:border-slate-800 dark:bg-slate-950 dark:text-slate-100"
+    aria-labelledby="bandara-home-hero-title"
+>
+    <div aria-hidden="true" class="pointer-events-none absolute inset-y-0 left-0 hidden w-1/2 bg-white/40 dark:bg-slate-900/20 lg:block"></div>
 
-            <div class="space-y-3">
-                <h1 class="text-3xl sm:text-4xl font-semibold tracking-tight text-gray-900 dark:text-gray-50 leading-tight">
-                    {{ $section->title }}
-                </h1>
+    <div class="relative mx-auto grid max-w-7xl items-center gap-9 px-4 py-10 sm:px-6 sm:py-12 lg:grid-cols-[0.92fr_1.08fr] lg:gap-14 lg:px-8 lg:py-14 xl:gap-16">
+        <div class="bandara-phase1-hero-copy max-w-2xl lg:py-6">
+            <p class="inline-flex items-center gap-2 text-[0.68rem] font-normal uppercase tracking-[0.23em] text-amber-700 dark:text-amber-400">
+                <span aria-hidden="true" class="h-1.5 w-1.5 rounded-full bg-current"></span>
+                {{ $heroEyebrow }}
+            </p>
 
-                @if($section->subtitle)
-                    <p class="max-w-xl text-sm sm:text-base text-gray-600 dark:text-gray-300 leading-relaxed">
-                        {{ $section->subtitle }}
-                    </p>
-                @endif
-            </div>
+            <h1 id="bandara-home-hero-title" class="mt-5 text-3xl font-light leading-[1.08] tracking-[-0.035em] text-slate-950 dark:text-white sm:text-4xl lg:text-[3.2rem] xl:text-[3.55rem]">
+                {{ $heroTitle }}
+            </h1>
 
-            <div class="flex flex-wrap gap-3 text-sm">
-                @if($section->cta_text && $section->cta_url)
-                    <a href="{{ url($section->cta_url) }}" class="inline-flex items-center justify-center rounded-sm bg-gray-900 px-4 py-2.5 font-medium text-white hover:bg-gray-800 dark:bg-gray-100 dark:text-gray-900 dark:hover:bg-white">
-                        {{ $section->cta_text }}
-                    </a>
-                @endif
+            <p class="mt-5 max-w-xl text-sm font-light leading-7 text-slate-600 dark:text-slate-300 sm:text-base sm:leading-8">
+                {{ $heroCopy }}
+            </p>
 
-                @if($section->secondary_cta_text && $section->secondary_cta_url)
-                    <a href="{{ $section->secondary_cta_url }}" class="inline-flex items-center justify-center rounded-sm border border-gray-300 dark:border-gray-700 px-4 py-2.5 font-medium text-gray-700 dark:text-gray-200 hover:bg-white dark:hover:bg-gray-800">
-                        {{ $section->secondary_cta_text }}
+            <div class="mt-7 flex flex-wrap items-center gap-3">
+                <a data-bandara-phase1-cta-colours-restored
+                    href="{{ $primaryUrl }}"
+                    class="bandara-phase1-hero-button bandara-phase1-hero-button-primary inline-flex min-h-10 items-center justify-center gap-2 rounded-lg px-5 py-2.5 text-sm font-normal shadow-sm transition focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-offset-2 bandara-phase1-cta-colours-restored bg-gray-900 text-white hover:bg-gray-800 dark:bg-gray-100 dark:text-gray-900 dark:hover:bg-white"
+                >
+                    {{ $primaryLabel }}
+                    <svg aria-hidden="true" class="h-4 w-4" viewBox="0 0 20 20" fill="none">
+                        <path d="M4 10h12M12 6l4 4-4 4" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/>
+                    </svg>
+                </a>
+
+                @if (filled($secondaryLabel) && filled($secondaryUrl))
+                    <a
+                        href="{{ $secondaryUrl }}"
+                        class="bandara-phase1-hero-button inline-flex min-h-10 items-center justify-center rounded-lg border border-stone-300 bg-white/70 px-5 py-2.5 text-sm font-normal text-slate-700 transition hover:border-slate-400 hover:bg-white focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-amber-600 focus-visible:ring-offset-2 dark:border-slate-700 dark:bg-slate-900/60 dark:text-slate-200 dark:hover:border-slate-600 dark:hover:bg-slate-900 dark:focus-visible:ring-amber-400 dark:focus-visible:ring-offset-slate-950"
+                    >
+                        {{ $secondaryLabel }}
                     </a>
                 @endif
             </div>
         </div>
 
-        @if($section->activeItems->count())
-            <div class="mt-6 grid gap-3 sm:grid-cols-3">
-                @foreach($section->activeItems as $item)
-                    <div class="rounded-sm border border-gray-200 dark:border-gray-800 bg-white/80 dark:bg-gray-950/40 px-4 py-3">
-                        <div class="text-[10px] uppercase tracking-wide text-gray-400">{{ $item->getSetting('label', $item->eyebrow ?: $item->title) }}</div>
-                        <div class="mt-1 text-sm font-medium text-gray-900 dark:text-gray-50">{{ $item->description ?: $item->title }}</div>
+        <div class="bandara-phase1-hero-visual relative">
+            <div class="relative overflow-hidden rounded-xl border border-stone-200 bg-stone-100 shadow-[0_18px_45px_-30px_rgba(15,23,42,0.45)] dark:border-slate-800 dark:bg-slate-900 dark:shadow-[0_18px_45px_-30px_rgba(0,0,0,0.8)]">
+                @if ($heroImage)
+                    <picture>
+                        @if ($heroMobileImage && $heroMobileImage !== $heroImage)
+                            <source media="(max-width: 767px)" srcset="{{ $heroMobileImage }}">
+                        @endif
+                        <img
+                            src="{{ $heroImage }}"
+                            alt="{{ $heroImageAlt }}"
+                            class="bandara-phase1-hero-image aspect-[16/10] w-full object-cover sm:aspect-[16/9] lg:aspect-[4/3]"
+                            loading="eager"
+                            fetchpriority="high"
+                            decoding="async"
+                        >
+                    </picture>
+                @else
+                    <div class="flex aspect-[16/10] items-center justify-center bg-gradient-to-br from-stone-100 via-white to-stone-200 px-8 text-center dark:from-slate-900 dark:via-slate-950 dark:to-slate-900 sm:aspect-[16/9] lg:aspect-[4/3]">
+                        <p class="max-w-xs text-sm font-light leading-7 text-slate-500 dark:text-slate-400">Bandara · Ancient name. Uncompromising standard.</p>
                     </div>
-                @endforeach
-            </div>
-        @endif
-    </div>
+                @endif
 
-    <div class="relative overflow-hidden rounded-lg border border-gray-200 dark:border-gray-800 bg-white dark:bg-gray-900 max-h-[340px]">
-        @if($heroImage)
-            <img src="{{ $heroImage }}" alt="{{ $section->title ?: 'Bandara home hero' }}" class="w-full object-cover min-h-[340px] max-h-[340px]">
-        @else
-            <div class="absolute inset-0 bg-gradient-to-br from-sky-100 via-cyan-50 to-white dark:from-sky-950/30 dark:via-cyan-950/20 dark:to-gray-900"></div>
-        @endif
-
-        <div class="absolute inset-x-0 bottom-0 p-4">
-            <div class="rounded-sm border border-white/70 bg-white/90 backdrop-blur px-4 py-3 shadow-sm dark:border-gray-700/60 dark:bg-gray-950/70">
-                <div class="text-[10px] uppercase tracking-wide text-gray-400">{{ $overlayEyebrow }}</div>
-                <div class="mt-1 text-sm font-semibold text-gray-900 dark:text-gray-50">{{ $overlayTitle }}</div>
+                <div class="absolute bottom-3 left-3 rounded-full border border-white/30 bg-slate-950/70 px-3 py-1.5 text-[0.65rem] font-normal uppercase tracking-[0.16em] text-white backdrop-blur-sm sm:bottom-4 sm:left-4">
+                    {{ $heroImageLabel }}
+                </div>
             </div>
         </div>
     </div>

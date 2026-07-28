@@ -85,7 +85,16 @@ return new class extends Migration
                 ->join('product_sell_units as psu', 'psu.id', '=', 'pv.product_sell_unit_id')
                 ->whereNull('pv.product_weight')
                 ->whereNotNull('psu.weight_per_unit_kg')
-                ->update(['pv.product_weight' => DB::raw('psu.weight_per_unit_kg')]);
+                ->select(['pv.id', 'psu.weight_per_unit_kg'])
+                ->orderBy('pv.id')
+                ->chunk(250, function ($variants): void {
+                    foreach ($variants as $variant) {
+                        DB::table('product_variants')
+                            ->where('id', $variant->id)
+                            ->whereNull('product_weight')
+                            ->update(['product_weight' => $variant->weight_per_unit_kg]);
+                    }
+                });
         }
 
         if (Schema::hasTable('products') && Schema::hasColumn('products', 'product_weight')) {
@@ -93,7 +102,16 @@ return new class extends Migration
                 ->join('products as p', 'p.id', '=', 'pv.product_id')
                 ->whereNull('pv.product_weight')
                 ->whereNotNull('p.product_weight')
-                ->update(['pv.product_weight' => DB::raw('p.product_weight')]);
+                ->select(['pv.id', 'p.product_weight'])
+                ->orderBy('pv.id')
+                ->chunk(250, function ($variants): void {
+                    foreach ($variants as $variant) {
+                        DB::table('product_variants')
+                            ->where('id', $variant->id)
+                            ->whereNull('product_weight')
+                            ->update(['product_weight' => $variant->product_weight]);
+                    }
+                });
         }
 
         DB::table('product_variants')

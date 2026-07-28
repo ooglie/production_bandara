@@ -4,6 +4,7 @@ namespace App\Http\Controllers\Customer;
 
 use App\Http\Controllers\Controller;
 use Illuminate\Http\Request;
+use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Hash;
 use Illuminate\Support\Facades\Route;
 use Illuminate\Support\Facades\Storage;
@@ -42,6 +43,11 @@ class ProfileController extends Controller
             'avatar' => 'profile photo',
         ]);
 
+        $emailChanged = strcasecmp((string) $data['email'], (string) $user->email) !== 0;
+        if ($emailChanged) {
+            $data['email_verified_at'] = null;
+        }
+
         $disk = $this->mediaDisk();
         $newAvatarPath = null;
         $oldAvatarPath = $this->normalizeStoredPath($user->avatar_path ?? null);
@@ -67,6 +73,12 @@ class ProfileController extends Controller
             Storage::disk($disk)->delete($oldAvatarPath);
         }
 
+        if ($emailChanged) {
+            $user->sendEmailVerificationNotification();
+
+            return back()->with('status', 'Profile updated. Please verify your new email address.');
+        }
+
         return back()->with('status', 'Profile updated successfully.');
     }
 
@@ -85,9 +97,19 @@ class ProfileController extends Controller
                 ->with('password_section', true);
         }
 
-        $user->update([
+        $user->forceFill([
             'password' => Hash::make($data['password']),
-        ]);
+            'remember_token' => Str::random(60),
+        ])->save();
+
+        if (config('session.driver') === 'database') {
+            DB::table(config('session.table', 'sessions'))
+                ->where('user_id', $user->id)
+                ->where('id', '!=', $request->session()->getId())
+                ->delete();
+        }
+
+        $request->session()->regenerate();
 
         return back()->with([
             'status' => 'Password updated successfully.',

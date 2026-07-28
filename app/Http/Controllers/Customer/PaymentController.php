@@ -315,9 +315,9 @@ class PaymentController extends Controller
     public function handleRazorpayCallback(Request $request)
     {
         $data = $request->validate([
-            'razorpay_order_id'   => ['required', 'string'],
-            'razorpay_payment_id' => ['required', 'string'],
-            'razorpay_signature'  => ['required', 'string'],
+            'razorpay_order_id'   => ['required', 'string', 'max:255'],
+            'razorpay_payment_id' => ['required', 'string', 'max:255'],
+            'razorpay_signature'  => ['required', 'string', 'max:512'],
         ]);
 
         $order = Order::where('razorpay_order_id', $data['razorpay_order_id'])->first();
@@ -329,7 +329,7 @@ class PaymentController extends Controller
             ], 404);
         }
 
-        if (! Auth::check() || Auth::id() !== $order->user_id) {
+        if (! Auth::check() || (int) Auth::id() !== (int) $order->user_id) {
             return response()->json([
                 'status'  => 'error',
                 'message' => 'Unauthorized.',
@@ -344,17 +344,12 @@ class PaymentController extends Controller
             ], 500);
         }
 
-        $payment = Payment::where('razorpay_order_id', $data['razorpay_order_id'])->first();
-
-        if (! $payment) {
-            $payment = Payment::where('order_id', $order->id)
-                ->latest()
-                ->first();
-        }
+        $payment = Payment::where('razorpay_order_id', $data['razorpay_order_id'])->first()
+            ?? Payment::where('order_id', $order->id)->latest()->first();
 
         $generatedSignature = hash_hmac(
             'sha256',
-            $data['razorpay_order_id'] . '|' . $data['razorpay_payment_id'],
+            $data['razorpay_order_id'].'|'.$data['razorpay_payment_id'],
             $secret
         );
 
@@ -404,15 +399,156 @@ class PaymentController extends Controller
             ], 409);
         }
 
-        // Signature OK → mark order as paid (if not already)
-        if ($order->payment_status !== 'paid') {
-            $order->payment_status      = 'paid';
-            $order->status              = 'processing';
-            $order->razorpay_payment_id = $data['razorpay_payment_id'];
-            $order->razorpay_signature  = $data['razorpay_signature'];
-            $order->save();
+        try {
+            [$order, $payment, $invoice] = DB::transaction(function () use ($order, $data): array {
+                $lockedOrder = Order::query()
+                    ->whereKey($order->id)
+                    ->lockForUpdate()
+                    ->firstOrFail();
+
+                if ((int) $lockedOrder->user_id !== (int) Auth::id()) {
+                    abort(403);
+                }
+
+                $lockedPayment = Payment::query()
+                    ->where('razorpay_order_id', $data['razorpay_order_id'])
+                    ->lockForUpdate()
+                    ->first();
+
+                if (! $lockedPayment) {
+                    $lockedPayment = Payment::query()
+                        ->where('order_id', $lockedOrder->id)
+                        ->latest('id')
+                        ->lockForUpdate()
+                        ->first();
+                }
+
+                if (
+                    strtolower((string) $lockedOrder->payment_status) === 'paid'
+                    && $lockedOrder->razorpay_payment_id
+                    && ! hash_equals((string) $lockedOrder->razorpay_payment_id, $data['razorpay_payment_id'])
+                ) {
+                    throw new \RuntimeException('This order is already linked to a different captured payment.');
+                }
+
+                if (
+                    $lockedPayment
+                    && strtolower((string) $lockedPayment->status) === 'captured'
+                    && $lockedPayment->transaction_id
+                    && ! hash_equals((string) $lockedPayment->transaction_id, $data['razorpay_payment_id'])
+                ) {
+                    throw new \RuntimeException('This payment attempt is already linked to a different transaction.');
+                }
+
+                if (strtolower((string) $lockedOrder->payment_status) !== 'paid') {
+                    $lockedStockHold = app(StockReservationService::class)
+                        ->assertOrderStillReservedForPayment($lockedOrder);
+
+                    if (! ($lockedStockHold['ok'] ?? false)) {
+                        throw new \DomainException(
+                            (string) ($lockedStockHold['message'] ?? 'The stock reservation is no longer valid.')
+                        );
+                    }
+                }
+
+                $lockedOrder->forceFill([
+                    'payment_status' => 'paid',
+                    'status' => 'processing',
+                    'razorpay_payment_id' => $data['razorpay_payment_id'],
+                    'razorpay_signature' => $data['razorpay_signature'],
+                ])->save();
+
+                if (! $lockedPayment) {
+                    $lockedPayment = Payment::create([
+                        'order_id' => $lockedOrder->id,
+                        'user_id' => $lockedOrder->user_id,
+                        'amount' => $lockedOrder->grand_total,
+                        'currency' => 'INR',
+                        'method' => 'razorpay',
+                        'status' => 'created',
+                        'razorpay_order_id' => $data['razorpay_order_id'],
+                        'payment_data' => ['context' => 'order_payment'],
+                    ]);
+                }
+
+                $payload = $lockedPayment->payment_data ?? [];
+                $payload['callback'] = $data;
+
+                $lockedPayment->forceFill([
+                    'status' => 'captured',
+                    'transaction_id' => $data['razorpay_payment_id'],
+                    'reference' => $data['razorpay_payment_id'],
+                    'received_date' => now()->toDateString(),
+                    'paid_at' => now(),
+                    'payment_data' => $payload,
+                ])->save();
+
+                $invoice = Invoice::query()
+                    ->where('order_id', $lockedOrder->id)
+                    ->lockForUpdate()
+                    ->first();
+
+                if ($invoice) {
+                    $amountToApply = min(
+                        (float) ($lockedPayment->amount ?? $lockedOrder->grand_total),
+                        (float) $invoice->grand_total
+                    );
+
+                    $lockedPayment->invoices()->syncWithoutDetaching([
+                        $invoice->id => ['amount_applied' => $amountToApply],
+                    ]);
+
+                    if ($invoice->status !== 'paid') {
+                        $invoice->status = 'paid';
+                        $invoice->save();
+                    }
+                }
+
+                return [$lockedOrder, $lockedPayment, $invoice];
+            }, 3);
+        } catch (\DomainException $e) {
+            Log::warning('Verified Razorpay callback could not be finalized because stock was no longer reserved', [
+                'order_id' => $order->id,
+                'razorpay_order_id' => $data['razorpay_order_id'],
+                'razorpay_payment_id' => $data['razorpay_payment_id'],
+                'reason' => $e->getMessage(),
+            ]);
+
+            return response()->json([
+                'status' => 'error',
+                'message' => $e->getMessage().' If payment was debited, please contact support.',
+            ], 409);
+        } catch (\RuntimeException $e) {
+            Log::warning('Rejected conflicting Razorpay callback', [
+                'order_id' => $order->id,
+                'razorpay_order_id' => $data['razorpay_order_id'],
+                'razorpay_payment_id' => $data['razorpay_payment_id'],
+                'reason' => $e->getMessage(),
+            ]);
+
+            return response()->json([
+                'status' => 'error',
+                'message' => 'This payment callback conflicts with an already processed payment.',
+            ], 409);
+        } catch (\Throwable $e) {
+            Log::error('Unable to finalize verified Razorpay payment', [
+                'order_id' => $order->id,
+                'razorpay_order_id' => $data['razorpay_order_id'],
+                'razorpay_payment_id' => $data['razorpay_payment_id'],
+                'error' => $e->getMessage(),
+            ]);
+
+            // Razorpay may retry the callback. Do not mark the payment failed or
+            // release stock after a verified capture when only local finalization failed.
+            return response()->json([
+                'status' => 'error',
+                'message' => 'Payment was verified but finalization is pending. Please refresh shortly or contact support.',
+            ], 503);
         }
 
+        // Post-commit operations are expected to be idempotent. Running them on
+        // duplicate callbacks also repairs a previous request that committed the
+        // payment but failed before inventory, rewards, PDF, or email completed.
         try {
             app(BandaraCreditService::class)->postReservedRedemptionForOrder($order->fresh());
         } catch (\Throwable $e) {
@@ -422,42 +558,6 @@ class PaymentController extends Controller
             ]);
         }
 
-        // Update payment record
-        if ($payment) {
-            $payload = $payment->payment_data ?? [];
-            $payload['callback'] = $data;
-
-            $payment->status         = 'captured';
-            $payment->transaction_id = $data['razorpay_payment_id'];
-            $payment->reference      = $data['razorpay_payment_id'];
-            $payment->received_date  = now()->toDateString();
-            $payment->paid_at        = now();
-            $payment->payment_data   = $payload;
-            $payment->save();
-
-            // Attach payment to invoice via pivot (invoice_payments)
-            $invoice = $order->invoice()->first();
-            if ($invoice) {
-                $amountToApply = min(
-                    (float) ($payment->amount ?? $order->grand_total),
-                    (float) $invoice->grand_total
-                );
-
-                $payment->invoices()->syncWithoutDetaching([
-                    $invoice->id => ['amount_applied' => $amountToApply],
-                ]);
-            }
-        }
-
-        // Mark invoice as paid + send "paid" emails
-        $invoice = $order->invoice()->first();
-        if ($invoice && $invoice->status !== 'paid') {
-            $invoice->status = 'paid';
-            $invoice->save();
-        }
-
-        // NEW: commit inventory after payment is confirmed.
-        // This is intentionally wrapped in try/catch so your payment flow does not break.
         try {
             app(OrderInventoryService::class)->commitPaidOrder($order->fresh());
         } catch (\Throwable $e) {
@@ -467,18 +567,15 @@ class PaymentController extends Controller
                 'error' => $e->getMessage(),
             ]);
 
-            if ($payment) {
-                $payload = $payment->payment_data ?? [];
-                $payload['inventory_commit_error'] = [
-                    'message' => $e->getMessage(),
-                    'at' => now()->toDateTimeString(),
-                ];
-                $payment->payment_data = $payload;
-                $payment->save();
-            }
+            $payload = $payment->payment_data ?? [];
+            $payload['inventory_commit_error'] = [
+                'message' => $e->getMessage(),
+                'at' => now()->toDateTimeString(),
+            ];
+            $payment->payment_data = $payload;
+            $payment->save();
         }
 
-        // Ensure PDF exists
         if ($invoice) {
             app(InvoicePdfService::class)->generateAndStore($invoice);
 
@@ -512,9 +609,9 @@ class PaymentController extends Controller
     public function handleInvoiceRazorpayCallback(Request $request)
     {
         $data = $request->validate([
-            'razorpay_order_id'   => ['required', 'string'],
-            'razorpay_payment_id' => ['required', 'string'],
-            'razorpay_signature'  => ['required', 'string'],
+            'razorpay_order_id'   => ['required', 'string', 'max:255'],
+            'razorpay_payment_id' => ['required', 'string', 'max:255'],
+            'razorpay_signature'  => ['required', 'string', 'max:512'],
         ]);
 
         $payment = Payment::where('razorpay_order_id', $data['razorpay_order_id'])->first();
@@ -524,14 +621,6 @@ class PaymentController extends Controller
                 'status'  => 'error',
                 'message' => 'Payment not found.',
             ], 404);
-        }
-
-        if ($payment->status === 'captured') {
-            $invoiceId = (int) data_get($payment->payment_data, 'invoice_id');
-            return response()->json([
-                'status' => 'ok',
-                'redirect_url' => $invoiceId ? route('invoices.show', $invoiceId) : route('invoices.index'),
-            ]);
         }
 
         $invoiceId = (int) data_get($payment->payment_data, 'invoice_id');
@@ -544,7 +633,11 @@ class PaymentController extends Controller
             ], 404);
         }
 
-        if (! Auth::check() || (int) Auth::id() !== (int) $invoice->order->user_id || (int) $payment->user_id !== (int) Auth::id()) {
+        if (
+            ! Auth::check()
+            || (int) Auth::id() !== (int) $invoice->order->user_id
+            || (int) $payment->user_id !== (int) Auth::id()
+        ) {
             return response()->json([
                 'status'  => 'error',
                 'message' => 'Unauthorized.',
@@ -561,17 +654,33 @@ class PaymentController extends Controller
 
         $generatedSignature = hash_hmac(
             'sha256',
-            $data['razorpay_order_id'] . '|' . $data['razorpay_payment_id'],
+            $data['razorpay_order_id'].'|'.$data['razorpay_payment_id'],
             $secret
         );
 
         if (! hash_equals($generatedSignature, $data['razorpay_signature'])) {
-            $payload = $payment->payment_data ?? [];
-            $payload['callback'] = $data;
+            DB::transaction(function () use ($payment, $data): void {
+                $lockedPayment = Payment::query()
+                    ->whereKey($payment->id)
+                    ->lockForUpdate()
+                    ->first();
 
-            $payment->status = 'failed';
-            $payment->payment_data = $payload;
-            $payment->save();
+                if (! $lockedPayment || strtolower((string) $lockedPayment->status) === 'captured') {
+                    return;
+                }
+
+                $payload = $lockedPayment->payment_data ?? [];
+                $payload['invalid_callback'] = [
+                    'razorpay_order_id' => $data['razorpay_order_id'],
+                    'razorpay_payment_id' => $data['razorpay_payment_id'],
+                    'received_at' => now()->toDateTimeString(),
+                ];
+
+                $lockedPayment->forceFill([
+                    'status' => 'failed',
+                    'payment_data' => $payload,
+                ])->save();
+            }, 3);
 
             return response()->json([
                 'status'  => 'error',
@@ -579,52 +688,108 @@ class PaymentController extends Controller
             ], 422);
         }
 
-        DB::transaction(function () use ($payment, $invoice, $data) {
-            /** @var \App\Models\Invoice $lockedInvoice */
-            $lockedInvoice = Invoice::with(['order', 'payments'])
-                ->whereKey($invoice->id)
-                ->lockForUpdate()
-                ->firstOrFail();
+        try {
+            [$invoiceId, $orderId] = DB::transaction(function () use ($payment, $data): array {
+                $lockedPayment = Payment::query()
+                    ->whereKey($payment->id)
+                    ->lockForUpdate()
+                    ->firstOrFail();
 
-            $balance = round((float) $lockedInvoice->balance_amount, 2);
-            $amountToApply = min(round((float) $payment->amount, 2), $balance);
+                $lockedInvoiceId = (int) data_get($lockedPayment->payment_data, 'invoice_id');
+                $lockedInvoice = Invoice::query()
+                    ->whereKey($lockedInvoiceId)
+                    ->lockForUpdate()
+                    ->firstOrFail();
 
-            $payload = $payment->payment_data ?? [];
-            $payload['callback'] = $data;
-            $payload['amount_applied'] = $amountToApply;
-            $payload['balance_before_apply'] = $balance;
+                $lockedOrder = Order::query()
+                    ->whereKey($lockedInvoice->order_id)
+                    ->lockForUpdate()
+                    ->firstOrFail();
 
-            $payment->status = 'captured';
-            $payment->transaction_id = $data['razorpay_payment_id'];
-            $payment->reference = $data['razorpay_payment_id'];
-            $payment->received_date = now()->toDateString();
-            $payment->paid_at = now();
-            $payment->payment_data = $payload;
-            $payment->save();
-
-            if ($amountToApply > 0) {
-                $payment->invoices()->syncWithoutDetaching([
-                    $lockedInvoice->id => ['amount_applied' => $amountToApply],
-                ]);
-            }
-
-            $lockedInvoice->refresh()->load(['order', 'payments']);
-            $lockedInvoice->syncStatusFromPayments();
-
-            if ($lockedInvoice->order) {
-                $lockedInvoice->order->payment_status = $lockedInvoice->status === 'paid' ? 'paid' : 'pending';
-
-                if ($lockedInvoice->status === 'paid') {
-                    $lockedInvoice->order->razorpay_payment_id = $data['razorpay_payment_id'];
-                    $lockedInvoice->order->razorpay_signature = $data['razorpay_signature'];
+                if (
+                    (int) $lockedOrder->user_id !== (int) Auth::id()
+                    || (int) $lockedPayment->user_id !== (int) Auth::id()
+                ) {
+                    abort(403);
                 }
 
-                $lockedInvoice->order->save();
-            }
-        });
+                if (strtolower((string) $lockedPayment->status) === 'captured') {
+                    if (
+                        $lockedPayment->transaction_id
+                        && ! hash_equals((string) $lockedPayment->transaction_id, $data['razorpay_payment_id'])
+                    ) {
+                        throw new \RuntimeException('This invoice payment is already linked to another transaction.');
+                    }
 
-        $invoice = $invoice->fresh(['order.user', 'payments']);
-        $order = $invoice->order;
+                    return [$lockedInvoice->id, $lockedOrder->id];
+                }
+
+                $balance = round((float) $lockedInvoice->balance_amount, 2);
+                $amountToApply = min(round((float) $lockedPayment->amount, 2), $balance);
+
+                $payload = $lockedPayment->payment_data ?? [];
+                $payload['callback'] = $data;
+                $payload['amount_applied'] = $amountToApply;
+                $payload['balance_before_apply'] = $balance;
+
+                $lockedPayment->forceFill([
+                    'status' => 'captured',
+                    'transaction_id' => $data['razorpay_payment_id'],
+                    'reference' => $data['razorpay_payment_id'],
+                    'received_date' => now()->toDateString(),
+                    'paid_at' => now(),
+                    'payment_data' => $payload,
+                ])->save();
+
+                if ($amountToApply > 0) {
+                    $lockedPayment->invoices()->syncWithoutDetaching([
+                        $lockedInvoice->id => ['amount_applied' => $amountToApply],
+                    ]);
+                }
+
+                $lockedInvoice->refresh();
+                $lockedInvoice->syncStatusFromPayments();
+                $lockedInvoice->refresh();
+
+                $lockedOrder->payment_status = $lockedInvoice->status === 'paid' ? 'paid' : 'pending';
+
+                if ($lockedInvoice->status === 'paid') {
+                    $lockedOrder->razorpay_payment_id = $data['razorpay_payment_id'];
+                    $lockedOrder->razorpay_signature = $data['razorpay_signature'];
+                }
+
+                $lockedOrder->save();
+
+                return [$lockedInvoice->id, $lockedOrder->id];
+            }, 3);
+        } catch (\RuntimeException $e) {
+            Log::warning('Rejected conflicting invoice Razorpay callback', [
+                'payment_id' => $payment->id,
+                'razorpay_order_id' => $data['razorpay_order_id'],
+                'razorpay_payment_id' => $data['razorpay_payment_id'],
+                'reason' => $e->getMessage(),
+            ]);
+
+            return response()->json([
+                'status' => 'error',
+                'message' => 'This payment callback conflicts with an already processed payment.',
+            ], 409);
+        } catch (\Throwable $e) {
+            Log::error('Unable to finalize verified invoice Razorpay payment', [
+                'payment_id' => $payment->id,
+                'razorpay_order_id' => $data['razorpay_order_id'],
+                'razorpay_payment_id' => $data['razorpay_payment_id'],
+                'error' => $e->getMessage(),
+            ]);
+
+            return response()->json([
+                'status' => 'error',
+                'message' => 'Payment was verified but finalization is pending. Please refresh shortly or contact support.',
+            ], 503);
+        }
+
+        $invoice = Invoice::with(['order.user', 'payments'])->findOrFail($invoiceId);
+        $order = $invoice->order ?: Order::find($orderId);
 
         if ($invoice->status === 'paid' && $order && ($order->payment_method ?? 'razorpay') !== 'pay_later') {
             try {
@@ -669,46 +834,90 @@ class PaymentController extends Controller
         ]);
     }
 
-    protected function markOnlinePaymentFailed(Order $order, ?Payment $payment, string $orderStatus, string $paymentStatus, string $reason, array $payloadUpdates = []): void
-    {
-        if (strtolower((string) ($order->payment_status ?? '')) !== 'paid') {
-            $order->status = $orderStatus;
-            $order->payment_status = $paymentStatus;
-            $order->save();
+    protected function markOnlinePaymentFailed(
+        Order $order,
+        ?Payment $payment,
+        string $orderStatus,
+        string $paymentStatus,
+        string $reason,
+        array $payloadUpdates = []
+    ): void {
+        DB::transaction(function () use (
+            $order,
+            $payment,
+            $orderStatus,
+            $paymentStatus,
+            $reason,
+            $payloadUpdates
+        ): void {
+            $lockedOrder = Order::query()
+                ->whereKey($order->id)
+                ->lockForUpdate()
+                ->first();
+
+            if (! $lockedOrder) {
+                return;
+            }
+
+            $lockedPayment = $payment
+                ? Payment::query()->whereKey($payment->id)->lockForUpdate()->first()
+                : null;
+
+            $orderAlreadyPaid = strtolower((string) $lockedOrder->payment_status) === 'paid';
+            $paymentAlreadyCaptured = $lockedPayment
+                && strtolower((string) $lockedPayment->status) === 'captured';
+
+            if ($orderAlreadyPaid || $paymentAlreadyCaptured) {
+                Log::warning('Ignored stale online payment failure after capture', [
+                    'order_id' => $lockedOrder->id,
+                    'payment_id' => $lockedPayment?->id,
+                    'reason' => $reason,
+                ]);
+
+                return;
+            }
+
+            $lockedOrder->forceFill([
+                'status' => $orderStatus,
+                'payment_status' => $paymentStatus,
+            ])->save();
+
+            if ($lockedPayment) {
+                $payload = $lockedPayment->payment_data ?? [];
+                $payload['failure_reason'] = $reason;
+                $payload['failed_at'] = now()->toDateTimeString();
+
+                foreach ($payloadUpdates as $key => $value) {
+                    $payload[$key] = $value;
+                }
+
+                $lockedPayment->forceFill([
+                    'status' => 'failed',
+                    'payment_data' => $payload,
+                ])->save();
+            }
 
             try {
-                app(BandaraCreditService::class)->releaseReservedRedemptionForOrder($order->fresh(), $reason);
+                app(BandaraCreditService::class)
+                    ->releaseReservedRedemptionForOrder($lockedOrder, $reason);
             } catch (\Throwable $e) {
                 Log::error('Failed to release Bandara Credit reservation after online payment failure', [
-                    'order_id' => $order->id,
+                    'order_id' => $lockedOrder->id,
                     'reason' => $reason,
                     'error' => $e->getMessage(),
                 ]);
             }
 
             try {
-                app(StockReservationService::class)->releaseForOrder($order->fresh(), $reason);
+                app(StockReservationService::class)->releaseForOrder($lockedOrder, $reason);
             } catch (\Throwable $e) {
                 Log::error('Failed to release stock reservation after online payment failure', [
-                    'order_id' => $order->id,
+                    'order_id' => $lockedOrder->id,
                     'reason' => $reason,
                     'error' => $e->getMessage(),
                 ]);
             }
-        }
-
-        if ($payment) {
-            $payload = $payment->payment_data ?? [];
-            $payload['failure_reason'] = $reason;
-            $payload['failed_at'] = now()->toDateTimeString();
-            foreach ($payloadUpdates as $key => $value) {
-                $payload[$key] = $value;
-            }
-
-            $payment->status = 'failed';
-            $payment->payment_data = $payload;
-            $payment->save();
-        }
+        }, 3);
     }
 
 }

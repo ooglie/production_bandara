@@ -6,6 +6,7 @@ use Illuminate\Foundation\Auth\EmailVerificationRequest;
 use App\Models\Product;
 
 use App\Http\Controllers\HomeController;
+use App\Http\Controllers\TicketAttachmentController;
 use App\Http\Controllers\ShopController;
 use App\Http\Controllers\NewsletterController;
 
@@ -90,6 +91,10 @@ use App\Http\Controllers\Admin\{
 use App\Http\Controllers\Stores\DashboardController as StoresDashboardController;
 use App\Http\Controllers\Delivery\DeliveryDashboardController;
 
+/* BANDARA CONTENT ROUTES */
+require __DIR__.'/content.php';
+/* END BANDARA CONTENT ROUTES */
+
 /*
 |--------------------------------------------------------------------------
 | FRONTEND / CUSTOMER ROUTES (NON-LOCALIZED)
@@ -114,22 +119,24 @@ Route::get('/products/{product}/variants/options', [FrontProductController::clas
 // Guest routes
 Route::middleware('guest')->group(function () {
     Route::get('login', [LoginController::class, 'showLoginForm'])->name('login');
-    Route::post('login', [LoginController::class, 'login']);
+    Route::post('login', [LoginController::class, 'login'])->middleware('throttle:login');
 
     Route::get('/register', [RegisteredUserController::class, 'create'])
         ->name('register');
-    Route::post('/register', [RegisteredUserController::class, 'store']);
+    Route::post('/register', [RegisteredUserController::class, 'store'])->middleware('throttle:registration');
 
     Route::get('forgot-password', [PasswordResetLinkController::class, 'create'])
         ->name('password.request');
 
     Route::post('forgot-password', [PasswordResetLinkController::class, 'store'])
+        ->middleware('throttle:password-email')
         ->name('password.email');
 
     Route::get('reset-password/{token}', [NewPasswordController::class, 'create'])
         ->name('password.reset');
 
     Route::post('reset-password', [NewPasswordController::class, 'store'])
+        ->middleware('throttle:password-reset')
         ->name('password.update');
 });
 
@@ -139,7 +146,7 @@ Route::post('logout', [LoginController::class, 'logout'])
     ->name('logout');
 
 Route::post('/impersonation/stop', [AdminUserController::class, 'stopImpersonating'])
-    ->middleware('auth')
+    ->middleware(['auth', 'active'])
     ->name('impersonation.stop');
 
 // CART ROUTES
@@ -268,35 +275,45 @@ Route::middleware(['auth', 'role:Customer'])->group(function () {
         ->name('invoices.show');
 
     Route::post('/invoices/{invoice}/offline-payment', [CustomerInvoicePaymentSubmissionController::class, 'store'])
+        ->middleware('throttle:payment-initiate')
         ->name('invoices.offline-payment.store');
 
     // Payment routes
     Route::middleware('verified')->group(function () {
         Route::get('/orders/{order}/pay', [PaymentController::class, 'showRazorpayForm'])
+            ->middleware('throttle:payment-initiate')
             ->name('orders.pay.razorpay');
 
         Route::get('/invoices/{invoice}/pay', [PaymentController::class, 'showInvoiceRazorpayForm'])
+            ->middleware('throttle:payment-initiate')
             ->name('invoices.pay.razorpay');
 
         Route::post('/payment/razorpay/callback', [PaymentController::class, 'handleRazorpayCallback'])
+            ->middleware('throttle:payment-callback')
             ->name('payment.razorpay.callback');
 
         Route::post('/payment/razorpay/failed', [PaymentController::class, 'handleRazorpayFailure'])
+            ->middleware('throttle:payment-callback')
             ->name('payment.razorpay.failed');
 
         Route::post('/payment/razorpay/invoice-callback', [PaymentController::class, 'handleInvoiceRazorpayCallback'])
+            ->middleware('throttle:payment-callback')
             ->name('payment.razorpay.invoice-callback');
     });
 
     // Customer Ticket Routes
     Route::get('/tickets', [CustomerTicketController::class, 'index'])->name('tickets.index');
     Route::get('/tickets/create', [CustomerTicketController::class, 'create'])->name('tickets.create');
-    Route::post('/tickets', [CustomerTicketController::class, 'store'])->name('tickets.store');
+    Route::post('/tickets', [CustomerTicketController::class, 'store'])->middleware('throttle:ticket-upload')->name('tickets.store');
     Route::get('/tickets/{ticket}', [CustomerTicketController::class, 'show'])->name('tickets.show');
-    Route::post('/tickets/{ticket}/reply', [CustomerTicketController::class, 'reply'])->name('tickets.reply');
+    Route::post('/tickets/{ticket}/reply', [CustomerTicketController::class, 'reply'])->middleware('throttle:ticket-upload')->name('tickets.reply');
     Route::post('/tickets/{ticket}/close', [CustomerTicketController::class, 'close'])->name('tickets.close');
     Route::post('/tickets/{ticket}/reopen', [CustomerTicketController::class, 'reopen'])->name('tickets.reopen');
 });
+
+Route::get('/ticket-attachments/{attachment}/download', TicketAttachmentController::class)
+    ->middleware(['auth', 'active', 'throttle:60,1'])
+    ->name('ticket-attachments.download');
 
 // Email Verification Routes
 Route::get('/email/verify', function () {
@@ -315,6 +332,7 @@ Route::post('/email/verification-notification', function (Request $request) {
 
 // Newsletter Routes
 Route::post('/newsletter/subscribe', [NewsletterController::class, 'subscribe'])
+    ->middleware('throttle:newsletter')
     ->name('newsletter.subscribe');
 
 Route::get('/newsletter/confirm/{subscriber}/{token}', [NewsletterController::class, 'confirm'])
@@ -347,7 +365,7 @@ Route::middleware(['auth', 'role:DeliveryAgent'])
 |--------------------------------------------------------------------------
 */
 
-Route::middleware(['auth'])->prefix('admin')->name('admin.')->group(function () {
+Route::middleware(['auth', 'active'])->prefix('admin')->name('admin.')->group(function () {
     Route::middleware('can:manage users')->group(function () {
         Route::get('/roles', [RolePermissionController::class, 'index'])->name('roles.index');
         Route::get('/roles/{role}', [RolePermissionController::class, 'edit'])->name('roles.edit');
@@ -357,7 +375,7 @@ Route::middleware(['auth'])->prefix('admin')->name('admin.')->group(function () 
     });
 });
 
-Route::middleware(['auth', 'role:Admin|Manager|Accountant|CAAccountant|Stores'])
+Route::middleware(['auth', 'active', 'role:Admin|Manager|Accountant|CAAccountant|Stores', 'admin.permission'])
     ->prefix('admin')
     ->name('admin.')
     ->group(function () {
@@ -726,13 +744,13 @@ Route::middleware(['auth', 'role:Admin|Manager|Accountant|CAAccountant|Stores'])
     });
 
 // SUPPORT
-Route::middleware(['auth', 'role:Support'])->group(function () {
+Route::middleware(['auth', 'active', 'role:Support'])->group(function () {
     Route::get('/support/dashboard', SupportDashboardController::class)
         ->name('support.dashboard');
 });
 
 // SUPPORT / MANAGER / ADMIN
-Route::middleware(['auth', 'role:Admin|Manager|Support'])
+Route::middleware(['auth', 'active', 'role:Admin|Manager|Support', 'can:view tickets'])
     ->prefix('support')
     ->name('support.')
     ->group(function () {
@@ -741,12 +759,12 @@ Route::middleware(['auth', 'role:Admin|Manager|Support'])
         Route::get('/tickets/mine', [SupportTicketController::class, 'mine'])->name('tickets.mine');
         Route::get('/tickets/{ticket}', [SupportTicketController::class, 'show'])->name('tickets.show');
 
-        Route::post('/tickets/{ticket}/assign', [SupportTicketController::class, 'assignToMe'])->name('tickets.assignToMe');
-        Route::post('/tickets/{ticket}/reassign', [SupportTicketController::class, 'reassign'])->name('tickets.reassign');
-        Route::post('/tickets/{ticket}/reply', [SupportTicketController::class, 'reply'])->name('tickets.reply');
-        Route::post('/tickets/{ticket}/note', [SupportTicketController::class, 'addInternalNote'])->name('tickets.note');
-        Route::post('/tickets/{ticket}/status', [SupportTicketController::class, 'updateStatus'])->name('tickets.status');
-        Route::post('/tickets/{ticket}/tags', [SupportTicketController::class, 'updateTags'])->name('tickets.tags');
+        Route::post('/tickets/{ticket}/assign', [SupportTicketController::class, 'assignToMe'])->middleware('can:manage tickets')->name('tickets.assignToMe');
+        Route::post('/tickets/{ticket}/reassign', [SupportTicketController::class, 'reassign'])->middleware('can:manage tickets')->name('tickets.reassign');
+        Route::post('/tickets/{ticket}/reply', [SupportTicketController::class, 'reply'])->middleware('can:manage tickets')->name('tickets.reply');
+        Route::post('/tickets/{ticket}/note', [SupportTicketController::class, 'addInternalNote'])->middleware('can:manage tickets')->name('tickets.note');
+        Route::post('/tickets/{ticket}/status', [SupportTicketController::class, 'updateStatus'])->middleware('can:manage tickets')->name('tickets.status');
+        Route::post('/tickets/{ticket}/tags', [SupportTicketController::class, 'updateTags'])->middleware('can:manage tickets')->name('tickets.tags');
     });
 
 // MANAGER

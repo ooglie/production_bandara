@@ -7,6 +7,10 @@ use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Schema;
 use Illuminate\Support\Facades\View;
+use Illuminate\Cache\RateLimiting\Limit;
+use Illuminate\Http\Request;
+use Illuminate\Support\Facades\RateLimiter;
+use Illuminate\Support\Str;
 use App\Models\Ticket;
 use App\Observers\TicketObserver;
 
@@ -25,6 +29,8 @@ class AppServiceProvider extends ServiceProvider
      */
     public function boot(): void
     {
+        $this->configureRateLimiting();
+
         Ticket::observe(TicketObserver::class);
 
         // Share nav badge counts (cart + wishlist) globally.
@@ -179,4 +185,51 @@ class AppServiceProvider extends ServiceProvider
             $view->with($shared);
         });
     }
+    private function configureRateLimiting(): void
+    {
+        RateLimiter::for('login', function (Request $request): array {
+            $identity = Str::lower(trim((string) $request->input('email')));
+
+            return [
+                Limit::perMinute(5)->by($identity.'|'.$request->ip()),
+                Limit::perMinute(25)->by('login-ip|'.$request->ip()),
+            ];
+        });
+
+        RateLimiter::for('registration', fn (Request $request): array => [
+            Limit::perMinute(3)->by('register|'.$request->ip()),
+            Limit::perHour(10)->by('register-hour|'.$request->ip()),
+        ]);
+
+        RateLimiter::for('password-email', function (Request $request): array {
+            $identity = Str::lower(trim((string) $request->input('email')));
+
+            return [
+                Limit::perMinute(3)->by($identity.'|'.$request->ip()),
+                Limit::perHour(10)->by('password-email|'.$request->ip()),
+            ];
+        });
+
+        RateLimiter::for('password-reset', fn (Request $request): array => [
+            Limit::perMinute(5)->by('password-reset|'.$request->ip()),
+        ]);
+
+        RateLimiter::for('ticket-upload', fn (Request $request): array => [
+            Limit::perMinute(10)->by('ticket-upload|'.($request->user()?->id ?: $request->ip())),
+        ]);
+
+        RateLimiter::for('payment-initiate', fn (Request $request): array => [
+            Limit::perMinute(10)->by('payment-initiate|'.($request->user()?->id ?: $request->ip())),
+        ]);
+
+        RateLimiter::for('payment-callback', fn (Request $request): array => [
+            Limit::perMinute(30)->by('payment-callback|'.($request->user()?->id ?: $request->ip())),
+        ]);
+
+        RateLimiter::for('newsletter', fn (Request $request): array => [
+            Limit::perMinute(5)->by('newsletter|'.$request->ip()),
+            Limit::perHour(20)->by('newsletter-hour|'.$request->ip()),
+        ]);
+    }
+
 }

@@ -41,7 +41,13 @@ return new class extends Migration
                 });
             }
 
-            $query->update(['inventory_lots.is_saleable' => true]);
+            $lotIds = $query->pluck('inventory_lots.id');
+
+            if ($lotIds->isNotEmpty()) {
+                DB::table('inventory_lots')
+                    ->whereIn('id', $lotIds)
+                    ->update(['is_saleable' => true]);
+            }
         }
     }
 

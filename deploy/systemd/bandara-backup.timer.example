@@ -1,0 +1,11 @@
+[Unit]
+Description=Run Bandara backup daily
+
+[Timer]
+OnCalendar=*-*-* 03:30:00
+Persistent=true
+RandomizedDelaySec=300
+Unit=bandara-backup.service
+
+[Install]
+WantedBy=timers.target

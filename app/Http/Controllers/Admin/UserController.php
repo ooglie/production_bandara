@@ -8,6 +8,7 @@ use App\Models\User;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Facades\Hash;
+use Illuminate\Support\Facades\DB;
 use Spatie\Permission\Models\Role;
 
 class UserController extends Controller
@@ -196,9 +197,22 @@ class UserController extends Controller
 
         $user->customer_type = $finalType;
 
+        $passwordChanged = ! empty($data['password']);
+        $wasDeactivated = ! (bool) $user->is_active;
+
         $user->save();
 
         $user->syncRoles($roleNames);
+
+        if ($passwordChanged || $wasDeactivated) {
+            $user->forceFill(['remember_token' => null])->saveQuietly();
+
+            if (config('session.driver') === 'database') {
+                DB::table(config('session.table', 'sessions'))
+                    ->where('user_id', $user->id)
+                    ->delete();
+            }
+        }
 
         return redirect()
             ->route('admin.users.index')
@@ -233,6 +247,10 @@ class UserController extends Controller
             return back()->with('status', 'You cannot impersonate yourself.');
         }
 
+        if (! (bool) $user->is_active) {
+            return back()->withErrors(['user' => 'Inactive accounts cannot be impersonated.']);
+        }
+
         // Clear any previous impersonation
         $request->session()->forget('impersonator_id');
 
@@ -249,6 +267,7 @@ class UserController extends Controller
         $request->session()->put('impersonation_log_id', $log->id);
 
         Auth::login($user);
+        $request->session()->regenerate();
 
         return redirect()
             ->route('home')
@@ -280,8 +299,9 @@ class UserController extends Controller
 
         $admin = User::find($impersonatorId);
 
-        if ($admin) {
+        if ($admin && (bool) $admin->is_active && $admin->hasRole('Admin')) {
             Auth::login($admin);
+            $request->session()->regenerate();
 
             return redirect()
                 ->route('admin.dashboard')

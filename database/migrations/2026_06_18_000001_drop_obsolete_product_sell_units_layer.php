@@ -9,6 +9,18 @@ return new class extends Migration
 {
     public function up(): void
     {
+        $driver = Schema::getConnection()->getDriverName();
+
+        // The destructive cleanup below intentionally uses MySQL metadata and
+        // ALTER TABLE syntax. For SQLite test/fresh databases, keep the obsolete
+        // compatibility layer in place and add only the replacement variant link
+        // required by the current application. Production MySQL behaviour is unchanged.
+        if (! in_array($driver, ['mysql', 'mariadb'], true)) {
+            $this->prepareB2BCustomerProductsForVariantsPortable();
+
+            return;
+        }
+
         $this->prepareB2BCustomerProductsForVariants();
 
         foreach ([
@@ -82,6 +94,19 @@ return new class extends Migration
         $this->dropForeignKeysForColumn('b2b_customer_products', 'product_variant_id');
         $this->dropIndexesForColumn('b2b_customer_products', 'product_variant_id');
         $this->dropColumnIfExists('b2b_customer_products', 'product_variant_id');
+    }
+
+    private function prepareB2BCustomerProductsForVariantsPortable(): void
+    {
+        if (! Schema::hasTable('b2b_customer_products')) {
+            return;
+        }
+
+        if (! Schema::hasColumn('b2b_customer_products', 'product_variant_id')) {
+            Schema::table('b2b_customer_products', function (Blueprint $table) {
+                $table->unsignedBigInteger('product_variant_id')->nullable();
+            });
+        }
     }
 
     private function prepareB2BCustomerProductsForVariants(): void

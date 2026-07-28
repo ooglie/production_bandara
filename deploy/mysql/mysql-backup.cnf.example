@@ -1,0 +1,7 @@
+# Install as /etc/bandara/mysql-backup.cnf with mode 600.
+[client]
+host=127.0.0.1
+port=3306
+user=bandara_backup
+password=CHANGE_ME_LONG_RANDOM_BACKUP_PASSWORD
+protocol=tcp

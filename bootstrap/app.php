@@ -1,12 +1,14 @@
 <?php
 
+use App\Http\Middleware\AddSecurityHeaders;
+use App\Http\Middleware\EnsureUserIsActive;
 use Illuminate\Foundation\Application;
 use Illuminate\Foundation\Configuration\Exceptions;
 use Illuminate\Foundation\Configuration\Middleware;
 use Mcamara\LaravelLocalization\Middleware\LaravelLocalizationRoutes;
 use Mcamara\LaravelLocalization\Middleware\LaravelLocalizationRedirectFilter;
-use Mcamara\LaravelLocalization\Middleware\LocaleSessionRedirect;
 use Mcamara\LaravelLocalization\Middleware\LocaleCookieRedirect;
+use Mcamara\LaravelLocalization\Middleware\LocaleSessionRedirect;
 use Mcamara\LaravelLocalization\Middleware\LaravelLocalizationViewPath;
 
 return Application::configure(basePath: dirname(__DIR__))
@@ -18,15 +20,31 @@ return Application::configure(basePath: dirname(__DIR__))
     ->withMiddleware(function (Middleware $middleware): void {
         $middleware->alias([
             'role' => \Spatie\Permission\Middleware\RoleMiddleware::class,
-            'active' => \App\Http\Middleware\EnsureUserIsActive::class,
-             'permission' => \Spatie\Permission\Middleware\PermissionMiddleware::class,
-             'role_or_permission' => \Spatie\Permission\Middleware\RoleOrPermissionMiddleware::class,
-             'localize'              => LaravelLocalizationRoutes::class,
-            'localizationRedirect'  => LaravelLocalizationRedirectFilter::class,
+            'active' => EnsureUserIsActive::class,
+            'admin.permission' => \App\Http\Middleware\EnforceAdminRoutePermission::class,
+            'permission' => \Spatie\Permission\Middleware\PermissionMiddleware::class,
+            'role_or_permission' => \Spatie\Permission\Middleware\RoleOrPermissionMiddleware::class,
+            'localize' => LaravelLocalizationRoutes::class,
+            'localizationRedirect' => LaravelLocalizationRedirectFilter::class,
             'localeSessionRedirect' => LocaleSessionRedirect::class,
-            'localeCookieRedirect'  => LocaleCookieRedirect::class,
-            'localeViewPath'        => LaravelLocalizationViewPath::class,
+            'localeCookieRedirect' => LocaleCookieRedirect::class,
+            'localeViewPath' => LaravelLocalizationViewPath::class,
         ]);
+
+        // Runs after the normal web stack (including session startup), so a
+        // deactivated account is logged out on its very next request.
+        $middleware->appendToGroup('web', [
+            EnsureUserIsActive::class,
+            AddSecurityHeaders::class,
+        ]);
+
+        $middleware->trustHosts(
+            at: fn (): array => array_map(
+                static fn (string $host): string => '^'.preg_quote($host, '/').'$' ,
+                (array) config('security.trusted_hosts', [])
+            ),
+            subdomains: false,
+        );
     })
     ->withExceptions(function (Exceptions $exceptions): void {
         $exceptions->render(function (\Spatie\Permission\Exceptions\UnauthorizedException $e, \Illuminate\Http\Request $request) {
@@ -40,19 +58,5 @@ return Application::configure(basePath: dirname(__DIR__))
 
             return null;
         });
-    })->create();
-
-    return [
-    // ...
-
-    'providers' => ServiceProvider::defaultProviders()->merge([
-        // ...
-        Milon\Barcode\BarcodeServiceProvider::class,
-    ])->toArray(),
-
-    'aliases' => Facade::defaultAliases()->merge([
-        // ...
-        'DNS1D' => Milon\Barcode\Facades\DNS1DFacade::class,
-        'DNS2D' => Milon\Barcode\Facades\DNS2DFacade::class,
-    ])->toArray(),
-];
+    })
+    ->create();

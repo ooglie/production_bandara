@@ -1,15 +1,28 @@
-# Compact navigation search UI adjustment
+# B2C DOB visibility hotfix
 
-Extract this package directly into the Laravel project root, replacing the three included Blade files.
+This package is intentionally stored from the Laravel project root. It does not contain an extra wrapper directory.
 
-Then run:
+## Install
+
+From the Laravel project root:
 
 ```bash
+unzip -o Bandara_b2c_registration_dob_visible_hotfix_20260727.zip -d .
+php artisan migrate
 php artisan optimize:clear
-php artisan view:clear
-npm run dev
+bash scripts/verify_b2c_dob_installation.sh
 ```
 
-Use `npm run build` instead of `npm run dev` for production assets.
+The DOB field must be present in:
 
-No migration or route change is required.
+```text
+resources/views/auth/register.blade.php
+```
+
+The public route must render that view through:
+
+```text
+app/Http/Controllers/Auth/RegisteredUserController.php
+```
+
+If verification says the field is present but the browser does not show it, the browser is reaching another Laravel project copy or a stale PHP-FPM/opcode cache. Restart the local `php artisan serve`, MAMP/Apache, or PHP-FPM process and open the `/register` URL printed by `route:list`.

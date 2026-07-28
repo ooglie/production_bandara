@@ -75,14 +75,14 @@
     ], $priceViewData);
 @endphp
 
-<div class="w-full max-w-sm justify-self-start js-product-card">
+<div data-bandara-phase1-product-card class="w-full max-w-sm justify-self-start js-product-card">
     <div class="rounded-lg border border-gray-200 dark:border-gray-800 bg-white dark:bg-gray-900 p-3 flex flex-col h-full">
 
         {{-- Image --}}
         <div class="relative aspect-[4/3] rounded-sm bg-gray-100 dark:bg-gray-800 flex items-center justify-center mb-3 overflow-hidden">
             <a href="{{ $productUrl }}" title="View details" class="block h-full w-full">
                 @if($product->primary_image)
-                    <img
+                    <img data-bandara-phase1-product-image
                         src="{{ Storage::url($product->primary_image) }}"
                         alt="{{ $product->name }}"
                         class="object-cover w-full h-full group-hover:scale-[1.02] transition-transform duration-300"

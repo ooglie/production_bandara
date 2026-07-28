@@ -8,8 +8,8 @@ class AutoTranslationService
 {
     public function configured(): bool
     {
-        return env('AUTO_TRANSLATE_DRIVER') === 'google'
-            && filled(env('GOOGLE_TRANSLATE_API_KEY'));
+        return config('services.google_translate.driver') === 'google'
+            && filled(config('services.google_translate.key'));
     }
 
     public function translateText(?string $text, string $targetLocale, string $sourceLocale = 'en'): ?string
@@ -24,7 +24,7 @@ class AutoTranslationService
             return $text;
         }
 
-        if (!$this->configured()) {
+        if (! $this->configured()) {
             return null;
         }
 
@@ -32,7 +32,7 @@ class AutoTranslationService
             $response = Http::asForm()
                 ->timeout(20)
                 ->post(
-                    'https://translation.googleapis.com/language/translate/v2?key=' . env('GOOGLE_TRANSLATE_API_KEY'),
+                    'https://translation.googleapis.com/language/translate/v2?key=' . config('services.google_translate.key'),
                     [
                         'q' => $text,
                         'source' => $sourceLocale,
@@ -41,13 +41,13 @@ class AutoTranslationService
                     ]
                 );
 
-            if (!$response->successful()) {
+            if (! $response->successful()) {
                 return null;
             }
 
             $translated = data_get($response->json(), 'data.translations.0.translatedText');
 
-            if (!is_string($translated) || trim($translated) === '') {
+            if (! is_string($translated) || trim($translated) === '') {
                 return null;
             }
 
