@@ -114,6 +114,80 @@
         </div>
         </div>
 
+        <div class="border-t border-gray-200 pt-5 dark:border-gray-800">
+            <div class="mb-3">
+                <p class="text-xs font-medium text-gray-800 dark:text-gray-200">
+                    Bank details
+                </p>
+                <p class="mt-0.5 text-[11px] text-gray-500 dark:text-gray-400">
+                    Optional. The account number is encrypted before it is stored.
+                </p>
+            </div>
+
+            <div class="grid gap-4 lg:grid-cols-3">
+                <div>
+                    <label class="block text-xs font-medium text-gray-700 dark:text-gray-300">
+                        Bank name
+                    </label>
+                    <input
+                        type="text"
+                        name="bank_name"
+                        value="{{ old('bank_name', $vendor->bank_name ?? '') }}"
+                        maxlength="150"
+                        autocomplete="off"
+                        class="mt-1 w-full rounded border border-gray-300 bg-white px-2 py-1.5 text-sm focus:outline-none focus:ring-1 focus:ring-gray-400 dark:border-gray-700 dark:bg-gray-900 dark:focus:ring-gray-500"
+                        placeholder="Bank name"
+                    >
+                    @error('bank_name')
+                        <p class="mt-1 text-[11px] text-red-600">{{ $message }}</p>
+                    @enderror
+                </div>
+
+                <div>
+                    <label class="block text-xs font-medium text-gray-700 dark:text-gray-300">
+                        IFSC code
+                    </label>
+                    <input
+                        type="text"
+                        name="bank_ifsc_code"
+                        value="{{ old('bank_ifsc_code', $vendor->bank_ifsc_code ?? '') }}"
+                        maxlength="11"
+                        autocomplete="off"
+                        autocapitalize="characters"
+                        spellcheck="false"
+                        class="mt-1 w-full rounded border border-gray-300 bg-white px-2 py-1.5 font-mono text-sm uppercase focus:outline-none focus:ring-1 focus:ring-gray-400 dark:border-gray-700 dark:bg-gray-900 dark:focus:ring-gray-500"
+                        placeholder="HDFC0001234"
+                    >
+                    @error('bank_ifsc_code')
+                        <p class="mt-1 text-[11px] text-red-600">{{ $message }}</p>
+                    @enderror
+                </div>
+
+                <div>
+                    <label class="block text-xs font-medium text-gray-700 dark:text-gray-300">
+                        Bank account number
+                    </label>
+                    <input
+                        type="text"
+                        name="bank_account_number"
+                        value="{{ old('bank_account_number', $vendor->bank_account_number ?? '') }}"
+                        maxlength="34"
+                        inputmode="numeric"
+                        autocomplete="off"
+                        spellcheck="false"
+                        class="mt-1 w-full rounded border border-gray-300 bg-white px-2 py-1.5 font-mono text-sm focus:outline-none focus:ring-1 focus:ring-gray-400 dark:border-gray-700 dark:bg-gray-900 dark:focus:ring-gray-500"
+                        placeholder="Account number"
+                    >
+                    <p class="mt-1 text-[10px] text-gray-500 dark:text-gray-400">
+                        Spaces and hyphens are removed when saved.
+                    </p>
+                    @error('bank_account_number')
+                        <p class="mt-1 text-[11px] text-red-600">{{ $message }}</p>
+                    @enderror
+                </div>
+            </div>
+        </div>
+
         <div class="grid gap-4 sm:grid-cols-2">
             <div>
                 <label class="block text-xs font-medium text-gray-700 dark:text-gray-300">

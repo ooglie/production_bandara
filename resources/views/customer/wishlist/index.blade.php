@@ -42,7 +42,7 @@
                     <div class="aspect-[4/3] rounded-sm bg-gray-100 dark:bg-gray-800 flex items-center justify-center mb-3 overflow-hidden">
                         @if($product->primary_image)
                             <img
-                                src="{{ Storage::url($product->primary_image) }}"
+                                src="{{ Storage::disk(config('media.public_disk', 'public'))->url($product->primary_image) }}"
                                 alt="{{ $product->name }}"
                                 class="object-cover w-full h-full"
                             >

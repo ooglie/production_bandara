@@ -5,13 +5,20 @@ namespace App\Http\Controllers\Admin;
 use App\Http\Controllers\Controller;
 use App\Models\Product;
 use App\Models\ProductImage;
+use App\Services\MediaPathService;
+use App\Services\MediaReferenceService;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
-use Illuminate\Support\Facades\Storage;
 use Illuminate\Validation\ValidationException;
 
 class ProductImageController extends Controller
 {
+    public function __construct(
+        protected MediaPathService $media,
+        protected MediaReferenceService $mediaReferences,
+    ) {
+    }
+
     public function index(Product $product)
     {
         $images = $product->images()
@@ -55,12 +62,22 @@ class ProductImageController extends Controller
             ]);
         }
 
-        $disk = $this->mediaDisk();
         $storedPaths = [];
         $createdImages = collect();
+        $makePrimary = $request->boolean('is_primary');
 
         try {
-            DB::transaction(function () use ($request, $product, $data, $files, $disk, &$storedPaths, &$createdImages) {
+            // Store files before opening the database transaction so large image
+            // uploads never keep product rows or indexes locked unnecessarily.
+            foreach ($files as $file) {
+                $storedPaths[] = $this->media->storePublic(
+                    $file,
+                    $this->media->productImagesDirectory($product),
+                    'image'
+                );
+            }
+
+            DB::transaction(function () use ($product, $data, $storedPaths, $makePrimary, &$createdImages): void {
                 $startPosition = array_key_exists('position', $data) && $data['position'] !== null
                     ? (int) $data['position']
                     : ((int) $product->images()->max('position') + 1);
@@ -68,10 +85,7 @@ class ProductImageController extends Controller
                 $hasPrimaryImage = $product->images()->where('is_primary', true)->exists()
                     || filled($product->primary_image);
 
-                foreach ($files as $index => $file) {
-                    $path = $file->store('products', $disk);
-                    $storedPaths[] = $path;
-
+                foreach ($storedPaths as $index => $path) {
                     $image = new ProductImage([
                         'file_path'  => $path,
                         'alt_text'   => $data['alt_text'] ?? null,
@@ -83,22 +97,19 @@ class ProductImageController extends Controller
                     $createdImages->push($image);
                 }
 
-                $primaryImage = null;
-
-                if ($request->boolean('is_primary')) {
-                    $primaryImage = $createdImages->first();
-                } elseif (! $hasPrimaryImage) {
-                    // Product cards read products.primary_image directly. Make the
-                    // first uploaded image primary when the product has no primary yet.
-                    $primaryImage = $createdImages->first();
-                }
+                $primaryImage = ($makePrimary || ! $hasPrimaryImage)
+                    ? $createdImages->first()
+                    : null;
 
                 if ($primaryImage) {
                     $this->setPrimaryImage($product, $primaryImage);
                 }
             });
         } catch (\Throwable $e) {
-            Storage::disk($disk)->delete($storedPaths);
+            foreach ($storedPaths as $storedPath) {
+                $this->media->deleteFromDisks($storedPath, [$this->media->publicDisk()]);
+            }
+
             throw $e;
         }
 
@@ -130,12 +141,15 @@ class ProductImageController extends Controller
             'image'      => ['nullable', 'image', 'max:10240'], // 10 MB
         ]);
 
-        $disk = $this->mediaDisk();
         $oldPath = $image->file_path;
         $newPath = null;
 
         if ($request->hasFile('image')) {
-            $newPath = $request->file('image')->store('products', $disk);
+            $newPath = $this->media->storePublic(
+                $request->file('image'),
+                $this->media->productImagesDirectory($product),
+                'image'
+            );
         }
 
         try {
@@ -175,14 +189,14 @@ class ProductImageController extends Controller
             });
         } catch (\Throwable $e) {
             if ($newPath) {
-                Storage::disk($disk)->delete($newPath);
+                $this->media->deleteFromDisks($newPath, [$this->media->publicDisk()]);
             }
 
             throw $e;
         }
 
-        if ($newPath && $oldPath && Storage::disk($disk)->exists($oldPath)) {
-            Storage::disk($disk)->delete($oldPath);
+        if ($newPath && $oldPath) {
+            $this->mediaReferences->deletePublicFileIfUnreferenced($oldPath);
         }
 
         return redirect()
@@ -209,7 +223,6 @@ class ProductImageController extends Controller
     public function destroy(ProductImage $image)
     {
         $product = $image->product;
-        $disk = $this->mediaDisk();
         $oldPath = $image->file_path;
         $wasPrimary = (bool) $image->is_primary;
 
@@ -231,8 +244,8 @@ class ProductImageController extends Controller
             }
         });
 
-        if ($oldPath && Storage::disk($disk)->exists($oldPath)) {
-            Storage::disk($disk)->delete($oldPath);
+        if ($oldPath) {
+            $this->mediaReferences->deletePublicFileIfUnreferenced($oldPath);
         }
 
         return redirect()
@@ -253,11 +266,6 @@ class ProductImageController extends Controller
 
         $product->primary_image = $image->file_path;
         $product->save();
-    }
-
-    protected function mediaDisk(): string
-    {
-        return config('filesystems.default', 'public');
     }
 
     protected function throwIfPhpUploadFailed(string $field): void

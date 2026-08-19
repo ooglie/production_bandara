@@ -83,7 +83,7 @@
             <a href="{{ $productUrl }}" title="View details" class="block h-full w-full">
                 @if($product->primary_image)
                     <img data-bandara-phase1-product-image
-                        src="{{ Storage::url($product->primary_image) }}"
+                        src="{{ Storage::disk(config('media.public_disk', 'public'))->url($product->primary_image) }}"
                         alt="{{ $product->name }}"
                         class="object-cover w-full h-full group-hover:scale-[1.02] transition-transform duration-300"
                         loading="lazy"

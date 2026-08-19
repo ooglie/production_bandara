@@ -133,6 +133,45 @@
                     </div>
                 </div>
 
+                <div class="border-t border-gray-100 pt-2 dark:border-gray-800">
+                    <div class="flex items-center justify-between gap-3">
+                        <p class="text-[11px] font-semibold text-gray-900 dark:text-gray-50">
+                            Bank details
+                        </p>
+                        <a href="{{ route('admin.vendors.edit', $vendor) }}"
+                           class="text-[10px] text-gray-500 hover:underline dark:text-gray-400">
+                            Edit
+                        </a>
+                    </div>
+
+                    @if($vendor->bank_name || $vendor->bank_ifsc_code || $vendor->bank_account_number)
+                        <div class="mt-2 grid gap-3 sm:grid-cols-3">
+                            <div>
+                                <p class="text-[10px] text-gray-500 dark:text-gray-400">Bank</p>
+                                <p class="mt-0.5 text-[11px] font-medium text-gray-700 dark:text-gray-200">
+                                    {{ $vendor->bank_name ?? '—' }}
+                                </p>
+                            </div>
+                            <div>
+                                <p class="text-[10px] text-gray-500 dark:text-gray-400">IFSC code</p>
+                                <p class="mt-0.5 font-mono text-[11px] text-gray-700 dark:text-gray-200">
+                                    {{ $vendor->bank_ifsc_code ?? '—' }}
+                                </p>
+                            </div>
+                            <div>
+                                <p class="text-[10px] text-gray-500 dark:text-gray-400">Account number</p>
+                                <p class="mt-0.5 font-mono text-[11px] text-gray-700 dark:text-gray-200">
+                                    {{ $vendor->maskedBankAccountNumber() ?? '—' }}
+                                </p>
+                            </div>
+                        </div>
+                    @else
+                        <p class="mt-1 text-[10px] text-gray-400">
+                            No bank details saved yet.
+                        </p>
+                    @endif
+                </div>
+
                 @if(!empty($vendor->notes))
                     <div class="pt-2 border-t border-gray-100 dark:border-gray-800 mt-2">
                         <p class="text-[11px] font-semibold text-gray-900 dark:text-gray-50 mb-0.5">

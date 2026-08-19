@@ -3,6 +3,7 @@
 namespace App\Http\Controllers;
 
 use App\Models\TicketAttachment;
+use App\Services\MediaPathService;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Storage;
 use Symfony\Component\HttpFoundation\BinaryFileResponse;
@@ -10,6 +11,10 @@ use Symfony\Component\HttpFoundation\StreamedResponse;
 
 class TicketAttachmentController extends Controller
 {
+    public function __construct(protected MediaPathService $media)
+    {
+    }
+
     public function __invoke(Request $request, TicketAttachment $attachment): BinaryFileResponse|StreamedResponse
     {
         $attachment->loadMissing(['message.ticket', 'ticket']);
@@ -35,12 +40,15 @@ class TicketAttachmentController extends Controller
             }
         }
 
-        $path = (string) ($attachment->file_path ?? $attachment->path ?? '');
-        abort_if($path === '', 404);
+        $rawPath = (string) ($attachment->file_path ?? $attachment->path ?? '');
+        $path = $this->media->normalizeStoredPath($rawPath);
+        abort_unless($path, 404);
 
-        // New files live on the private local disk. Keep a read-only fallback
-        // for legacy public attachments until they are migrated.
-        $disk = Storage::disk('local')->exists($path) ? 'local' : 'public';
+        // Organized ticket files live on the private disk. The public fallback
+        // remains read-only until all legacy attachments have been committed.
+        $privateDisk = $this->media->privateDisk();
+        $publicDisk = $this->media->publicDisk();
+        $disk = Storage::disk($privateDisk)->exists($path) ? $privateDisk : $publicDisk;
         abort_unless(Storage::disk($disk)->exists($path), 404);
 
         $downloadName = basename((string) ($attachment->original_name ?: 'attachment'));

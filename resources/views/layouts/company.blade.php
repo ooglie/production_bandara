@@ -4,24 +4,29 @@
     $roleName = $user?->getRoleNames()->first();
     $initial = $user ? mb_strtoupper(mb_substr($user->name, 0, 1)) : '?';
 
-    function fb_role_label($role) {
-        if (!$role) return 'Guest';
-        return $role;
-    }
+    // Keep request-scoped values in the view. Named PHP functions declared
+    // inside Blade persist for the lifetime of the PHPUnit process and can be
+    // redeclared when more than one company-layout page is rendered.
+    $dashboardUrl = null;
 
-    function fb_dashboard_route($user) {
-        if (!$user) return null;
-
-        if ($user->hasRole('Customer'))   return route('account.dashboard');
-        if ($user->hasRole('Admin'))      return route('admin.dashboard');
-        if ($user->hasRole('Manager'))    return route('manager.dashboard');
-        if ($user->hasRole('Support'))    return route('support.dashboard');
-        if ($user->hasRole('Accountant') || $user->hasRole('CAAccountant')) return route('accountant.dashboard');
-        if ($user->hasRole('Stores'))     return route('stores.dashboard');
-        if ($user->hasRole('DeliveryAgent') && Route::has('delivery.index')) return route('delivery.index');
-
-        // default for unknown roles
-        return route('home');
+    if ($user) {
+        if ($user->hasRole('Customer')) {
+            $dashboardUrl = route('account.dashboard');
+        } elseif ($user->hasRole('Admin')) {
+            $dashboardUrl = route('admin.dashboard');
+        } elseif ($user->hasRole('Manager')) {
+            $dashboardUrl = route('manager.dashboard');
+        } elseif ($user->hasRole('Support')) {
+            $dashboardUrl = route('support.dashboard');
+        } elseif ($user->hasRole('Accountant') || $user->hasRole('CAAccountant')) {
+            $dashboardUrl = route('accountant.dashboard');
+        } elseif ($user->hasRole('Stores')) {
+            $dashboardUrl = route('stores.dashboard');
+        } elseif ($user->hasRole('DeliveryAgent') && \Illuminate\Support\Facades\Route::has('delivery.index')) {
+            $dashboardUrl = route('delivery.index');
+        } else {
+            $dashboardUrl = route('home');
+        }
     }
 @endphp
 

@@ -3,11 +3,11 @@
 namespace App\Http\Controllers\Customer;
 
 use App\Http\Controllers\Controller;
+use App\Services\MediaPathService;
+use App\Services\MediaReferenceService;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Hash;
-use Illuminate\Support\Facades\Route;
-use Illuminate\Support\Facades\Storage;
 use Illuminate\Support\Str;
 use Illuminate\Validation\Rule;
 use Illuminate\Validation\Rules\Password as PasswordRule;
@@ -16,6 +16,12 @@ use App\Services\BandaraCreditService;
 
 class ProfileController extends Controller
 {
+    public function __construct(
+        protected MediaPathService $media,
+        protected MediaReferenceService $mediaReferences,
+    ) {
+    }
+
     public function edit(Request $request)
     {
         return view('account.profile', [
@@ -48,12 +54,15 @@ class ProfileController extends Controller
             $data['email_verified_at'] = null;
         }
 
-        $disk = $this->mediaDisk();
         $newAvatarPath = null;
-        $oldAvatarPath = $this->normalizeStoredPath($user->avatar_path ?? null);
+        $oldAvatarPath = $user->avatar_path ?? null;
 
         if ($request->hasFile('avatar')) {
-            $newAvatarPath = $request->file('avatar')->store('avatars', $disk);
+            $newAvatarPath = $this->media->storePublic(
+                $request->file('avatar'),
+                $this->media->avatarDirectory($user),
+                'avatar'
+            );
             $data['avatar_path'] = $newAvatarPath;
         }
 
@@ -63,14 +72,14 @@ class ProfileController extends Controller
             $user->update($data);
         } catch (\Throwable $e) {
             if ($newAvatarPath) {
-                Storage::disk($disk)->delete($newAvatarPath);
+                $this->media->deleteFromDisks($newAvatarPath, [$this->media->publicDisk()]);
             }
 
             throw $e;
         }
 
-        if ($newAvatarPath && $oldAvatarPath && Storage::disk($disk)->exists($oldAvatarPath)) {
-            Storage::disk($disk)->delete($oldAvatarPath);
+        if ($newAvatarPath && $oldAvatarPath) {
+            $this->mediaReferences->deletePublicFileIfUnreferenced($oldAvatarPath);
         }
 
         if ($emailChanged) {
@@ -115,36 +124,6 @@ class ProfileController extends Controller
             'status' => 'Password updated successfully.',
             'password_section' => true,
         ]);
-    }
-
-    protected function mediaDisk(): string
-    {
-        return config('filesystems.default', 'public');
-    }
-
-    protected function normalizeStoredPath(?string $path): ?string
-    {
-        $path = trim((string) $path);
-
-        if ($path === '') {
-            return null;
-        }
-
-        if (Str::startsWith($path, ['http://', 'https://', '//', 'data:'])) {
-            return null;
-        }
-
-        $path = ltrim($path, '/');
-
-        if (Str::startsWith($path, 'storage/app/public/')) {
-            return ltrim(Str::after($path, 'storage/app/public/'), '/');
-        }
-
-        if (Str::startsWith($path, 'storage/')) {
-            return ltrim(Str::after($path, 'storage/'), '/');
-        }
-
-        return $path;
     }
 
     protected function throwIfPhpUploadFailed(string $field): void

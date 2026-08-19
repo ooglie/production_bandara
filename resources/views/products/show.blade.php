@@ -132,7 +132,7 @@
             return $path;
         }
 
-        return Storage::url($path);
+        return Storage::disk(config('media.public_disk', 'public'))->url($path);
     };
 
     $mainImageUrl = $imageUrl($primaryImage)

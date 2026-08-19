@@ -13,6 +13,10 @@ class TicketAttachmentService
     public const MAX_FILES = 5;
     public const MAX_KILOBYTES = 5120;
 
+    public function __construct(protected MediaPathService $media)
+    {
+    }
+
     /** @return array<string, array<int, string>> */
     public function validationRules(): array
     {
@@ -28,38 +32,47 @@ class TicketAttachmentService
 
     public function store(UploadedFile $file, TicketMessage $message, Ticket $ticket): TicketAttachment
     {
-        $path = $file->store('tickets/attachments', 'local');
+        $path = $this->media->storePrivate(
+            $file,
+            $this->media->ticketAttachmentDirectory($ticket),
+            'attachment'
+        );
 
-        $attachment = new TicketAttachment();
+        try {
+            $attachment = new TicketAttachment();
 
-        if (Schema::hasColumn('ticket_attachments', 'ticket_id')) {
-            $attachment->ticket_id = $ticket->id;
+            if (Schema::hasColumn('ticket_attachments', 'ticket_id')) {
+                $attachment->ticket_id = $ticket->id;
+            }
+
+            if (Schema::hasColumn('ticket_attachments', 'ticket_message_id')) {
+                $attachment->ticket_message_id = $message->id;
+            }
+
+            if (Schema::hasColumn('ticket_attachments', 'file_path')) {
+                $attachment->file_path = $path;
+            } elseif (Schema::hasColumn('ticket_attachments', 'path')) {
+                $attachment->path = $path;
+            }
+
+            if (Schema::hasColumn('ticket_attachments', 'original_name')) {
+                $attachment->original_name = mb_substr(basename($file->getClientOriginalName()), 0, 255);
+            }
+
+            if (Schema::hasColumn('ticket_attachments', 'mime_type')) {
+                $attachment->mime_type = $file->getMimeType();
+            }
+
+            if (Schema::hasColumn('ticket_attachments', 'size')) {
+                $attachment->size = (int) $file->getSize();
+            }
+
+            $attachment->save();
+
+            return $attachment;
+        } catch (\Throwable $e) {
+            $this->media->deleteFromDisks($path, [$this->media->privateDisk()]);
+            throw $e;
         }
-
-        if (Schema::hasColumn('ticket_attachments', 'ticket_message_id')) {
-            $attachment->ticket_message_id = $message->id;
-        }
-
-        if (Schema::hasColumn('ticket_attachments', 'file_path')) {
-            $attachment->file_path = $path;
-        } elseif (Schema::hasColumn('ticket_attachments', 'path')) {
-            $attachment->path = $path;
-        }
-
-        if (Schema::hasColumn('ticket_attachments', 'original_name')) {
-            $attachment->original_name = mb_substr(basename($file->getClientOriginalName()), 0, 255);
-        }
-
-        if (Schema::hasColumn('ticket_attachments', 'mime_type')) {
-            $attachment->mime_type = $file->getMimeType();
-        }
-
-        if (Schema::hasColumn('ticket_attachments', 'size')) {
-            $attachment->size = (int) $file->getSize();
-        }
-
-        $attachment->save();
-
-        return $attachment;
     }
 }

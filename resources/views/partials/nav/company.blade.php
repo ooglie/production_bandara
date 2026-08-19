@@ -43,7 +43,7 @@
     <div class="h-14 flex items-center justify-between gap-3 px-4 border-b border-gray-200 dark:border-gray-800">
         <span class="inline-flex min-w-0 items-center gap-2">
             <span class="inline-block h-16 w-16 rounded-full dark:border-gray-700">
-                <a href="{{ fb_dashboard_route($user) }}">
+                <a href="{{ $dashboardUrl ?? route('home') }}">
                     <img src="{{ asset('storage/images/logo-bandara.png') }}"
                          alt="Bandara Logo"
                          class="h-full w-full invert-0 dark:invert">

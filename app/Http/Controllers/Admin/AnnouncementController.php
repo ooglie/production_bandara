@@ -5,12 +5,17 @@ namespace App\Http\Controllers\Admin;
 use App\Http\Controllers\Controller;
 use App\Http\Requests\Admin\AnnouncementRequest;
 use App\Models\Announcement;
-use Illuminate\Http\UploadedFile;
-use Illuminate\Support\Facades\Storage;
-use Illuminate\Support\Str;
+use App\Services\MediaPathService;
+use App\Services\MediaReferenceService;
 
 class AnnouncementController extends Controller
 {
+    public function __construct(
+        protected MediaPathService $media,
+        protected MediaReferenceService $mediaReferences,
+    ) {
+    }
+
     public function index()
     {
         $announcements = Announcement::query()
@@ -37,9 +42,35 @@ class AnnouncementController extends Controller
 
     public function store(AnnouncementRequest $request)
     {
-        $announcement = new Announcement($this->payload($request));
-        $this->syncBackgroundImage($request, $announcement);
-        $announcement->save();
+        $newPath = null;
+        $announcement = null;
+
+        try {
+            $announcement = Announcement::create($this->payload($request));
+
+            if ($request->hasFile('background_image')) {
+                $newPath = $this->media->storePublic(
+                    $request->file('background_image'),
+                    $this->media->announcementImagesDirectory($announcement),
+                    'background'
+                );
+                $announcement->update(['background_image_path' => $newPath]);
+            }
+        } catch (\Throwable $e) {
+            if ($newPath) {
+                $this->media->deleteFromDisks($newPath, [$this->media->publicDisk()]);
+            }
+
+            if ($announcement?->exists) {
+                try {
+                    $announcement->delete();
+                } catch (\Throwable) {
+                    // Preserve the original upload/create exception.
+                }
+            }
+
+            throw $e;
+        }
 
         return redirect()
             ->route('admin.announcements.index')
@@ -53,9 +84,36 @@ class AnnouncementController extends Controller
 
     public function update(AnnouncementRequest $request, Announcement $announcement)
     {
+        $oldPath = $announcement->background_image_path;
+        $newPath = null;
         $announcement->fill($this->payload($request));
-        $this->syncBackgroundImage($request, $announcement);
-        $announcement->save();
+
+        if ($request->boolean('remove_background_image')) {
+            $announcement->background_image_path = null;
+        }
+
+        if ($request->hasFile('background_image')) {
+            $newPath = $this->media->storePublic(
+                $request->file('background_image'),
+                $this->media->announcementImagesDirectory($announcement),
+                'background'
+            );
+            $announcement->background_image_path = $newPath;
+        }
+
+        try {
+            $announcement->save();
+        } catch (\Throwable $e) {
+            if ($newPath) {
+                $this->media->deleteFromDisks($newPath, [$this->media->publicDisk()]);
+            }
+
+            throw $e;
+        }
+
+        if ($oldPath && $oldPath !== $announcement->background_image_path) {
+            $this->deleteBackgroundImage($oldPath);
+        }
 
         return redirect()
             ->route('admin.announcements.index')
@@ -64,8 +122,9 @@ class AnnouncementController extends Controller
 
     public function destroy(Announcement $announcement)
     {
-        $this->deleteBackgroundImage($announcement->background_image_path);
+        $oldPath = $announcement->background_image_path;
         $announcement->delete();
+        $this->deleteBackgroundImage($oldPath);
 
         return redirect()
             ->route('admin.announcements.index')
@@ -98,43 +157,8 @@ class AnnouncementController extends Controller
         return $data;
     }
 
-    protected function syncBackgroundImage(AnnouncementRequest $request, Announcement $announcement): void
-    {
-        if ($request->boolean('remove_background_image') && $announcement->background_image_path) {
-            $this->deleteBackgroundImage($announcement->background_image_path);
-            $announcement->background_image_path = null;
-        }
-
-        if ($request->hasFile('background_image')) {
-            if ($announcement->background_image_path) {
-                $this->deleteBackgroundImage($announcement->background_image_path);
-            }
-
-            $announcement->background_image_path = $this->storeBackgroundImage(
-                $request->file('background_image')
-            );
-        }
-    }
-
-    protected function storeBackgroundImage(UploadedFile $file): string
-    {
-        return $file->store('announcements', 'public');
-    }
-
     protected function deleteBackgroundImage(?string $path): void
     {
-        if (!filled($path)) {
-            return;
-        }
-
-        if (Str::startsWith($path, ['http://', 'https://'])) {
-            return;
-        }
-
-        $normalized = Str::startsWith($path, '/storage/')
-            ? ltrim(Str::after($path, '/storage/'), '/')
-            : ltrim($path, '/');
-
-        Storage::disk('public')->delete($normalized);
+        $this->mediaReferences->deletePublicFileIfUnreferenced($path);
     }
 }
