@@ -56,6 +56,10 @@ class EnforceAdminRoutePermission
             return 'view reports';
         }
 
+        if (Str::startsWith($routeName, 'admin.labels.')) {
+            return $this->isManagementRoute($request, $routeName) ? 'manage labels' : 'view labels';
+        }
+
         if (Str::startsWith($routeName, 'admin.delivery.')) {
             return 'manage settings';
         }

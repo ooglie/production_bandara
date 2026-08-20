@@ -157,53 +157,66 @@
 
 
         {{-- CATALOG --}}
-        @can('manage products')
+        @canany(['manage products', 'view labels', 'manage labels'])
             <div class="mb-4">
                 <p class="text-[11px] uppercase tracking-wide text-gray-400 dark:text-gray-500 mb-1">Catalog</p>
 
-                @if($has('admin.hsn-codes.index'))
-                    <a href="{{ route('admin.hsn-codes.index') }}"
-                       class="block px-2 py-1.5 rounded-md hover:bg-gray-100 dark:hover:bg-gray-800">
-                        HSN Codes
-                    </a>
-                @endif
+                @can('manage products')
+                    @if($has('admin.hsn-codes.index'))
+                        <a href="{{ route('admin.hsn-codes.index') }}"
+                           class="block px-2 py-1.5 rounded-md hover:bg-gray-100 dark:hover:bg-gray-800">
+                            HSN Codes
+                        </a>
+                    @endif
 
-                @if($has('admin.products.index'))
-                    <a href="{{ route('admin.products.index') }}"
-                       class="block px-2 py-1.5 rounded-md hover:bg-gray-100 dark:hover:bg-gray-800">
-                        Products
-                    </a>
-                @endif
+                    @if($has('admin.products.index'))
+                        <a href="{{ route('admin.products.index') }}"
+                           class="block px-2 py-1.5 rounded-md hover:bg-gray-100 dark:hover:bg-gray-800">
+                            Products
+                        </a>
+                    @endif
+                @endcan
 
-                @if($has('admin.categories.index'))
-                    <a href="{{ route('admin.categories.index') }}"
-                       class="block px-2 py-1.5 rounded-md hover:bg-gray-100 dark:hover:bg-gray-800">
-                        Categories
-                    </a>
-                @endif
+                @canany(['view labels', 'manage labels'])
+                    @if($has('admin.labels.index'))
+                        <a href="{{ route('admin.labels.index') }}"
+                           class="block px-2 py-1.5 rounded-md hover:bg-gray-100 dark:hover:bg-gray-800">
+                            Product Labels
+                        </a>
+                    @endif
+                @endcanany
 
-                @if($has('admin.attributes.index'))
-                    <a href="{{ route('admin.attributes.index') }}"
-                       class="block px-2 py-1.5 rounded-md hover:bg-gray-100 dark:hover:bg-gray-800">
-                        Variant Options
-                    </a>
-                @endif
+                @can('manage products')
+                    @if($has('admin.categories.index'))
+                        <a href="{{ route('admin.categories.index') }}"
+                           class="block px-2 py-1.5 rounded-md hover:bg-gray-100 dark:hover:bg-gray-800">
+                            Categories
+                        </a>
+                    @endif
 
-                @if($has('admin.variant-option-values.index'))
-                    <a href="{{ route('admin.variant-option-values.index') }}"
-                       class="block px-2 py-1.5 rounded-md hover:bg-gray-100 dark:hover:bg-gray-800">
-                        Variant Option Values
-                    </a>
-                @endif
+                    @if($has('admin.attributes.index'))
+                        <a href="{{ route('admin.attributes.index') }}"
+                           class="block px-2 py-1.5 rounded-md hover:bg-gray-100 dark:hover:bg-gray-800">
+                            Variant Options
+                        </a>
+                    @endif
 
-                @if($has('admin.recipes.index'))
-                    <a href="{{ route('admin.recipes.index') }}"
-                       class="block px-2 py-1.5 rounded-md hover:bg-gray-100 dark:hover:bg-gray-800">
-                        Recipes
-                    </a>
-                @endif
+                    @if($has('admin.variant-option-values.index'))
+                        <a href="{{ route('admin.variant-option-values.index') }}"
+                           class="block px-2 py-1.5 rounded-md hover:bg-gray-100 dark:hover:bg-gray-800">
+                            Variant Option Values
+                        </a>
+                    @endif
+
+                    @if($has('admin.recipes.index'))
+                        <a href="{{ route('admin.recipes.index') }}"
+                           class="block px-2 py-1.5 rounded-md hover:bg-gray-100 dark:hover:bg-gray-800">
+                            Recipes
+                        </a>
+                    @endif
+                @endcan
             </div>
-        @endcan
+        @endcanany
 
         {{-- STORES (new role) --}}
         @canany(['view stores', 'manage stores'])
