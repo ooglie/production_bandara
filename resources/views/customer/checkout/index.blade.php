@@ -21,6 +21,10 @@
     };
 
     $isB2BCheckoutUser = (auth()->user()?->customer_type ?? 'b2c') === 'b2b';
+    $gstContext = is_array($gstContext ?? null) ? $gstContext : [];
+    $gstContextError = $gstContextError ?? null;
+    $profileGstin = trim((string) ($profileGstin ?? auth()->user()?->gst_number ?? ''));
+    $selectedBillingAddressId = (int) ($selectedBillingAddressId ?? $selectedAddressId ?? 0);
 
     $placeUrl = \Illuminate\Support\Facades\Route::has('checkout.place')
         ? route('checkout.place')
@@ -477,6 +481,87 @@
     @endif
 </div>
 
+                    <div class="rounded-2xl border border-gray-200 dark:border-gray-800 bg-white dark:bg-gray-900 p-4 sm:p-5">
+                        <div>
+                            <h2 class="text-sm font-semibold text-gray-900 dark:text-gray-50">
+                                Billing / GST address
+                            </h2>
+                            <p class="mt-1 text-[11px] text-gray-500 dark:text-gray-400">
+                                Select the address to which the tax invoice will be raised. A saved GSTIN on this address takes priority; otherwise your account GSTIN is used.
+                            </p>
+                        </div>
+
+                        @if($addresses->isNotEmpty())
+                            <div class="mt-4 space-y-3">
+                                @foreach($addresses as $billingOption)
+                                    <label class="block cursor-pointer rounded-2xl border border-gray-200 dark:border-gray-800 bg-gray-50 dark:bg-gray-950/40 px-4 py-3 hover:bg-gray-100 dark:hover:bg-gray-900">
+                                        <div class="flex items-start gap-3">
+                                            <input
+                                                type="radio"
+                                                name="billing_address_id"
+                                                value="{{ $billingOption->id }}"
+                                                class="mt-1 rounded border-gray-300 dark:border-gray-700"
+                                                @checked((int) old('billing_address_id', $selectedBillingAddressId) === (int) $billingOption->id)
+                                                data-checkout-billing-address-radio
+                                            >
+
+                                            <div class="min-w-0 flex-1">
+                                                <div class="flex flex-wrap items-center gap-2">
+                                                    <div class="text-sm font-medium text-gray-900 dark:text-gray-50">
+                                                        {{ $billingOption->full_name }}
+                                                    </div>
+
+                                                    @if($billingOption->is_default_billing)
+                                                        <span class="rounded-full bg-violet-100 dark:bg-violet-900/40 px-2 py-0.5 text-[10px] font-medium text-violet-700 dark:text-violet-300">
+                                                            Default billing
+                                                        </span>
+                                                    @endif
+                                                </div>
+
+                                                <div class="mt-1 text-xs text-gray-600 dark:text-gray-300 leading-relaxed">
+                                                    {{ $billingOption->address_line1 }}
+                                                    @if($billingOption->address_line2), {{ $billingOption->address_line2 }} @endif
+                                                    <br>
+                                                    {{ $billingOption->city }}, {{ $billingOption->state }} - {{ $billingOption->pincode }}
+                                                </div>
+
+                                                @if(!empty($billingOption->gstin))
+                                                    <div class="mt-1 text-[11px] text-gray-500 dark:text-gray-400">
+                                                        GSTIN: {{ $billingOption->gstin }}
+                                                    </div>
+                                                @elseif($profileGstin !== '')
+                                                    <div class="mt-1 text-[11px] text-gray-500 dark:text-gray-400">
+                                                        Account GSTIN will be used: {{ $profileGstin }}
+                                                    </div>
+                                                @else
+                                                    <div class="mt-1 text-[11px] text-gray-500 dark:text-gray-400">
+                                                        No GSTIN — GST will follow the delivery state.
+                                                    </div>
+                                                @endif
+                                            </div>
+                                        </div>
+                                    </label>
+                                @endforeach
+                            </div>
+
+                            @error('billing_address_id')
+                                <p class="mt-2 text-[11px] text-red-600">{{ $message }}</p>
+                            @enderror
+                        @endif
+                    </div>
+
+                    <div data-gst-context-notice>
+                        @if($gstContextError)
+                            <div class="rounded-xl border border-red-200 dark:border-red-900/60 bg-red-50 dark:bg-red-950/25 px-3 py-2 text-[11px] text-red-700 dark:text-red-300">
+                                GST details need correction: {{ $gstContextError }}
+                            </div>
+                        @elseif(!empty($gstContext['is_bill_to_ship_to']))
+                            <div class="rounded-xl border border-gray-200 dark:border-gray-800 bg-gray-50 dark:bg-gray-950/40 px-3 py-2 text-[11px] text-gray-600 dark:text-gray-300">
+                                Bill-To / Ship-To order: the invoice place of supply is {{ $gstContext['place_of_supply_state_name'] ?? ('state code '.$gstContext['place_of_supply_gst_state_code']) }} from the Bill-To GSTIN, while delivery is to {{ $gstContext['ship_to_state_name'] ?? ('state code '.$gstContext['ship_to_gst_state_code']) }}.
+                            </div>
+                        @endif
+                    </div>
+
                     <textarea name="customer_note"
                               rows="3"
                               placeholder="Optional note for your order…"
@@ -651,6 +736,11 @@
                         <div class="flex items-center justify-between text-[11px]">
                             <span class="text-gray-600 dark:text-gray-300">Taxable <span class="text-[10px] text-gray-400">(excl GST)</span></span>
                             <span class="text-gray-900 dark:text-gray-50">₹{{ number_format($taxable, 2) }}</span>
+                        </div>
+
+                        <div class="flex items-center justify-between text-[11px]">
+                            <span class="text-gray-600 dark:text-gray-300">GST treatment</span>
+                            <span class="font-medium text-gray-900 dark:text-gray-50">{{ $gstContext['tax_label'] ?? (($gst['gst_type'] ?? null) === 'intra_state' ? 'CGST + SGST' : 'IGST') }}</span>
                         </div>
 
                         <div class="flex items-center justify-between text-[11px]">
@@ -843,13 +933,19 @@
         return hiddenInput && hiddenInput.value ? hiddenInput.value : null;
     };
 
-    const buildCheckoutUrl = function (addressId) {
+    const buildCheckoutUrl = function (addressId, billingAddressId) {
         const url = new URL(window.location.href);
 
         if (addressId) {
             url.searchParams.set('address_id', addressId);
         } else {
             url.searchParams.delete('address_id');
+        }
+
+        if (billingAddressId) {
+            url.searchParams.set('billing_address_id', billingAddressId);
+        } else {
+            url.searchParams.delete('billing_address_id');
         }
 
         const creditInput = form.querySelector('input[name="bandara_credit_points"]');
@@ -905,8 +1001,16 @@
         return selectedAddress && selectedAddress.value ? selectedAddress.value : null;
     };
 
-    const refreshCheckout = async function (addressId = selectedAddressValue()) {
-        const url = buildCheckoutUrl(addressId);
+    const selectedBillingAddressValue = function () {
+        const selectedAddress = form.querySelector('[data-checkout-billing-address-radio]:checked');
+        return selectedAddress && selectedAddress.value ? selectedAddress.value : null;
+    };
+
+    const refreshCheckout = async function (
+        addressId = selectedAddressValue(),
+        billingAddressId = selectedBillingAddressValue()
+    ) {
+        const url = buildCheckoutUrl(addressId, billingAddressId);
         updateReturnUrl(url);
 
         if (!window.fetch || !window.DOMParser) {
@@ -942,6 +1046,7 @@
 
             replaceSection('[data-checkout-payment-methods]', nextDocument);
             replaceSection('[data-bandara-credit-section]', nextDocument);
+            replaceSection('[data-gst-context-notice]', nextDocument);
             replaceSection('[data-checkout-totals]', nextDocument);
 
             window.history.replaceState({}, '', url.toString());
@@ -1013,12 +1118,14 @@
     document.addEventListener('change', function (event) {
         const target = event.target instanceof Element ? event.target : null;
         const addressRadio = target ? target.closest('[data-checkout-address-radio]') : null;
+        const billingAddressRadio = target ? target.closest('[data-checkout-billing-address-radio]') : null;
+        const changedRadio = addressRadio || billingAddressRadio;
 
-        if (!addressRadio || !form.contains(addressRadio) || !addressRadio.checked) {
+        if (!changedRadio || !form.contains(changedRadio) || !changedRadio.checked) {
             return;
         }
 
-        refreshCheckout(addressRadio.value);
+        refreshCheckout();
     });
 })();
 

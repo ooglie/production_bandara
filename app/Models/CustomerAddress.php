@@ -2,6 +2,7 @@
 
 namespace App\Models;
 
+use Illuminate\Database\Eloquent\Casts\Attribute;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\SoftDeletes;
 
@@ -39,6 +40,17 @@ class CustomerAddress extends Model
         'longitude' => 'float',
         'geocoded_at' => 'datetime',
     ];
+
+    protected function gstin(): Attribute
+    {
+        return Attribute::make(
+            set: static function ($value): ?string {
+                $normalized = strtoupper((string) preg_replace('/[\s-]+/', '', trim((string) $value)));
+
+                return $normalized !== '' ? $normalized : null;
+            },
+        );
+    }
 
     public function user()
     {

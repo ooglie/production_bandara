@@ -19,6 +19,7 @@ use App\Services\BandaraCreditService;
 use App\Services\CartService;
 use App\Services\DeliveryChargeService;
 use App\Services\DocumentNumberService;
+use App\Services\GstPlaceOfSupplyService;
 use App\Services\InvoicePdfService;
 use App\Services\OrderInventoryService;
 use App\Services\StockReservationService;
@@ -28,6 +29,7 @@ use Illuminate\Support\Facades\Route;
 use Illuminate\Support\Facades\Schema;
 use Illuminate\Support\Facades\Log;
 use Illuminate\Validation\ValidationException;
+use InvalidArgumentException;
 
 use App\Models\Product;
 use App\Models\ProductVariant;
@@ -76,6 +78,21 @@ class CheckoutController extends Controller
         $selectedAddressId = (int) ($request->query('address_id') ?: old('address_id', $defaultAddress?->id));
         $selectedAddress = $addresses->firstWhere('id', $selectedAddressId) ?? $defaultAddress;
 
+        $defaultBillingAddress = $addresses->firstWhere('is_default_billing', true)
+            ?? $selectedAddress
+            ?? $addresses->first();
+        $selectedBillingAddressId = (int) ($request->query('billing_address_id')
+            ?: old('billing_address_id', $defaultBillingAddress?->id));
+        $selectedBillingAddress = $addresses->firstWhere('id', $selectedBillingAddressId)
+            ?? $defaultBillingAddress;
+
+        [$gstContext, $gstContextError] = $this->resolveCheckoutGstContext(
+            $user,
+            $selectedBillingAddress,
+            $selectedAddress,
+            allowFallback: true,
+        );
+
         $isB2B = (($user->customer_type ?? 'b2c') === 'b2b');
 
         if ($isB2B && $cart->coupon_id) {
@@ -95,7 +112,7 @@ class CheckoutController extends Controller
 
         $taxable = max($subtotal - $discount, 0);
 
-        $gst = $this->calculateGstFromItems($items, (float) $discount, $selectedAddress?->state, $user);
+        $gst = $this->calculateGstFromItems($items, (float) $discount, $gstContext['gst_type'], $user);
         $deliveryQuote = app(DeliveryChargeService::class)->quote($user, $selectedAddress, $taxable);
 
         $shippingTotal = round((float) ($deliveryQuote['fee_total'] ?? 0), 2);
@@ -132,6 +149,11 @@ class CheckoutController extends Controller
             'addresses'           => $addresses,
             'selectedAddress'     => $selectedAddress,
             'selectedAddressId'   => $selectedAddress?->id,
+            'selectedBillingAddress' => $selectedBillingAddress,
+            'selectedBillingAddressId' => $selectedBillingAddress?->id,
+            'profileGstin'        => app(GstPlaceOfSupplyService::class)->normalizeGstin($user->gst_number),
+            'gstContext'          => $gstContext,
+            'gstContextError'     => $gstContextError,
             'addressCreateUrl'    => $addresses->isEmpty() ? $this->addressCreateUrl($request, $this->checkoutIndexUrl($request)) : null,
 
             'coupon'              => $coupon,
@@ -184,9 +206,16 @@ class CheckoutController extends Controller
         }
 
         $defaultAddress = $addresses->firstWhere('is_default_shipping', true) ?? $addresses->first();
+        $defaultBillingAddress = $addresses->firstWhere('is_default_billing', true)
+            ?? $defaultAddress
+            ?? $addresses->first();
 
         if (! $request->filled('address_id') && $defaultAddress) {
             $request->merge(['address_id' => $defaultAddress->id]);
+        }
+
+        if (! $request->filled('billing_address_id') && $defaultBillingAddress) {
+            $request->merge(['billing_address_id' => $defaultBillingAddress->id]);
         }
 
         if (! $request->filled('payment_method')) {
@@ -195,17 +224,46 @@ class CheckoutController extends Controller
 
         $data = $request->validate([
             'address_id'      => ['required', 'integer'],
+            'billing_address_id' => ['required', 'integer'],
             'customer_note'   => ['nullable', 'string', 'max:5000'],
             'payment_method'  => ['required', 'in:razorpay,pay_later'],
             'bandara_credit_points' => ['nullable', 'integer', 'min:0'],
         ]);
 
         $address = $addresses->firstWhere('id', (int) $data['address_id']);
+        $billingAddress = $addresses->firstWhere('id', (int) $data['billing_address_id']);
 
         if (! $address) {
             return redirect()
                 ->to($this->checkoutIndexUrl($request))
                 ->withErrors(['address_id' => 'Please select a valid delivery address.'])
+                ->withInput();
+        }
+
+        if (! $billingAddress) {
+            return redirect()
+                ->to($this->checkoutIndexUrl($request))
+                ->withErrors(['billing_address_id' => 'Please select a valid billing / GST address.'])
+                ->withInput();
+        }
+
+        $selectedCheckoutUrl = $this->checkoutUrlForAddresses(
+            $request,
+            $address->id,
+            $billingAddress->id,
+        );
+
+        try {
+            [$gstContext] = $this->resolveCheckoutGstContext(
+                $user,
+                $billingAddress,
+                $address,
+                allowFallback: false,
+            );
+        } catch (InvalidArgumentException $e) {
+            return redirect()
+                ->to($selectedCheckoutUrl)
+                ->withErrors(['billing_address_id' => $e->getMessage()])
                 ->withInput();
         }
 
@@ -230,7 +288,7 @@ class CheckoutController extends Controller
         $stockError = $this->validateCartStockBeforeOrder($items);
         if ($stockError !== null) {
             return redirect()
-                ->to($this->appendQueryParameter($this->checkoutIndexUrl($request), 'address_id', (string) $address->id))
+                ->to($selectedCheckoutUrl)
                 ->withErrors(['checkout' => $stockError])
                 ->withInput();
         }
@@ -275,7 +333,7 @@ class CheckoutController extends Controller
 
             if ($moqAdjusted) {
                 return redirect()
-                    ->to($this->appendQueryParameter($this->checkoutIndexUrl($request), 'address_id', (string) $address->id))
+                    ->to($selectedCheckoutUrl)
                     ->with('status', 'Some quantities were increased to meet MOQ. Please review your updated totals and place the order again.')
                     ->withInput();
             }
@@ -300,19 +358,19 @@ class CheckoutController extends Controller
         $taxable = max($subtotal - $discountTotal, 0);
 
         // ✅ GST per item using configured product/HSN/default rates.
-        $gst = $this->calculateGstFromItems($items, (float) $discountTotal, $address->state, $user);
+        $gst = $this->calculateGstFromItems($items, (float) $discountTotal, $gstContext['gst_type'], $user);
         $deliveryQuote = app(DeliveryChargeService::class)->quote($user, $address, $taxable);
 
         if (! ($deliveryQuote['serviceable'] ?? true)) {
             return redirect()
-                ->to($this->appendQueryParameter($this->checkoutIndexUrl($request), 'address_id', (string) $address->id))
+                ->to($selectedCheckoutUrl)
                 ->withErrors(['address_id' => ($deliveryQuote['messages'][0] ?? 'This delivery address is not currently serviceable.')])
                 ->withInput();
         }
 
         $shippingTotal = round((float) ($deliveryQuote['fee_total'] ?? 0), 2);
         $deliveryChargeTaxTotal = round((float) ($deliveryQuote['tax_total'] ?? 0), 2);
-        $deliveryChargeGst = app(DeliveryChargeService::class)->splitChargeTaxForState($deliveryQuote, $address->state);
+        $deliveryChargeGst = app(DeliveryChargeService::class)->splitChargeTaxForGstType($deliveryQuote, $gstContext['gst_type']);
         $grandTotal = round($taxable + (float) $gst['tax_total'] + $shippingTotal + $deliveryChargeTaxTotal, 2);
 
         $paymentMethod = (string) ($data['payment_method'] ?? 'razorpay');
@@ -320,7 +378,7 @@ class CheckoutController extends Controller
 
         if ($paymentMethod === 'pay_later' && ! ($payLaterOption['eligible'] ?? false)) {
             return redirect()
-                ->to($this->appendQueryParameter($this->checkoutIndexUrl($request), 'address_id', (string) $address->id))
+                ->to($selectedCheckoutUrl)
                 ->withErrors(['payment_method' => $payLaterOption['reason'] ?? 'Pay Later is not available for this order.'])
                 ->withInput();
         }
@@ -343,7 +401,7 @@ class CheckoutController extends Controller
 
                 if ($bandaraCreditPointsToRedeem <= 0 || $bandaraCreditRedeemAmount <= 0) {
                     return redirect()
-                        ->to($this->appendQueryParameter($this->checkoutIndexUrl($request), 'address_id', (string) $address->id))
+                        ->to($selectedCheckoutUrl)
                         ->withErrors(['bandara_credit_points' => $bandaraCreditQuote['message'] ?? 'Bandara Credit cannot be applied to this order.'])
                         ->withInput();
                 }
@@ -352,7 +410,7 @@ class CheckoutController extends Controller
 
                 if ($payableGrandTotal <= 0) {
                     return redirect()
-                        ->to($this->appendQueryParameter($this->checkoutIndexUrl($request), 'address_id', (string) $address->id))
+                        ->to($selectedCheckoutUrl)
                         ->withErrors(['bandara_credit_points' => 'Bandara Credit cannot cover the full payable amount yet. Please reduce the credits used.'])
                         ->withInput();
                 }
@@ -379,6 +437,8 @@ class CheckoutController extends Controller
             $bandaraCreditPointsToRedeem,
             $bandaraCreditRedeemAmount,
             $address,
+            $billingAddress,
+            $gstContext,
             $data,
             $paymentMethod,
             $payLaterOption,
@@ -457,6 +517,7 @@ class CheckoutController extends Controller
             $order->coupon_id = $coupon?->id;
 
             $order->gst_type = $gst['gst_type'];
+            $this->applyGstContextSnapshot($order, $gstContext, 'orders');
             $order->cgst_amount = $this->addNullableAmounts($gst['cgst_amount'] ?? null, $deliveryChargeGst['cgst_amount'] ?? null);
             $order->sgst_amount = $this->addNullableAmounts($gst['sgst_amount'] ?? null, $deliveryChargeGst['sgst_amount'] ?? null);
             $order->igst_amount = $this->addNullableAmounts($gst['igst_amount'] ?? null, $deliveryChargeGst['igst_amount'] ?? null);
@@ -510,29 +571,41 @@ class CheckoutController extends Controller
                 }
             }
 
-            foreach (['shipping', 'billing'] as $type) {
+            foreach ([
+                'shipping' => [
+                    'address' => $address,
+                    'gstin' => app(GstPlaceOfSupplyService::class)->normalizeGstin($address->gstin),
+                ],
+                'billing' => [
+                    'address' => $billingAddress,
+                    'gstin' => $gstContext['bill_to_gstin'] ?? null,
+                ],
+            ] as $type => $snapshot) {
+                /** @var CustomerAddress $sourceAddress */
+                $sourceAddress = $snapshot['address'];
+
                 $oa = new OrderAddress();
                 $oa->order_id = $order->id;
                 $oa->type = $type;
 
-                $oa->full_name = $address->full_name;
-                $oa->phone = $address->phone;
+                $oa->full_name = $sourceAddress->full_name;
+                $oa->phone = $sourceAddress->phone;
 
-                $oa->address_line1 = $address->address_line1;
-                $oa->address_line2 = $address->address_line2;
-                $oa->city = $address->city;
-                $oa->state = $address->state;
-                $oa->state_code = $address->state_code;
-                $oa->country = $address->country ?? 'India';
-                $oa->pincode = $address->pincode;
+                $oa->address_line1 = $sourceAddress->address_line1;
+                $oa->address_line2 = $sourceAddress->address_line2;
+                $oa->city = $sourceAddress->city;
+                $oa->state = $sourceAddress->state;
+                $oa->state_code = $sourceAddress->state_code;
+                $oa->country = $sourceAddress->country ?? 'India';
+                $oa->pincode = $sourceAddress->pincode;
 
                 foreach (['latitude', 'longitude', 'geocoding_provider', 'geocoding_quality'] as $locationColumn) {
                     if (Schema::hasColumn('order_addresses', $locationColumn)) {
-                        $oa->{$locationColumn} = $address->{$locationColumn} ?? null;
+                        $oa->{$locationColumn} = $sourceAddress->{$locationColumn} ?? null;
                     }
                 }
 
-                $oa->gstin = $address->gstin;
+                $oa->gstin = $snapshot['gstin'];
                 $oa->save();
             }
 
@@ -631,6 +704,7 @@ class CheckoutController extends Controller
             if (Schema::hasColumn('invoices', 'gst_type')) {
                 $invoice->gst_type = $order->gst_type;
             }
+            $this->applyGstContextSnapshot($invoice, $gstContext, 'invoices');
             if (Schema::hasColumn('invoices', 'cgst_amount')) {
                 $invoice->cgst_amount = $order->cgst_amount;
             }
@@ -1069,6 +1143,100 @@ class CheckoutController extends Controller
         return $path . ($queryString !== '' ? '?' . $queryString : '') . $fragment;
     }
 
+    private function checkoutUrlForAddresses(
+        Request $request,
+        int $shippingAddressId,
+        int $billingAddressId,
+    ): string {
+        $url = $this->appendQueryParameter(
+            $this->checkoutIndexUrl($request),
+            'address_id',
+            (string) $shippingAddressId,
+        );
+
+        return $this->appendQueryParameter(
+            $url,
+            'billing_address_id',
+            (string) $billingAddressId,
+        );
+    }
+
+    private function resolveCheckoutGstContext(
+        \App\Models\User $user,
+        ?CustomerAddress $billingAddress,
+        ?CustomerAddress $shippingAddress,
+        bool $allowFallback,
+    ): array {
+        $service = app(GstPlaceOfSupplyService::class);
+
+        if (! $shippingAddress) {
+            $supplierStateCode = $service->gstStateCodeFromGstin($service->supplierGstin());
+            $supplierState = $service->stateByGstCode($supplierStateCode);
+
+            return [
+                $service->resolve(
+                    null,
+                    null,
+                    null,
+                    $supplierState['code'] ?? null,
+                    $supplierState['name'] ?? null,
+                ),
+                null,
+            ];
+        }
+
+        $billToGstin = $service->normalizeGstin($billingAddress?->gstin)
+            ?? $service->normalizeGstin($user->gst_number);
+
+        try {
+            return [
+                $service->resolve(
+                    $billToGstin,
+                    $billingAddress?->state_code,
+                    $billingAddress?->state,
+                    $shippingAddress?->state_code,
+                    $shippingAddress?->state,
+                ),
+                null,
+            ];
+        } catch (InvalidArgumentException $e) {
+            if (! $allowFallback) {
+                throw $e;
+            }
+
+            $fallback = $service->resolve(
+                null,
+                null,
+                null,
+                $shippingAddress?->state_code,
+                $shippingAddress?->state,
+            );
+
+            return [$fallback, $e->getMessage()];
+        }
+    }
+
+    private function applyGstContextSnapshot(
+        \Illuminate\Database\Eloquent\Model $model,
+        array $gstContext,
+        string $tableName,
+    ): void {
+        foreach ([
+            'supplier_gstin',
+            'supplier_gst_state_code',
+            'bill_to_gstin',
+            'bill_to_gst_state_code',
+            'ship_to_gst_state_code',
+            'place_of_supply_gst_state_code',
+            'gst_determination_basis',
+            'is_bill_to_ship_to',
+        ] as $column) {
+            if (Schema::hasColumn($tableName, $column)) {
+                $model->{$column} = $gstContext[$column] ?? null;
+            }
+        }
+    }
+
     private function addNullableAmounts(mixed $left, mixed $right): ?float
     {
         $hasLeft = $left !== null;
@@ -1171,10 +1339,9 @@ class CheckoutController extends Controller
         return app(\App\Services\GstRateService::class)->rateForProduct($product, request()->user());
     }
 
-    private function calculateGstFromItems($items, float $discountTotal, ?string $state, ?\App\Models\User $user = null): array
+    private function calculateGstFromItems($items, float $discountTotal, ?string $gstType, ?\App\Models\User $user = null): array
     {
-        $state = trim((string) $state);
-        $isMaharashtra = $state !== '' && strcasecmp($state, 'Maharashtra') === 0;
+        $isIntraState = $gstType === 'intra_state';
 
         // Base subtotals from cart lines (already weight-aware)
         $subtotals = [];
@@ -1240,7 +1407,7 @@ class CheckoutController extends Controller
 
         $taxTotal = round($taxTotal, 2);
 
-        if ($isMaharashtra) {
+        if ($isIntraState) {
             $cgst = round($taxTotal / 2, 2);
             $sgst = round($taxTotal - $cgst, 2);
 

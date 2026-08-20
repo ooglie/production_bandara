@@ -5,6 +5,8 @@ namespace App\Http\Controllers\Customer;
 use App\Http\Controllers\Controller;
 use App\Support\SafeRedirect;
 use App\Models\CustomerAddress;
+use App\Rules\ValidIndianGstin;
+use App\Services\GstPlaceOfSupplyService;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Route;
@@ -230,6 +232,9 @@ class AddressController extends Controller
     protected function validatedData(Request $request): array
     {
         $stateCode = strtoupper(trim((string) $request->input('state_code', '')));
+        $gstin = app(GstPlaceOfSupplyService::class)->normalizeGstin($request->input('gstin'));
+
+        $request->merge(['gstin' => $gstin]);
 
         return $request->validate([
             'full_name'      => ['required', 'string', 'max:255'],
@@ -259,7 +264,7 @@ class AddressController extends Controller
             ],
 
             'pincode'        => ['required', 'string', 'max:20'],
-            'gstin'          => ['nullable', 'string', 'max:20'],
+            'gstin'          => ['nullable', 'string', 'size:15', new ValidIndianGstin($stateCode)],
 
             'is_default_shipping' => ['nullable', 'boolean'],
             'is_default_billing'  => ['nullable', 'boolean'],

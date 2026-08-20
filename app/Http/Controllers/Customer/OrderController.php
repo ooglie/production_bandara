@@ -14,11 +14,14 @@ use App\Services\BandaraCreditService;
 use App\Services\DeliveryTaxSettingsService;
 use App\Services\DocumentNumberService;
 use App\Services\GstRateService;
+use App\Services\GstPlaceOfSupplyService;
+use App\Rules\ValidIndianGstin;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Facades\Schema;
 use Illuminate\Support\Facades\Storage;
+use InvalidArgumentException;
 use Symfony\Component\HttpKernel\Exception\NotFoundHttpException;
 
 class OrderController extends Controller
@@ -78,6 +81,11 @@ class OrderController extends Controller
 
     public function adminStore(Request $request)
     {
+        $gstService = app(GstPlaceOfSupplyService::class);
+        $request->merge([
+            'gstin' => $gstService->normalizeGstin($request->input('gstin')),
+        ]);
+
         $data = $request->validate([
             'user_id' => ['required', 'exists:users,id'],
 
@@ -90,7 +98,7 @@ class OrderController extends Controller
             'state_code'     => ['nullable', 'string', 'max:10'],
             'country'        => ['nullable', 'string', 'max:100'],
             'pincode'        => ['required', 'string', 'max:20'],
-            'gstin'          => ['nullable', 'string', 'max:50'],
+            'gstin'          => ['nullable', 'string', 'size:15', new ValidIndianGstin($request->input('state_code'), $request->input('state'))],
 
             'shipping_total' => ['nullable', 'numeric', 'min:0'],
             'customer_note'  => ['nullable', 'string'],
@@ -118,10 +126,28 @@ class OrderController extends Controller
         }
 
         $order = null;
+        $customer = User::query()->findOrFail((int) $data['user_id']);
+        // The manual-order form currently captures one address only, so its
+        // optional GSTIN is validated against that same address. Customer
+        // checkout supports separate Bill-To and Ship-To address selection.
+        $billToGstin = $gstService->normalizeGstin($data['gstin'] ?? null);
 
-        DB::transaction(function () use ($data, $items, &$order) {
+        try {
+            $gstContext = $gstService->resolve(
+                $billToGstin,
+                $data['state_code'] ?? null,
+                $data['state'] ?? null,
+                $data['state_code'] ?? null,
+                $data['state'] ?? null,
+            );
+        } catch (InvalidArgumentException $e) {
+            return back()
+                ->withErrors(['gstin' => $e->getMessage()])
+                ->withInput();
+        }
+
+        DB::transaction(function () use ($data, $items, $customer, $gstContext, &$order) {
             $userId = (int) $data['user_id'];
-            $customer = User::query()->findOrFail($userId);
             $shippingTotal = round((float) ($data['shipping_total'] ?? 0), 2);
 
             $productIds = collect($items)->pluck('product_id')->unique()->all();
@@ -131,10 +157,8 @@ class OrderController extends Controller
                 ->get()
                 ->keyBy('id');
 
-            $baseState = 'Maharashtra';
-            $shippingState = trim((string) $data['state']);
-            $isIntraState = $shippingState !== '' && strcasecmp($shippingState, $baseState) === 0;
-            $gstType = $isIntraState ? 'intra_state' : 'inter_state';
+            $gstType = (string) $gstContext['gst_type'];
+            $isIntraState = $gstType === 'intra_state';
 
             $subtotal = 0.0;
             $discountTotal = 0.0;
@@ -222,6 +246,21 @@ class OrderController extends Controller
                 'placed_at' => now(),
             ];
 
+            foreach ([
+                'supplier_gstin',
+                'supplier_gst_state_code',
+                'bill_to_gstin',
+                'bill_to_gst_state_code',
+                'ship_to_gst_state_code',
+                'place_of_supply_gst_state_code',
+                'gst_determination_basis',
+                'is_bill_to_ship_to',
+            ] as $snapshotColumn) {
+                if (Schema::hasColumn('orders', $snapshotColumn)) {
+                    $orderData[$snapshotColumn] = $gstContext[$snapshotColumn] ?? null;
+                }
+            }
+
             if (Schema::hasColumn('orders', 'delivery_fee')) {
                 $orderData['delivery_fee'] = $shippingTotal;
             }
@@ -253,7 +292,7 @@ class OrderController extends Controller
                     'state_code' => $data['state_code'] ?? null,
                     'country' => $data['country'] ?? 'India',
                     'pincode' => $data['pincode'],
-                    'gstin' => $data['gstin'] ?? null,
+                    'gstin' => $type === 'billing' ? ($gstContext['bill_to_gstin'] ?? null) : ($data['gstin'] ?? null),
                 ]);
             }
 
@@ -287,6 +326,21 @@ class OrderController extends Controller
             if (Schema::hasColumn('invoices', 'igst_amount')) {
                 $invoiceData['igst_amount'] = $isIntraState ? null : $igst;
             }
+            foreach ([
+                'supplier_gstin',
+                'supplier_gst_state_code',
+                'bill_to_gstin',
+                'bill_to_gst_state_code',
+                'ship_to_gst_state_code',
+                'place_of_supply_gst_state_code',
+                'gst_determination_basis',
+                'is_bill_to_ship_to',
+            ] as $snapshotColumn) {
+                if (Schema::hasColumn('invoices', $snapshotColumn)) {
+                    $invoiceData[$snapshotColumn] = $gstContext[$snapshotColumn] ?? null;
+                }
+            }
+
             if (Schema::hasColumn('invoices', 'delivery_fee')) {
                 $invoiceData['delivery_fee'] = $shippingTotal;
             }

@@ -116,7 +116,7 @@
             @enderror
 
             <p class="mt-1 text-[10px] text-gray-400 dark:text-gray-500">
-                Used to determine GST (Maharashtra vs other states).
+                Used to validate a GSTIN saved with this billing address.
             </p>
         </div>
 
@@ -197,11 +197,16 @@
                 type="text"
                 name="gstin"
                 value="{{ old('gstin', $address->gstin ?? '') }}"
-                class="mt-1 w-full rounded-sm border border-gray-300 dark:border-gray-700 bg-white dark:bg-gray-950 px-2 py-1.5 text-xs focus:outline-none focus:ring-1 focus:ring-gray-400 dark:focus:ring-gray-500"
+                maxlength="15"
+                autocomplete="off"
+                class="mt-1 w-full uppercase rounded-sm border border-gray-300 dark:border-gray-700 bg-white dark:bg-gray-950 px-2 py-1.5 text-xs focus:outline-none focus:ring-1 focus:ring-gray-400 dark:focus:ring-gray-500"
             >
             @error('gstin')
                 <p class="mt-1 text-[11px] text-red-600">{{ $message }}</p>
             @enderror
+            <p class="mt-1 text-[10px] text-gray-400 dark:text-gray-500">
+                The first two GSTIN digits must match this address state. At checkout, a Bill-To GSTIN determines CGST/SGST or IGST; without one, the delivery state is used.
+            </p>
         </div>
     </div>
 

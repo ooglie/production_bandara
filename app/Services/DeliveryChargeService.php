@@ -168,11 +168,22 @@ class DeliveryChargeService
 
     public function splitChargeTaxForState(array $quote, ?string $state): array
     {
-        $taxTotal = round((float) ($quote['tax_total'] ?? 0), 2);
-        $isMaharashtra = trim((string) $state) !== '' && strcasecmp(trim((string) $state), 'Maharashtra') === 0;
+        $isMaharashtra = trim((string) $state) !== ''
+            && strcasecmp(trim((string) $state), 'Maharashtra') === 0;
 
-        if ($isMaharashtra) {
+        return $this->splitChargeTaxForGstType(
+            $quote,
+            $isMaharashtra ? 'intra_state' : 'inter_state',
+        );
+    }
+
+    public function splitChargeTaxForGstType(array $quote, ?string $gstType): array
+    {
+        $taxTotal = round((float) ($quote['tax_total'] ?? 0), 2);
+
+        if ($gstType === 'intra_state') {
             $cgst = round($taxTotal / 2, 2);
+
             return [
                 'gst_type' => 'intra_state',
                 'cgst_amount' => $cgst,
