@@ -4,10 +4,6 @@
     // Safe defaults
     $revenueToday              = $revenueToday              ?? 0;
     $revenueThisMonth          = $revenueThisMonth          ?? 0;
-    $vendorInvoiceCountThisMonth = $vendorInvoiceCountThisMonth ?? 0;
-    $vendorInvoiceGrossThisMonth = $vendorInvoiceGrossThisMonth ?? 0;
-    $vendorInvoiceAdjustmentDeltaThisMonth = $vendorInvoiceAdjustmentDeltaThisMonth ?? 0;
-    $vendorInvoiceNetThisMonth = $vendorInvoiceNetThisMonth ?? $vendorInvoiceGrossThisMonth;
     $ordersTodayCount          = $ordersTodayCount          ?? 0;
     $ordersTotalCount          = $ordersTotalCount          ?? 0;
     $totalCustomers            = $totalCustomers            ?? 0;
@@ -79,7 +75,7 @@
     @endif
 
     {{-- Small KPI strip --}}
-    <div class="grid grid-cols-2 gap-2 sm:gap-3 md:grid-cols-3 xl:grid-cols-5">
+    <div class="grid gap-2 sm:gap-3 grid-cols-2 md:grid-cols-4">
         <div class="rounded-xl border border-gray-200 dark:border-gray-800 bg-white dark:bg-gray-900 px-3 py-2.5">
             <p class="text-[10px] text-gray-500 dark:text-gray-400 mb-0.5">
                 Revenue today
@@ -103,22 +99,6 @@
                 Since {{ now()->startOfMonth()->format('d M') }}.
             </p>
         </div>
-
-        <a href="{{ route('admin.vendor-invoices.index') }}"
-           class="block rounded-xl border border-gray-200 bg-white px-3 py-2.5 transition hover:-translate-y-0.5 hover:shadow-md dark:border-gray-800 dark:bg-gray-900">
-            <p class="mb-0.5 text-[10px] text-gray-500 dark:text-gray-400">
-                Vendor invoices this month
-            </p>
-            <p class="text-lg font-semibold tracking-tight text-gray-900 dark:text-gray-50">
-                ₹{{ number_format($vendorInvoiceNetThisMonth, 0) }}
-            </p>
-            <p class="mt-0.5 text-[10px] text-gray-400">
-                {{ $vendorInvoiceCountThisMonth }} invoice{{ $vendorInvoiceCountThisMonth === 1 ? '' : 's' }}
-                @if(abs((float) $vendorInvoiceAdjustmentDeltaThisMonth) > 0.005)
-                    · gross ₹{{ number_format($vendorInvoiceGrossThisMonth, 0) }}
-                @endif
-            </p>
-        </a>
 
         <div class="rounded-xl border border-gray-200 dark:border-gray-800 bg-white dark:bg-gray-900 px-3 py-2.5">
             <div class="{{ $ordersTodayUrl ? 'cursor-pointer' : '' }}">

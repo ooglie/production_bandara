@@ -1,0 +1,12 @@
+1	app/Services/VendorReturnService.php
+1	app/Http/Controllers/Admin/VendorInvoiceAdjustmentController.php
+1	resources/views/admin/vendor_invoices/return_form.blade.php
+1	resources/views/admin/vendor_invoices/return_show.blade.php
+1	resources/views/admin/production/create.blade.php
+1	app/Http/Controllers/Admin/DashboardController.php
+1	resources/views/dashboard/admin.blade.php
+0	app/Services/VendorInvoiceMonthSummaryService.php
+0	tests/Feature/Admin/VendorWholePieceReturnTest.php
+0	tests/Feature/Admin/AdminDashboardVendorInvoiceMonthTest.php
+0	tests/Feature/Admin/VendorInvoiceMonthSummaryTest.php
+0	tests/Unit/ProductionPiecePickerCompatibilityTest.php

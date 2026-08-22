@@ -45,13 +45,8 @@
                             <div class="mt-1 text-[10px] text-gray-400">Invoice line #{{ $item->id }} · {{ $lot?->lot_code ?? 'No linked lot' }} · {{ ucfirst($mode) }} return</div>
                         </div>
                         <div class="text-right text-[11px] text-gray-500">
-                            @if($mode === 'whole_piece')
-                                Whole piece {{ number_format((float)$option['max_weight_kg'], 3) }} kg
-                            @elseif($mode === 'weight' || $mode === 'pieces')
-                                Maximum {{ number_format((float)$option['max_weight_kg'], 3) }} kg
-                            @else
-                                Maximum {{ number_format((float)$option['max_quantity'], 3) }} units
-                            @endif
+                            @if($mode === 'weight' || $mode === 'pieces')Maximum {{ number_format((float)$option['max_weight_kg'], 3) }} kg
+                            @else Maximum {{ number_format((float)$option['max_quantity'], 3) }} units @endif
                         </div>
                     </div>
 
@@ -74,21 +69,6 @@
                                     <span><span class="block font-medium">{{ $pack->pack_code ?: ('Pack #'.$pack->id) }}</span><span class="text-[10px] text-gray-400">{{ number_format((float)($pack->available_pack_quantity ?? 1), 3) }} pack · {{ number_format((float)($pack->actual_weight_kg ?? $pack->total_weight_kg ?? 0), 3) }} kg</span></span>
                                 </label>
                             @endforeach
-                        </div>
-                    @elseif($mode === 'whole_piece')
-                        <div class="p-5">
-                            <input type="hidden" name="items[{{ $invoiceItemId }}][whole_piece]" value="0">
-                            <label class="flex min-h-12 cursor-pointer items-start gap-3 rounded-xl border border-gray-200 p-4 hover:bg-gray-50 dark:border-gray-700 dark:hover:bg-gray-800/50">
-                                <input type="checkbox"
-                                       name="items[{{ $invoiceItemId }}][whole_piece]"
-                                       value="1"
-                                       @checked(old('items.'.$invoiceItemId.'.whole_piece'))
-                                       class="mt-0.5 h-5 w-5 rounded border-gray-300">
-                                <span>
-                                    <span class="block font-medium text-gray-900 dark:text-gray-50">Return the entire piece</span>
-                                    <span class="mt-1 block text-[10px] text-gray-400">{{ number_format((float)$option['max_weight_kg'], 3) }} kg · partial-weight return is not permitted for this item.</span>
-                                </span>
-                            </label>
                         </div>
                     @elseif($mode === 'weight')
                         <div class="p-5 max-w-sm"><label class="block mb-1 text-[11px] font-medium">Weight to return (kg)</label><input type="number" name="items[{{ $invoiceItemId }}][weight_kg]" min="0" max="{{ $option['max_weight_kg'] }}" step="0.001" value="{{ old('items.'.$invoiceItemId.'.weight_kg') }}" class="w-full rounded-lg border border-gray-300 dark:border-gray-700 bg-white dark:bg-gray-950 px-3 py-2"><input type="hidden" name="items[{{ $invoiceItemId }}][piece_count]" value="0"></div>

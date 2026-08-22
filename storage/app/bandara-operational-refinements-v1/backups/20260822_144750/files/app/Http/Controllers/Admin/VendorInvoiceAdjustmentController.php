@@ -364,7 +364,6 @@ class VendorInvoiceAdjustmentController extends Controller
             'items.*.piece_ids.*' => ['integer'],
             'items.*.pack_ids' => ['nullable', 'array'],
             'items.*.pack_ids.*' => ['integer'],
-            'items.*.whole_piece' => ['nullable', 'boolean'],
             'items.*.weight_kg' => ['nullable', 'numeric', 'min:0'],
             'items.*.piece_count' => ['nullable', 'integer', 'min:0'],
             'items.*.quantity' => ['nullable', 'numeric', 'min:0'],

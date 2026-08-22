@@ -6,16 +6,10 @@ use App\Http\Controllers\Controller;
 use App\Models\Order;
 use App\Models\Product;
 use App\Models\User;
-use App\Services\VendorInvoiceMonthSummaryService;
 use Illuminate\Support\Facades\DB;
 
 class DashboardController extends Controller
 {
-    public function __construct(
-        private readonly VendorInvoiceMonthSummaryService $vendorInvoiceMonthSummary,
-    ) {
-    }
-
     public function index()
     {
         $now        = now();
@@ -31,15 +25,6 @@ class DashboardController extends Controller
         $revenueThisMonth = Order::where('payment_status', 'paid')
             ->whereBetween('placed_at', [$monthStart, $now])
             ->sum('grand_total');
-
-        // Supplier purchases recorded on invoices dated in the current month.
-        // The service keeps the original invoice total auditable and applies
-        // only posted supplier credits/debits to the displayed net amount.
-        $vendorInvoiceMonth = $this->vendorInvoiceMonthSummary->forMonth($now);
-        $vendorInvoiceCountThisMonth = $vendorInvoiceMonth['count'];
-        $vendorInvoiceGrossThisMonth = $vendorInvoiceMonth['original_total'];
-        $vendorInvoiceAdjustmentDeltaThisMonth = $vendorInvoiceMonth['posted_adjustment_total'];
-        $vendorInvoiceNetThisMonth = $vendorInvoiceMonth['adjusted_total'];
 
         // Orders
         $ordersTodayCount = Order::whereDate('created_at', $today)->count();
@@ -111,10 +96,6 @@ class DashboardController extends Controller
         return view('dashboard.admin', [
             'revenueToday'            => $revenueToday,
             'revenueThisMonth'        => $revenueThisMonth,
-            'vendorInvoiceCountThisMonth' => $vendorInvoiceCountThisMonth,
-            'vendorInvoiceGrossThisMonth' => $vendorInvoiceGrossThisMonth,
-            'vendorInvoiceAdjustmentDeltaThisMonth' => $vendorInvoiceAdjustmentDeltaThisMonth,
-            'vendorInvoiceNetThisMonth' => $vendorInvoiceNetThisMonth,
             'ordersTodayCount'        => $ordersTodayCount,
             'ordersTotalCount'        => $ordersTotalCount,
             'totalCustomers'          => $totalCustomers,

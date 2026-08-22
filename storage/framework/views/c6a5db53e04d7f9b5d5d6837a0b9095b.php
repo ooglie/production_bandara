@@ -418,7 +418,7 @@ unset($__errorArgs, $__bag); ?>
     </div>
 </div>
 
-<?php if (! $__env->hasRenderedOnce('d3765d4b-3c0a-465f-bb79-20ad14005985')): $__env->markAsRenderedOnce('d3765d4b-3c0a-465f-bb79-20ad14005985'); ?>
+<?php if (! $__env->hasRenderedOnce('f47fed27-5a11-497c-9d0a-961575208fb3')): $__env->markAsRenderedOnce('f47fed27-5a11-497c-9d0a-961575208fb3'); ?>
 <script>
 document.addEventListener('DOMContentLoaded', function () {
     const searchInput = document.querySelector('[data-product-search]');

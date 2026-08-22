@@ -167,7 +167,49 @@
                         </div>
                     </div>
 
-                    <div id="pieces-list" class="grid gap-2 md:grid-cols-2"></div>
+                    <div id="pieces-list">
+                        @foreach($inputLots as $pieceLot)
+                            @if((string) ($pieceLot->inward_mode ?? '') === 'pieces' && ($pieceLot->pieces ?? collect())->isNotEmpty())
+                                <div class="hidden" data-piece-lot-group="{{ $pieceLot->id }}">
+                                    <div class="grid gap-2 md:grid-cols-2">
+                                        @foreach($pieceLot->pieces as $piece)
+                                            @php
+                                                $pieceInputId = 'production-piece-' . $piece->id;
+                                                $isOldPiece = in_array((int) $piece->id, $oldSelectedPieceIds, true);
+                                            @endphp
+                                            <label for="{{ $pieceInputId }}"
+                                                   class="flex min-h-12 cursor-pointer items-center justify-between gap-3 rounded-xl border border-gray-200 bg-white px-3 py-2.5 transition hover:shadow-sm focus-within:ring-2 focus-within:ring-gray-300 dark:border-gray-800 dark:bg-gray-900 dark:focus-within:ring-gray-700">
+                                                <span class="flex min-w-0 items-center gap-3">
+                                                    <input id="{{ $pieceInputId }}"
+                                                           type="checkbox"
+                                                           name="selected_piece_ids[]"
+                                                           value="{{ $piece->id }}"
+                                                           data-piece-checkbox="1"
+                                                           data-lot-id="{{ $pieceLot->id }}"
+                                                           data-weight="{{ (float) ($piece->available_weight_kg ?? $piece->weight_kg ?? 0) }}"
+                                                           @checked($isOldPiece)
+                                                           @disabled((string) $oldInputLotId !== (string) $pieceLot->id)
+                                                           class="h-5 w-5 shrink-0 rounded border-gray-300 text-gray-900 focus:ring-gray-400 dark:border-gray-700 dark:bg-gray-950 dark:text-gray-100">
+                                                    <span class="truncate text-[12px] text-gray-800 dark:text-gray-200">
+                                                        {{ $piece->label ?: ('Piece ' . $piece->piece_no) }}
+                                                    </span>
+                                                </span>
+                                                <span class="shrink-0 text-[12px] font-medium text-gray-700 dark:text-gray-300">
+                                                    {{ number_format((float) ($piece->available_weight_kg ?? $piece->weight_kg ?? 0), 3) }} kg
+                                                </span>
+                                            </label>
+                                        @endforeach
+                                    </div>
+                                </div>
+                            @endif
+                        @endforeach
+                    </div>
+
+                    <noscript>
+                        <div class="rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-[11px] text-amber-800">
+                            JavaScript is required to filter the available pieces by the selected lot.
+                        </div>
+                    </noscript>
 
                     <div id="pieces-summary"
                          class="rounded-lg border border-gray-200 dark:border-gray-800 bg-white dark:bg-gray-900 px-3 py-2 text-[12px] text-gray-700 dark:text-gray-200">
@@ -471,6 +513,7 @@
     const inputLotSummary = document.getElementById('input-lot-summary');
     const pieceWrap = document.getElementById('piece-picker-wrap');
     const pieceList = document.getElementById('pieces-list');
+    const pieceGroups = Array.from(pieceList.querySelectorAll('[data-piece-lot-group]'));
     const pieceSummary = document.getElementById('pieces-summary');
     const selectAllPiecesBtn = document.getElementById('select-all-pieces');
     const clearAllPiecesBtn = document.getElementById('clear-all-pieces');
@@ -612,7 +655,7 @@
     }
 
     function selectedPieceCheckboxes() {
-        return Array.from(pieceList.querySelectorAll('input[type="checkbox"][name="selected_piece_ids[]"]'));
+        return Array.from(pieceList.querySelectorAll('input[data-piece-checkbox="1"]:not(:disabled)'));
     }
 
     function refreshPieceSummary() {
@@ -643,55 +686,36 @@
 
     function renderPiecePicker() {
         const lot = lotMeta[inputLotEl.value];
+        let activeGroup = null;
 
-        pieceList.innerHTML = '';
+        pieceGroups.forEach(function (group) {
+            const isActive = !!lot
+                && lot.inward_mode === 'pieces'
+                && String(group.dataset.pieceLotGroup) === String(lot.id);
 
-        if (!lot || lot.inward_mode !== 'pieces' || !Array.isArray(lot.pieces) || lot.pieces.length === 0) {
+            group.classList.toggle('hidden', !isActive);
+
+            group.querySelectorAll('input[data-piece-checkbox="1"]').forEach(function (checkbox) {
+                checkbox.disabled = !isActive;
+                if (!isActive) {
+                    checkbox.checked = false;
+                }
+            });
+
+            if (isActive) {
+                activeGroup = group;
+            }
+        });
+
+        if (!lot || lot.inward_mode !== 'pieces' || !activeGroup) {
             pieceWrap.classList.add('hidden');
             setConsumedFieldsReadonly(false);
+            pieceSummary.textContent = 'No pieces selected.';
             return;
         }
 
         pieceWrap.classList.remove('hidden');
         setConsumedFieldsReadonly(true);
-
-        lot.pieces.forEach(function (piece) {
-            const row = document.createElement('label');
-            row.className = 'flex items-center justify-between gap-3 rounded-xl border border-gray-200 dark:border-gray-800 bg-white dark:bg-gray-900 px-3 py-2';
-
-            const left = document.createElement('div');
-            left.className = 'flex items-center gap-2';
-
-            const checkbox = document.createElement('input');
-            checkbox.type = 'checkbox';
-            checkbox.name = 'selected_piece_ids[]';
-            checkbox.value = piece.id;
-            checkbox.dataset.weight = piece.weight_kg;
-            checkbox.className = 'rounded border-gray-300 dark:border-gray-700';
-
-            if (oldSelectedPieceIds.map(String).includes(String(piece.id))) {
-                checkbox.checked = true;
-            }
-
-            checkbox.addEventListener('change', refreshPieceSummary);
-
-            const text = document.createElement('span');
-            text.className = 'text-[12px] text-gray-800 dark:text-gray-200';
-            text.textContent = 'Piece ' + piece.piece_no;
-
-            left.appendChild(checkbox);
-            left.appendChild(text);
-
-            const weight = document.createElement('span');
-            weight.className = 'text-[12px] font-medium text-gray-700 dark:text-gray-300';
-            weight.textContent = Number(piece.weight_kg).toFixed(3) + ' kg';
-
-            row.appendChild(left);
-            row.appendChild(weight);
-
-            pieceList.appendChild(row);
-        });
-
         refreshPieceSummary();
     }
 
@@ -950,6 +974,13 @@
         return rowEl;
     }
 
+    pieceList.addEventListener('change', function (event) {
+        const target = event.target;
+        if (target instanceof HTMLInputElement && target.matches('input[data-piece-checkbox="1"]')) {
+            refreshPieceSummary();
+        }
+    });
+
     runTypeEl.addEventListener('change', function () {
         inputProductEl.value = '';
         inputLotEl.value = '';
@@ -962,10 +993,13 @@
         renderPiecePicker();
     });
 
-    inputLotEl.addEventListener('change', function () {
+    function handleInputLotSelection() {
         refreshInputLotSummary();
         renderPiecePicker();
-    });
+    }
+
+    inputLotEl.addEventListener('change', handleInputLotSelection);
+    inputLotEl.addEventListener('input', handleInputLotSelection);
 
     selectAllPiecesBtn?.addEventListener('click', function () {
         selectedPieceCheckboxes().forEach(cb => cb.checked = true);
@@ -982,6 +1016,10 @@
     });
 
     refreshSelectors();
+
+    window.addEventListener('pageshow', function () {
+        handleInputLotSelection();
+    });
 
     if (oldOutputs.length > 0) {
         oldOutputs.forEach(function (row) {

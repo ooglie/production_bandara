@@ -1,7 +1,9 @@
-<?php $__env->startSection('title', 'New Production Run'); ?>
+@extends('layouts.company')
 
-<?php $__env->startSection('content'); ?>
-<?php
+@section('title', 'New Production Run')
+
+@section('content')
+@php
     $lotMeta = $inputLots->mapWithKeys(function ($lot) {
         return [$lot->id => [
             'id' => (int) $lot->id,
@@ -60,7 +62,7 @@
         ->values();
 
     $showByproductLots = $trimProducts->isNotEmpty() || $wasteProducts->isNotEmpty();
-?>
+@endphp
 
 <div class="max-w-6xl mx-auto px-4 py-6 space-y-4 text-xs">
     <div class="flex items-start justify-between gap-3">
@@ -71,25 +73,25 @@
             </p>
         </div>
 
-        <a href="<?php echo e(route('admin.production.index')); ?>"
+        <a href="{{ route('admin.production.index') }}"
            class="text-[12px] px-3 py-2 rounded-lg border border-gray-300 dark:border-gray-700 hover:bg-gray-50 dark:hover:bg-gray-800">
             Back
         </a>
     </div>
 
-    <?php if($errors->any()): ?>
+    @if($errors->any())
         <div class="rounded-xl border border-red-300 bg-red-50 px-4 py-3 text-[12px] text-red-800">
             <div class="font-medium mb-1">Please fix the following:</div>
             <ul class="list-disc pl-5 space-y-0.5">
-                <?php $__currentLoopData = $errors->all(); $__env->addLoop($__currentLoopData); foreach($__currentLoopData as $error): $__env->incrementLoopIndices(); $loop = $__env->getLastLoop(); ?>
-                    <li><?php echo e($error); ?></li>
-                <?php endforeach; $__env->popLoop(); $loop = $__env->getLastLoop(); ?>
+                @foreach($errors->all() as $error)
+                    <li>{{ $error }}</li>
+                @endforeach
             </ul>
         </div>
-    <?php endif; ?>
+    @endif
 
-    <form method="POST" action="<?php echo e(route('admin.production.store')); ?>" class="space-y-4">
-        <?php echo csrf_field(); ?>
+    <form method="POST" action="{{ route('admin.production.store') }}" class="space-y-4">
+        @csrf
 
         <section class="rounded-2xl border border-gray-200 dark:border-gray-800 bg-white dark:bg-gray-900 overflow-hidden">
             <div class="px-5 py-4 border-b border-gray-200 dark:border-gray-800">
@@ -102,7 +104,7 @@
                     <div>
                         <label class="block text-[12px] font-medium text-gray-700 dark:text-gray-300 mb-1">Run date</label>
                         <input type="date" name="run_date"
-                               value="<?php echo e(old('run_date', now()->format('Y-m-d'))); ?>"
+                               value="{{ old('run_date', now()->format('Y-m-d')) }}"
                                class="w-full rounded-lg border border-gray-300 dark:border-gray-700 bg-white dark:bg-gray-950 px-3 py-2 text-[13px]"
                                required>
                     </div>
@@ -112,9 +114,9 @@
                         <select name="run_type" id="run_type"
                                 class="w-full rounded-lg border border-gray-300 dark:border-gray-700 bg-white dark:bg-gray-950 px-3 py-2 text-[13px]"
                                 required>
-                            <option value="raw_to_slab" <?php if(old('run_type') === 'raw_to_slab'): echo 'selected'; endif; ?>>Raw → Slab</option>
-                            <option value="slab_to_slice" <?php if(old('run_type') === 'slab_to_slice'): echo 'selected'; endif; ?>>Slab → Slice</option>
-                            <option value="raw_to_slice_direct" <?php if(old('run_type') === 'raw_to_slice_direct'): echo 'selected'; endif; ?>>Raw → Slice Direct</option>
+                            <option value="raw_to_slab" @selected(old('run_type') === 'raw_to_slab')>Raw → Slab</option>
+                            <option value="slab_to_slice" @selected(old('run_type') === 'slab_to_slice')>Slab → Slice</option>
+                            <option value="raw_to_slice_direct" @selected(old('run_type') === 'raw_to_slice_direct')>Raw → Slice Direct</option>
                         </select>
                     </div>
 
@@ -165,50 +167,7 @@
                         </div>
                     </div>
 
-                    <div id="pieces-list">
-                        <?php $__currentLoopData = $inputLots; $__env->addLoop($__currentLoopData); foreach($__currentLoopData as $pieceLot): $__env->incrementLoopIndices(); $loop = $__env->getLastLoop(); ?>
-                            <?php if((string) ($pieceLot->inward_mode ?? '') === 'pieces' && ($pieceLot->pieces ?? collect())->isNotEmpty()): ?>
-                                <div class="hidden" data-piece-lot-group="<?php echo e($pieceLot->id); ?>">
-                                    <div class="grid gap-2 md:grid-cols-2">
-                                        <?php $__currentLoopData = $pieceLot->pieces; $__env->addLoop($__currentLoopData); foreach($__currentLoopData as $piece): $__env->incrementLoopIndices(); $loop = $__env->getLastLoop(); ?>
-                                            <?php
-                                                $pieceInputId = 'production-piece-' . $piece->id;
-                                                $isOldPiece = in_array((int) $piece->id, $oldSelectedPieceIds, true);
-                                            ?>
-                                            <label for="<?php echo e($pieceInputId); ?>"
-                                                   class="flex min-h-12 cursor-pointer items-center justify-between gap-3 rounded-xl border border-gray-200 bg-white px-3 py-2.5 transition hover:shadow-sm focus-within:ring-2 focus-within:ring-gray-300 dark:border-gray-800 dark:bg-gray-900 dark:focus-within:ring-gray-700">
-                                                <span class="flex min-w-0 items-center gap-3">
-                                                    <input id="<?php echo e($pieceInputId); ?>"
-                                                           type="checkbox"
-                                                           name="selected_piece_ids[]"
-                                                           value="<?php echo e($piece->id); ?>"
-                                                           data-piece-checkbox="1"
-                                                           data-lot-id="<?php echo e($pieceLot->id); ?>"
-                                                           data-weight="<?php echo e((float) ($piece->available_weight_kg ?? $piece->weight_kg ?? 0)); ?>"
-                                                           <?php if($isOldPiece): echo 'checked'; endif; ?>
-                                                           <?php if((string) $oldInputLotId !== (string) $pieceLot->id): echo 'disabled'; endif; ?>
-                                                           class="h-5 w-5 shrink-0 rounded border-gray-300 text-gray-900 focus:ring-gray-400 dark:border-gray-700 dark:bg-gray-950 dark:text-gray-100">
-                                                    <span class="truncate text-[12px] text-gray-800 dark:text-gray-200">
-                                                        <?php echo e($piece->label ?: ('Piece ' . $piece->piece_no)); ?>
-
-                                                    </span>
-                                                </span>
-                                                <span class="shrink-0 text-[12px] font-medium text-gray-700 dark:text-gray-300">
-                                                    <?php echo e(number_format((float) ($piece->available_weight_kg ?? $piece->weight_kg ?? 0), 3)); ?> kg
-                                                </span>
-                                            </label>
-                                        <?php endforeach; $__env->popLoop(); $loop = $__env->getLastLoop(); ?>
-                                    </div>
-                                </div>
-                            <?php endif; ?>
-                        <?php endforeach; $__env->popLoop(); $loop = $__env->getLastLoop(); ?>
-                    </div>
-
-                    <noscript>
-                        <div class="rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-[11px] text-amber-800">
-                            JavaScript is required to filter the available pieces by the selected lot.
-                        </div>
-                    </noscript>
+                    <div id="pieces-list" class="grid gap-2 md:grid-cols-2"></div>
 
                     <div id="pieces-summary"
                          class="rounded-lg border border-gray-200 dark:border-gray-800 bg-white dark:bg-gray-900 px-3 py-2 text-[12px] text-gray-700 dark:text-gray-200">
@@ -220,14 +179,14 @@
                     <div>
                         <label class="block text-[12px] font-medium text-gray-700 dark:text-gray-300 mb-1">Consumed weight (kg)</label>
                         <input type="number" step="0.001" min="0.001" name="consumed_weight_kg" id="consumed_weight_kg"
-                               value="<?php echo e(old('consumed_weight_kg')); ?>"
+                               value="{{ old('consumed_weight_kg') }}"
                                class="w-full rounded-lg border border-gray-300 dark:border-gray-700 bg-white dark:bg-gray-950 px-3 py-2 text-[13px]">
                     </div>
 
                     <div>
                         <label class="block text-[12px] font-medium text-gray-700 dark:text-gray-300 mb-1">Consumed quantity</label>
                         <input type="number" step="0.001" min="0" name="consumed_quantity" id="consumed_quantity"
-                               value="<?php echo e(old('consumed_quantity')); ?>"
+                               value="{{ old('consumed_quantity') }}"
                                class="w-full rounded-lg border border-gray-300 dark:border-gray-700 bg-white dark:bg-gray-950 px-3 py-2 text-[13px]">
                         <div class="text-[11px] text-gray-500 dark:text-gray-400 mt-1">
                             Auto-calculated for piece-based lots.
@@ -237,43 +196,43 @@
                     <div>
                         <label class="block text-[12px] font-medium text-gray-700 dark:text-gray-300 mb-1">Trim weight (kg)</label>
                         <input type="number" step="0.001" min="0" name="trim_weight_kg"
-                            value="<?php echo e(old('trim_weight_kg', 0)); ?>"
+                            value="{{ old('trim_weight_kg', 0) }}"
                             class="w-full rounded-lg border border-gray-300 dark:border-gray-700 bg-white dark:bg-gray-950 px-3 py-2 text-[13px]">
 
-                        <?php if($trimProducts->isNotEmpty()): ?>
+                        @if($trimProducts->isNotEmpty())
                             <div class="mt-1 text-[11px] text-gray-500 dark:text-gray-400">
                                 You can keep this as summary only, or choose a trim product below to create a trim lot.
                             </div>
-                        <?php else: ?>
+                        @else
                             <div class="mt-1 text-[11px] text-amber-600 dark:text-amber-400">
                                 No trim product configured yet. This will be recorded as summary only.
                             </div>
-                        <?php endif; ?>
+                        @endif
                     </div>
 
                     <div>
                         <label class="block text-[12px] font-medium text-gray-700 dark:text-gray-300 mb-1">Waste weight (kg)</label>
                         <input type="number" step="0.001" min="0" name="waste_weight_kg"
-                            value="<?php echo e(old('waste_weight_kg', 0)); ?>"
+                            value="{{ old('waste_weight_kg', 0) }}"
                             class="w-full rounded-lg border border-gray-300 dark:border-gray-700 bg-white dark:bg-gray-950 px-3 py-2 text-[13px]">
 
-                        <?php if($wasteProducts->isNotEmpty()): ?>
+                        @if($wasteProducts->isNotEmpty())
                             <div class="mt-1 text-[11px] text-gray-500 dark:text-gray-400">
                                 You can keep this as summary only, or choose a waste product below to create a waste lot.
                             </div>
-                        <?php else: ?>
+                        @else
                             <div class="mt-1 text-[11px] text-amber-600 dark:text-amber-400">
                                 No waste product configured yet. This will be recorded as summary only.
                             </div>
-                        <?php endif; ?>
+                        @endif
                     </div>
                 </div>
 
-                
-                                <?php if($showByproductLots): ?>
-                    
-                    <div class="grid gap-4 <?php echo e($trimProducts->isNotEmpty() && $wasteProducts->isNotEmpty() ? 'lg:grid-cols-2' : 'lg:grid-cols-1'); ?>">
-                        <?php if($trimProducts->isNotEmpty()): ?>
+                {{-- Optional trim / waste lots --}}
+                                @if($showByproductLots)
+                    {{-- Optional trim / waste lots --}}
+                    <div class="grid gap-4 {{ $trimProducts->isNotEmpty() && $wasteProducts->isNotEmpty() ? 'lg:grid-cols-2' : 'lg:grid-cols-1' }}">
+                        @if($trimProducts->isNotEmpty())
                             <div class="rounded-xl border border-gray-200 dark:border-gray-800 bg-gray-50 dark:bg-gray-950/40 p-4 space-y-3">
                                 <div>
                                     <div class="text-[12px] font-medium text-gray-700 dark:text-gray-300">Optional trim lot</div>
@@ -288,12 +247,11 @@
                                         <select name="trim_product_id"
                                                 class="w-full rounded-lg border border-gray-300 dark:border-gray-700 bg-white dark:bg-gray-950 px-3 py-2 text-[13px]">
                                             <option value="">— None —</option>
-                                            <?php $__currentLoopData = $trimProducts; $__env->addLoop($__currentLoopData); foreach($__currentLoopData as $product): $__env->incrementLoopIndices(); $loop = $__env->getLastLoop(); ?>
-                                                <option value="<?php echo e($product->id); ?>" <?php if((int) old('trim_product_id', 0) === (int) $product->id): echo 'selected'; endif; ?>>
-                                                    <?php echo e($product->name); ?>
-
+                                            @foreach($trimProducts as $product)
+                                                <option value="{{ $product->id }}" @selected((int) old('trim_product_id', 0) === (int) $product->id)>
+                                                    {{ $product->name }}
                                                 </option>
-                                            <?php endforeach; $__env->popLoop(); $loop = $__env->getLastLoop(); ?>
+                                            @endforeach
                                         </select>
                                     </div>
 
@@ -301,7 +259,7 @@
                                         <label class="block text-[12px] font-medium text-gray-700 dark:text-gray-300 mb-1">Trim quantity</label>
                                         <input type="number" step="0.001" min="0"
                                                name="trim_quantity_output"
-                                               value="<?php echo e(old('trim_quantity_output')); ?>"
+                                               value="{{ old('trim_quantity_output') }}"
                                                class="w-full rounded-lg border border-gray-300 dark:border-gray-700 bg-white dark:bg-gray-950 px-3 py-2 text-[13px]">
                                     </div>
 
@@ -309,14 +267,14 @@
                                         <label class="block text-[12px] font-medium text-gray-700 dark:text-gray-300 mb-1">Trim notes</label>
                                         <input type="text"
                                                name="trim_notes"
-                                               value="<?php echo e(old('trim_notes')); ?>"
+                                               value="{{ old('trim_notes') }}"
                                                class="w-full rounded-lg border border-gray-300 dark:border-gray-700 bg-white dark:bg-gray-950 px-3 py-2 text-[13px]">
                                     </div>
                                 </div>
                             </div>
-                        <?php endif; ?>
+                        @endif
 
-                        <?php if($wasteProducts->isNotEmpty()): ?>
+                        @if($wasteProducts->isNotEmpty())
                             <div class="rounded-xl border border-gray-200 dark:border-gray-800 bg-gray-50 dark:bg-gray-950/40 p-4 space-y-3">
                                 <div>
                                     <div class="text-[12px] font-medium text-gray-700 dark:text-gray-300">Optional waste lot</div>
@@ -331,12 +289,11 @@
                                         <select name="waste_product_id"
                                                 class="w-full rounded-lg border border-gray-300 dark:border-gray-700 bg-white dark:bg-gray-950 px-3 py-2 text-[13px]">
                                             <option value="">— None —</option>
-                                            <?php $__currentLoopData = $wasteProducts; $__env->addLoop($__currentLoopData); foreach($__currentLoopData as $product): $__env->incrementLoopIndices(); $loop = $__env->getLastLoop(); ?>
-                                                <option value="<?php echo e($product->id); ?>" <?php if((int) old('waste_product_id', 0) === (int) $product->id): echo 'selected'; endif; ?>>
-                                                    <?php echo e($product->name); ?>
-
+                                            @foreach($wasteProducts as $product)
+                                                <option value="{{ $product->id }}" @selected((int) old('waste_product_id', 0) === (int) $product->id)>
+                                                    {{ $product->name }}
                                                 </option>
-                                            <?php endforeach; $__env->popLoop(); $loop = $__env->getLastLoop(); ?>
+                                            @endforeach
                                         </select>
                                     </div>
 
@@ -344,7 +301,7 @@
                                         <label class="block text-[12px] font-medium text-gray-700 dark:text-gray-300 mb-1">Waste quantity</label>
                                         <input type="number" step="0.001" min="0"
                                                name="waste_quantity_output"
-                                               value="<?php echo e(old('waste_quantity_output')); ?>"
+                                               value="{{ old('waste_quantity_output') }}"
                                                class="w-full rounded-lg border border-gray-300 dark:border-gray-700 bg-white dark:bg-gray-950 px-3 py-2 text-[13px]">
                                     </div>
 
@@ -352,19 +309,19 @@
                                         <label class="block text-[12px] font-medium text-gray-700 dark:text-gray-300 mb-1">Waste notes</label>
                                         <input type="text"
                                                name="waste_notes"
-                                               value="<?php echo e(old('waste_notes')); ?>"
+                                               value="{{ old('waste_notes') }}"
                                                class="w-full rounded-lg border border-gray-300 dark:border-gray-700 bg-white dark:bg-gray-950 px-3 py-2 text-[13px]">
                                     </div>
                                 </div>
                             </div>
-                        <?php endif; ?>
+                        @endif
                     </div>
-                <?php endif; ?>
+                @endif
 
                 <div>
                     <label class="block text-[12px] font-medium text-gray-700 dark:text-gray-300 mb-1">Notes</label>
                     <textarea name="notes" rows="3"
-                              class="w-full rounded-lg border border-gray-300 dark:border-gray-700 bg-white dark:bg-gray-950 px-3 py-2 text-[13px]"><?php echo e(old('notes')); ?></textarea>
+                              class="w-full rounded-lg border border-gray-300 dark:border-gray-700 bg-white dark:bg-gray-950 px-3 py-2 text-[13px]">{{ old('notes') }}</textarea>
                 </div>
             </div>
         </section>
@@ -393,7 +350,7 @@
         </section>
 
         <div class="flex items-center justify-between pt-2">
-            <a href="<?php echo e(route('admin.production.index')); ?>"
+            <a href="{{ route('admin.production.index') }}"
                class="text-[12px] text-gray-500 dark:text-gray-400 hover:underline">
                 Cancel
             </a>
@@ -501,12 +458,12 @@
 
 <script>
 (function () {
-    const lotMeta = <?php echo json_encode($lotMeta, 15, 512) ?>;
-    const outputProductMeta = <?php echo json_encode($outputProductMeta, 15, 512) ?>;
-    const oldOutputs = <?php echo json_encode($oldOutputs, 15, 512) ?>;
-    const oldInputProductId = <?php echo json_encode($oldInputProductId, 15, 512) ?>;
-    const oldInputLotId = <?php echo json_encode($oldInputLotId, 15, 512) ?>;
-    const oldSelectedPieceIds = <?php echo json_encode($oldSelectedPieceIds, 15, 512) ?>;
+    const lotMeta = @json($lotMeta);
+    const outputProductMeta = @json($outputProductMeta);
+    const oldOutputs = @json($oldOutputs);
+    const oldInputProductId = @json($oldInputProductId);
+    const oldInputLotId = @json($oldInputLotId);
+    const oldSelectedPieceIds = @json($oldSelectedPieceIds);
 
     const runTypeEl = document.getElementById('run_type');
     const inputProductEl = document.getElementById('input_product_id');
@@ -514,7 +471,6 @@
     const inputLotSummary = document.getElementById('input-lot-summary');
     const pieceWrap = document.getElementById('piece-picker-wrap');
     const pieceList = document.getElementById('pieces-list');
-    const pieceGroups = Array.from(pieceList.querySelectorAll('[data-piece-lot-group]'));
     const pieceSummary = document.getElementById('pieces-summary');
     const selectAllPiecesBtn = document.getElementById('select-all-pieces');
     const clearAllPiecesBtn = document.getElementById('clear-all-pieces');
@@ -656,7 +612,7 @@
     }
 
     function selectedPieceCheckboxes() {
-        return Array.from(pieceList.querySelectorAll('input[data-piece-checkbox="1"]:not(:disabled)'));
+        return Array.from(pieceList.querySelectorAll('input[type="checkbox"][name="selected_piece_ids[]"]'));
     }
 
     function refreshPieceSummary() {
@@ -687,36 +643,55 @@
 
     function renderPiecePicker() {
         const lot = lotMeta[inputLotEl.value];
-        let activeGroup = null;
 
-        pieceGroups.forEach(function (group) {
-            const isActive = !!lot
-                && lot.inward_mode === 'pieces'
-                && String(group.dataset.pieceLotGroup) === String(lot.id);
+        pieceList.innerHTML = '';
 
-            group.classList.toggle('hidden', !isActive);
-
-            group.querySelectorAll('input[data-piece-checkbox="1"]').forEach(function (checkbox) {
-                checkbox.disabled = !isActive;
-                if (!isActive) {
-                    checkbox.checked = false;
-                }
-            });
-
-            if (isActive) {
-                activeGroup = group;
-            }
-        });
-
-        if (!lot || lot.inward_mode !== 'pieces' || !activeGroup) {
+        if (!lot || lot.inward_mode !== 'pieces' || !Array.isArray(lot.pieces) || lot.pieces.length === 0) {
             pieceWrap.classList.add('hidden');
             setConsumedFieldsReadonly(false);
-            pieceSummary.textContent = 'No pieces selected.';
             return;
         }
 
         pieceWrap.classList.remove('hidden');
         setConsumedFieldsReadonly(true);
+
+        lot.pieces.forEach(function (piece) {
+            const row = document.createElement('label');
+            row.className = 'flex items-center justify-between gap-3 rounded-xl border border-gray-200 dark:border-gray-800 bg-white dark:bg-gray-900 px-3 py-2';
+
+            const left = document.createElement('div');
+            left.className = 'flex items-center gap-2';
+
+            const checkbox = document.createElement('input');
+            checkbox.type = 'checkbox';
+            checkbox.name = 'selected_piece_ids[]';
+            checkbox.value = piece.id;
+            checkbox.dataset.weight = piece.weight_kg;
+            checkbox.className = 'rounded border-gray-300 dark:border-gray-700';
+
+            if (oldSelectedPieceIds.map(String).includes(String(piece.id))) {
+                checkbox.checked = true;
+            }
+
+            checkbox.addEventListener('change', refreshPieceSummary);
+
+            const text = document.createElement('span');
+            text.className = 'text-[12px] text-gray-800 dark:text-gray-200';
+            text.textContent = 'Piece ' + piece.piece_no;
+
+            left.appendChild(checkbox);
+            left.appendChild(text);
+
+            const weight = document.createElement('span');
+            weight.className = 'text-[12px] font-medium text-gray-700 dark:text-gray-300';
+            weight.textContent = Number(piece.weight_kg).toFixed(3) + ' kg';
+
+            row.appendChild(left);
+            row.appendChild(weight);
+
+            pieceList.appendChild(row);
+        });
+
         refreshPieceSummary();
     }
 
@@ -975,13 +950,6 @@
         return rowEl;
     }
 
-    pieceList.addEventListener('change', function (event) {
-        const target = event.target;
-        if (target instanceof HTMLInputElement && target.matches('input[data-piece-checkbox="1"]')) {
-            refreshPieceSummary();
-        }
-    });
-
     runTypeEl.addEventListener('change', function () {
         inputProductEl.value = '';
         inputLotEl.value = '';
@@ -994,13 +962,10 @@
         renderPiecePicker();
     });
 
-    function handleInputLotSelection() {
+    inputLotEl.addEventListener('change', function () {
         refreshInputLotSummary();
         renderPiecePicker();
-    }
-
-    inputLotEl.addEventListener('change', handleInputLotSelection);
-    inputLotEl.addEventListener('input', handleInputLotSelection);
+    });
 
     selectAllPiecesBtn?.addEventListener('click', function () {
         selectedPieceCheckboxes().forEach(cb => cb.checked = true);
@@ -1018,10 +983,6 @@
 
     refreshSelectors();
 
-    window.addEventListener('pageshow', function () {
-        handleInputLotSelection();
-    });
-
     if (oldOutputs.length > 0) {
         oldOutputs.forEach(function (row) {
             addOutputRow(row);
@@ -1031,5 +992,4 @@
     }
 })();
 </script>
-<?php $__env->stopSection(); ?>
-<?php echo $__env->make('layouts.company', array_diff_key(get_defined_vars(), ['__data' => 1, '__path' => 1]))->render(); ?><?php /**PATH /Users/ooglie/Website/ChatGPT/PRODUCTIONFrozen/BandaraFrozen/resources/views/admin/production/create.blade.php ENDPATH**/ ?>
+@endsection

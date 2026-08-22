@@ -444,7 +444,7 @@
 
 <div id="google_translate_element" class="hidden" aria-hidden="true"></div>
 
-<?php if (! $__env->hasRenderedOnce('776c4cfa-ceb0-4f15-8848-08eda595c90b')): $__env->markAsRenderedOnce('776c4cfa-ceb0-4f15-8848-08eda595c90b'); ?>
+<?php if (! $__env->hasRenderedOnce('6d5a4e3d-842f-429b-8dbe-fcf66ca6a74d')): $__env->markAsRenderedOnce('6d5a4e3d-842f-429b-8dbe-fcf66ca6a74d'); ?>
 <script>
 (function () {
     const SOURCE_LANG = <?php echo json_encode($sourceLanguage ?? 'en', 15, 512) ?>;

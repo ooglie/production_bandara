@@ -77,7 +77,7 @@ class VendorReturnService
 
         if ($lines === []) {
             throw ValidationException::withMessages([
-                'items' => 'Select at least one available piece, pack, full piece, quantity or weight to return.',
+                'items' => 'Select at least one available piece or pack, or enter a return quantity or weight.',
             ]);
         }
 
@@ -381,14 +381,9 @@ class VendorReturnService
         $returnablePacks = $allPacks->filter(fn (InventoryPack $pack) => $this->packIsReturnable($pack));
 
         $receiptType = $this->normalizeReceiptType((string) ($item->receipt_type ?? $lot?->inward_mode ?? 'quantity'));
-        $isSingleWholePiece = $allPieces->isEmpty()
-            && $receiptType === 'pieces_weight'
-            && $this->approximatelyEqual((float) ($item->quantity ?? 0), 1.0);
-
         $mode = match (true) {
             $allPieces->isNotEmpty() => 'pieces',
             $allPacks->isNotEmpty() => 'packs',
-            $isSingleWholePiece => 'whole_piece',
             $receiptType === 'pieces_weight' => 'weight',
             default => 'quantity',
         };
@@ -407,7 +402,7 @@ class VendorReturnService
         $pieceWeight = round((float) $returnablePieces->sum(fn (InventoryPiece $piece) => (float) ($piece->available_weight_kg ?? $piece->weight_kg ?? 0)), 3);
         $maxWeight = match ($mode) {
             'pieces' => round(min($pieceWeight, $targetAvailable), 3),
-            'whole_piece', 'weight' => round(min($lotWeight > 0 ? $lotWeight : $lotQuantity, $targetAvailable), 3),
+            'weight' => round(min($lotWeight > 0 ? $lotWeight : $lotQuantity, $targetAvailable), 3),
             default => 0.0,
         };
 
@@ -423,40 +418,7 @@ class VendorReturnService
             $blockers->push('No available direct packs remain from this invoice item.');
         }
 
-        if ($mode === 'whole_piece') {
-            $originalWeight = $this->originalBase($item);
-            $activeReserved = $this->activeReservedQuantityForTarget($item);
-
-            if ($originalWeight <= self::TOLERANCE) {
-                $blockers->push('The original full-piece weight is missing.');
-            }
-
-            if (! $this->approximatelyEqual($lotWeight, $originalWeight)) {
-                $blockers->push('This full piece is no longer completely available. A full piece cannot be returned by partial weight.');
-            }
-
-            if ($activeReserved > self::TOLERANCE) {
-                $blockers->push('This product currently has active checkout reservations. Release or complete them before returning the full piece.');
-            }
-
-            if ($lot && ProductionRunInput::query()->where('inventory_lot_id', $lot->id)->exists()) {
-                $blockers->push('This full piece has already been used in a production run.');
-            }
-
-            if ($lot && InventoryLot::query()
-                ->where(function ($query) use ($lot) {
-                    $query->where('parent_inventory_lot_id', $lot->id)
-                        ->orWhere(function ($root) use ($lot) {
-                            $root->where('root_inventory_lot_id', $lot->id)
-                                ->where('id', '!=', $lot->id);
-                        });
-                })
-                ->exists()) {
-                $blockers->push('This full piece has downstream or transformed inventory and cannot be returned as the original piece.');
-            }
-        }
-
-        if (in_array($mode, ['whole_piece', 'weight'], true) && $maxWeight <= self::TOLERANCE) {
+        if ($mode === 'weight' && $maxWeight <= self::TOLERANCE) {
             $blockers->push('No returnable weight remains from this invoice item.');
         }
 
@@ -469,7 +431,6 @@ class VendorReturnService
             'lot' => $lot,
             'mode' => $mode,
             'receipt_type' => $receiptType,
-            'is_whole_piece' => $mode === 'whole_piece',
             'pieces' => $allPieces,
             'returnable_pieces' => $returnablePieces->values(),
             'packs' => $allPacks,
@@ -561,44 +522,6 @@ class VendorReturnService
             if ($quantity > (float) $option['target_available'] + self::TOLERANCE) {
                 throw ValidationException::withMessages(['items' => 'Selected packs exceed the stock currently free from checkout reservations.']);
             }
-        } elseif ($mode === 'whole_piece') {
-            if (! (bool) ($submitted['whole_piece'] ?? false)) {
-                return null;
-            }
-
-            $originalWeight = $this->originalBase($item);
-            $availableWeight = round(max(0, (float) ($lot->available_weight_kg ?? $lot->available_quantity ?? 0)), 3);
-
-            if ($originalWeight <= self::TOLERANCE || ! $this->approximatelyEqual($availableWeight, $originalWeight)) {
-                throw ValidationException::withMessages([
-                    'items' => 'The full piece is no longer completely available. It cannot be returned by entering or reducing a partial weight.',
-                ]);
-            }
-
-            if ($this->activeReservedQuantityForTarget($item) > self::TOLERANCE) {
-                throw ValidationException::withMessages([
-                    'items' => 'The product has an active stock reservation. The full piece cannot be returned until that reservation is released.',
-                ]);
-            }
-
-            if (ProductionRunInput::query()->where('inventory_lot_id', $lot->id)->exists()
-                || InventoryLot::query()
-                    ->where(function ($query) use ($lot) {
-                        $query->where('parent_inventory_lot_id', $lot->id)
-                            ->orWhere(function ($root) use ($lot) {
-                                $root->where('root_inventory_lot_id', $lot->id)
-                                    ->where('id', '!=', $lot->id);
-                            });
-                    })
-                    ->exists()) {
-                throw ValidationException::withMessages([
-                    'items' => 'The full piece has already been transformed or used in production and cannot be returned as the original piece.',
-                ]);
-            }
-
-            $quantity = 1.0;
-            $weight = $originalWeight;
-            $pieceCount = 1;
         } elseif ($mode === 'weight') {
             $weight = round(max(0, (float) ($submitted['weight_kg'] ?? 0)), 3);
             $pieceCount = max(0, (int) ($submitted['piece_count'] ?? 0));
@@ -678,7 +601,6 @@ class VendorReturnService
             $movementQuantity = match ($returnItem->return_mode) {
                 'pieces' => $this->applyPieceReturn($invoiceItem, $lot, $returnItem, $actor),
                 'packs' => $this->applyPackReturn($invoiceItem, $lot, $returnItem, $actor),
-                'whole_piece' => $this->applyWholePieceReturn($invoiceItem, $lot, $returnItem, $actor),
                 'weight' => $this->applyWeightReturn($invoiceItem, $lot, $returnItem, $actor),
                 default => $this->applyQuantityReturn($invoiceItem, $lot, $returnItem, $actor),
             };
@@ -804,54 +726,6 @@ class VendorReturnService
         );
 
         return $quantity;
-    }
-
-    private function applyWholePieceReturn(VendorInvoiceItem $invoiceItem, InventoryLot $lot, VendorReturnItem $returnItem, User $actor): float
-    {
-        $originalWeight = $this->originalBase($invoiceItem);
-        $returnWeight = round((float) $returnItem->weight_kg, 3);
-        $availableWeight = round(max(0, (float) ($lot->available_weight_kg ?? $lot->available_quantity ?? 0)), 3);
-
-        if ($originalWeight <= self::TOLERANCE
-            || ! $this->approximatelyEqual($returnWeight, $originalWeight)
-            || ! $this->approximatelyEqual($availableWeight, $originalWeight)) {
-            throw ValidationException::withMessages([
-                'vendor_return' => 'The full piece is no longer completely available. A single full piece must be returned in full.',
-            ]);
-        }
-
-        if ($this->activeReservedQuantityForTarget($invoiceItem) > self::TOLERANCE) {
-            throw ValidationException::withMessages([
-                'vendor_return' => 'The product currently has an active checkout reservation and cannot be returned as a full piece.',
-            ]);
-        }
-
-        if (ProductionRunInput::query()->where('inventory_lot_id', $lot->id)->exists()
-            || InventoryLot::query()
-                ->where(function ($query) use ($lot) {
-                    $query->where('parent_inventory_lot_id', $lot->id)
-                        ->orWhere(function ($root) use ($lot) {
-                            $root->where('root_inventory_lot_id', $lot->id)
-                                ->where('id', '!=', $lot->id);
-                        });
-                })
-                ->exists()) {
-            throw ValidationException::withMessages([
-                'vendor_return' => 'This full piece has been transformed or used in production and cannot be returned as the original piece.',
-            ]);
-        }
-
-        $this->decreaseStockTarget($invoiceItem, $originalWeight);
-        $this->decreaseLotBalances(
-            lot: $lot,
-            quantity: $originalWeight,
-            weight: $originalWeight,
-            pieceCount: 1,
-            packCount: 0,
-            actor: $actor,
-        );
-
-        return $originalWeight;
     }
 
     private function applyWeightReturn(VendorInvoiceItem $invoiceItem, InventoryLot $lot, VendorReturnItem $returnItem, User $actor): float
@@ -1059,11 +933,6 @@ class VendorReturnService
             }
 
             $submitted['pack_ids'] = $option['returnable_packs']->pluck('id')->all();
-        } elseif ($mode === 'whole_piece') {
-            if (! $this->approximatelyEqual((float) $option['max_weight_kg'], $originalBase)) {
-                $blockers->push("Lot {$this->lotLabel($lot)} no longer has the complete original piece available.");
-            }
-            $submitted['whole_piece'] = true;
         } elseif ($mode === 'weight') {
             if (! $this->approximatelyEqual((float) $option['max_weight_kg'], $originalBase)) {
                 $blockers->push("Lot {$this->lotLabel($lot)} no longer has its original received weight available.");
