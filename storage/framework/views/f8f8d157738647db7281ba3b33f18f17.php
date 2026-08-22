@@ -39,13 +39,22 @@
 
     $languageOptions = [
         'en' => ['label' => 'English', 'flag' => '🇺🇸'],
-        'hi' => ['label' => 'Hindi',   'flag' => '🇮🇳'],
-        'mr' => ['label' => 'Marathi', 'flag' => '🇮🇳'],
         'th' => ['label' => 'Thai',    'flag' => '🇹🇭'],
         'ko' => ['label' => 'Korean',  'flag' => '🇰🇷'],
+        'ja' => ['label' => 'Japanese','flag' => '🇯🇵'],
         'fr' => ['label' => 'French',  'flag' => '🇫🇷'],
         'es' => ['label' => 'Spanish', 'flag' => '🇪🇸'],
         'de' => ['label' => 'German',  'flag' => '🇩🇪'],
+        'ru' => ['label' => 'Russian', 'flag' => '🇷🇺'],
+        'hi' => ['label' => 'Hindi',   'flag' => '🇮🇳'],
+        'mr' => ['label' => 'Marathi', 'flag' => '🇮🇳'],
+        'ta' => ['label' => 'Tamil',   'flag' => '🇮🇳'],
+        'bn' => ['label' => 'Bengali', 'flag' => '🇮🇳'],
+        'gu' => ['label' => 'Gujarati','flag' => '🇮🇳'],
+        'pa' => ['label' => 'Punjabi', 'flag' => '🇮🇳'],
+        'ml' => ['label' => 'Malayalam','flag' => '🇮🇳'],
+        'te' => ['label' => 'Telugu',  'flag' => '🇮🇳'],
+        'kn' => ['label' => 'Kannada', 'flag' => '🇮🇳'],
     ];
 
     $sourceLanguage = 'en';
@@ -435,7 +444,7 @@
 
 <div id="google_translate_element" class="hidden" aria-hidden="true"></div>
 
-<?php if (! $__env->hasRenderedOnce('93c30450-1e09-4d00-9445-3b019f3f771f')): $__env->markAsRenderedOnce('93c30450-1e09-4d00-9445-3b019f3f771f'); ?>
+<?php if (! $__env->hasRenderedOnce('776c4cfa-ceb0-4f15-8848-08eda595c90b')): $__env->markAsRenderedOnce('776c4cfa-ceb0-4f15-8848-08eda595c90b'); ?>
 <script>
 (function () {
     const SOURCE_LANG = <?php echo json_encode($sourceLanguage ?? 'en', 15, 512) ?>;

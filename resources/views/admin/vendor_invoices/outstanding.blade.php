@@ -5,17 +5,15 @@
 @section('content')
 @php
     $has = fn(string $r) => \Illuminate\Support\Facades\Route::has($r);
-
     $backUrl = $has('admin.vendor-invoices.index') ? route('admin.vendor-invoices.index') : url()->previous();
 @endphp
 
 <div class="max-w-6xl mx-auto px-4 py-6 space-y-4 text-xs">
-
     <div class="flex items-start justify-between gap-3">
         <div>
-            <h1 class="text-lg font-semibold text-gray-900 dark:text-gray-50">Outstanding by vendor</h1>
+            <h1 class="text-lg font-semibold text-gray-900 dark:text-gray-50">Adjusted payable by vendor</h1>
             <p class="text-[11px] text-gray-500 dark:text-gray-400">
-                Total outstanding across vendors and breakdown per vendor.
+                Posted supplier credits and debits are included. Vendor credit shows amounts already paid above the adjusted payable.
             </p>
         </div>
 
@@ -25,10 +23,18 @@
         </a>
     </div>
 
-    <div class="rounded-2xl border border-gray-200 dark:border-gray-800 bg-white dark:bg-gray-900 p-4">
-        <div class="text-[11px] text-gray-500 dark:text-gray-400">Total outstanding (all vendors)</div>
-        <div class="text-2xl font-semibold text-gray-900 dark:text-gray-50">
-            ₹{{ number_format((float)$totalOutstandingAllVendors, 2) }}
+    <div class="grid gap-3 sm:grid-cols-2">
+        <div class="rounded-2xl border border-gray-200 dark:border-gray-800 bg-white dark:bg-gray-900 p-4">
+            <div class="text-[11px] text-gray-500 dark:text-gray-400">Total adjusted outstanding</div>
+            <div class="mt-1 text-2xl font-semibold text-gray-900 dark:text-gray-50">
+                ₹{{ number_format((float)$totalOutstandingAllVendors, 2) }}
+            </div>
+        </div>
+        <div class="rounded-2xl border border-amber-200 dark:border-amber-900 bg-amber-50/60 dark:bg-amber-950/20 p-4">
+            <div class="text-[11px] text-amber-800 dark:text-amber-300">Vendor credit / refund receivable</div>
+            <div class="mt-1 text-2xl font-semibold text-amber-900 dark:text-amber-200">
+                ₹{{ number_format((float)($totalVendorCreditDue ?? 0), 2) }}
+            </div>
         </div>
     </div>
 
@@ -38,9 +44,10 @@
             <tr>
                 <th class="px-3 py-2 text-left font-medium text-gray-500 dark:text-gray-400">Vendor</th>
                 <th class="px-3 py-2 text-right font-medium text-gray-500 dark:text-gray-400">Invoices</th>
-                <th class="px-3 py-2 text-right font-medium text-gray-500 dark:text-gray-400">Total</th>
+                <th class="px-3 py-2 text-right font-medium text-gray-500 dark:text-gray-400">Adjusted payable</th>
                 <th class="px-3 py-2 text-right font-medium text-gray-500 dark:text-gray-400">Paid</th>
                 <th class="px-3 py-2 text-right font-medium text-gray-500 dark:text-gray-400">Outstanding</th>
+                <th class="px-3 py-2 text-right font-medium text-gray-500 dark:text-gray-400">Vendor credit</th>
                 <th class="px-3 py-2 text-right font-medium text-gray-500 dark:text-gray-400">Action</th>
             </tr>
             </thead>
@@ -52,22 +59,19 @@
                         : '#';
                 @endphp
                 <tr>
-                    <td class="px-3 py-2 text-gray-900 dark:text-gray-50 font-medium">
-                        {{ $r->vendor_name }}
-                    </td>
-                    <td class="px-3 py-2 text-right text-gray-700 dark:text-gray-200">
-                        {{ (int)$r->inv_count }}
-                    </td>
-                    <td class="px-3 py-2 text-right text-gray-700 dark:text-gray-200">
-                        ₹{{ number_format((float)$r->inv_total, 2) }}
-                    </td>
-                    <td class="px-3 py-2 text-right text-gray-700 dark:text-gray-200">
-                        ₹{{ number_format((float)$r->paid_total, 2) }}
+                    <td class="px-3 py-2 text-gray-900 dark:text-gray-50 font-medium">{{ $r->vendor_name }}</td>
+                    <td class="px-3 py-2 text-right text-gray-700 dark:text-gray-200">{{ (int)$r->inv_count }}</td>
+                    <td class="px-3 py-2 text-right text-gray-700 dark:text-gray-200">₹{{ number_format((float)$r->inv_total, 2) }}</td>
+                    <td class="px-3 py-2 text-right text-gray-700 dark:text-gray-200">₹{{ number_format((float)$r->paid_total, 2) }}</td>
+                    <td class="px-3 py-2 text-right">
+                        <span class="font-semibold text-gray-900 dark:text-gray-50">₹{{ number_format((float)$r->outstanding_total, 2) }}</span>
                     </td>
                     <td class="px-3 py-2 text-right">
-                        <span class="font-semibold text-gray-900 dark:text-gray-50">
-                            ₹{{ number_format((float)$r->outstanding_total, 2) }}
-                        </span>
+                        @if((float)($r->vendor_credit_due ?? 0) > 0.005)
+                            <span class="font-semibold text-amber-800 dark:text-amber-300">₹{{ number_format((float)$r->vendor_credit_due, 2) }}</span>
+                        @else
+                            <span class="text-gray-400">—</span>
+                        @endif
                     </td>
                     <td class="px-3 py-2 text-right">
                         <a href="{{ $vendorInvoicesUrl }}"
@@ -78,8 +82,8 @@
                 </tr>
             @empty
                 <tr>
-                    <td colspan="6" class="px-3 py-6 text-center text-gray-500 dark:text-gray-400">
-                        No outstanding found.
+                    <td colspan="7" class="px-3 py-6 text-center text-gray-500 dark:text-gray-400">
+                        No outstanding payable or vendor credit found.
                     </td>
                 </tr>
             @endforelse

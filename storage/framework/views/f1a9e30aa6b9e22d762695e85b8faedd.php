@@ -1,0 +1,136 @@
+<?php $__env->startSection('title', 'Product images'); ?>
+
+<?php $__env->startSection('breadcrumb'); ?>
+    Admin · Products · <?php echo e($product->name); ?> · Images
+<?php $__env->stopSection(); ?>
+
+<?php $__env->startSection('content'); ?>
+    <div class="space-y-4">
+        <div class="flex items-center justify-between gap-3">
+            <div>
+                <h1 class="text-lg font-semibold text-gray-900 dark:text-gray-50">
+                    Images – <?php echo e($product->name); ?>
+
+                </h1>
+                <p class="text-[11px] text-gray-500 dark:text-gray-400">
+                    SKU: <?php echo e($product->sku ?: '—'); ?>
+
+                </p>
+                <p class="mt-1 text-[11px] text-gray-500 dark:text-gray-400">
+                    Click <span class="font-medium">Make primary</span> on any image to set it as the storefront/default image.
+                </p>
+            </div>
+
+            <div class="flex items-center gap-2">
+                <a href="<?php echo e(route('admin.products.edit', $product)); ?>"
+                   class="text-[11px] text-gray-500 hover:text-gray-800 dark:hover:text-gray-200">
+                    Back to product
+                </a>
+
+                <a href="<?php echo e(route('admin.products.images.create', $product)); ?>"
+                   class="inline-flex items-center px-3 py-1.5 text-xs rounded border border-gray-300 dark:border-gray-700 bg-gray-900 text-white dark:bg-gray-100 dark:text-gray-900 hover:bg-gray-800 dark:hover:bg-gray-200">
+                    + Upload images
+                </a>
+            </div>
+        </div>
+
+        <?php if(session('status')): ?>
+            <div class="rounded border border-emerald-300 bg-emerald-50 px-3 py-2 text-[11px] text-emerald-800">
+                <?php echo e(session('status')); ?>
+
+            </div>
+        <?php endif; ?>
+
+        <?php if($images->isEmpty()): ?>
+            <div class="rounded border border-gray-200 dark:border-gray-800 px-3 py-4 text-xs text-gray-500 dark:text-gray-400">
+                No images yet. <a href="<?php echo e(route('admin.products.images.create', $product)); ?>" class="underline">Upload images</a>.
+            </div>
+        <?php else: ?>
+            <div class="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
+                <?php $__currentLoopData = $images; $__env->addLoop($__currentLoopData); foreach($__currentLoopData as $image): $__env->incrementLoopIndices(); $loop = $__env->getLastLoop(); ?>
+                    <div class="border border-gray-200 dark:border-gray-800 rounded-lg overflow-hidden bg-white dark:bg-gray-950 flex flex-col">
+                        <div class="relative aspect-[4/3] bg-gray-100 dark:bg-gray-800 flex items-center justify-center group">
+                            <?php if($image->file_path): ?>
+                                <img
+                                    src="<?php echo e(Storage::disk(config('media.public_disk', 'public'))->url($image->file_path)); ?>"
+                                    alt="<?php echo e($image->alt_text); ?>"
+                                    class="object-contain max-h-full max-w-full"
+                                >
+                            <?php else: ?>
+                                <span class="text-[11px] text-gray-500 dark:text-gray-400">No preview</span>
+                            <?php endif; ?>
+
+                            <div class="absolute right-2 top-2">
+                                <?php if($image->is_primary): ?>
+                                    <span class="inline-flex items-center gap-1 rounded-full bg-emerald-50/95 dark:bg-emerald-900/80 text-emerald-700 dark:text-emerald-200 border border-emerald-200 dark:border-emerald-700 px-2 py-1 text-[10px] font-medium shadow-sm">
+                                        <span aria-hidden="true">★</span>
+                                        Primary
+                                    </span>
+                                <?php else: ?>
+                                    <form method="POST" action="<?php echo e(route('admin.images.primary', $image)); ?>">
+                                        <?php echo csrf_field(); ?>
+                                        <button
+                                            type="submit"
+                                            class="inline-flex items-center gap-1 rounded-full border border-white/80 bg-white/95 px-2.5 py-1 text-[10px] font-medium text-gray-700 shadow-sm hover:border-emerald-300 hover:bg-emerald-50 hover:text-emerald-700 focus:outline-none focus:ring-2 focus:ring-emerald-400 dark:border-gray-700 dark:bg-gray-950/90 dark:text-gray-200 dark:hover:border-emerald-500 dark:hover:bg-emerald-950/70 dark:hover:text-emerald-200"
+                                            title="Make this the primary product image"
+                                            aria-label="Make image #<?php echo e($image->id); ?> primary"
+                                        >
+                                            <span aria-hidden="true">☆</span>
+                                            Make primary
+                                        </button>
+                                    </form>
+                                <?php endif; ?>
+                            </div>
+                        </div>
+
+                        <div class="p-3 space-y-2 text-xs flex-1 flex flex-col">
+                            <div class="flex items-center justify-between">
+                                <span class="text-gray-800 dark:text-gray-100">
+                                    #<?php echo e($image->id); ?>
+
+                                </span>
+                                <?php if($image->is_primary): ?>
+                                    <span class="inline-flex items-center rounded-full bg-emerald-50 dark:bg-emerald-900/30 text-emerald-700 dark:text-emerald-300 px-2 py-0.5 text-[10px]">
+                                        Primary
+                                    </span>
+                                <?php endif; ?>
+                            </div>
+
+                            <?php if($image->alt_text): ?>
+                                <div class="text-[11px] text-gray-500 dark:text-gray-400 line-clamp-2">
+                                    Alt: <?php echo e($image->alt_text); ?>
+
+                                </div>
+                            <?php endif; ?>
+
+                            <div class="text-[10px] text-gray-400 dark:text-gray-500">
+                                Position: <?php echo e($image->position ?? 0); ?>
+
+                            </div>
+
+                            <div class="mt-auto pt-2 flex items-center justify-between">
+                                <a href="<?php echo e(route('admin.images.edit', $image)); ?>"
+                                   class="text-[11px] text-gray-600 dark:text-gray-300 hover:text-gray-900 dark:hover:text-gray-100">
+                                    Edit
+                                </a>
+
+                                <form method="POST"
+                                      action="<?php echo e(route('admin.images.destroy', $image)); ?>"
+                                      onsubmit="return confirm('Delete this image?');">
+                                    <?php echo csrf_field(); ?>
+                                    <?php echo method_field('DELETE'); ?>
+                                    <button type="submit"
+                                            class="text-[11px] text-red-600 hover:text-red-700">
+                                        Delete
+                                    </button>
+                                </form>
+                            </div>
+                        </div>
+                    </div>
+                <?php endforeach; $__env->popLoop(); $loop = $__env->getLastLoop(); ?>
+            </div>
+        <?php endif; ?>
+    </div>
+<?php $__env->stopSection(); ?>
+
+<?php echo $__env->make('layouts.company', array_diff_key(get_defined_vars(), ['__data' => 1, '__path' => 1]))->render(); ?><?php /**PATH /Users/ooglie/Website/ChatGPT/PRODUCTIONFrozen/BandaraFrozen/resources/views/admin/products/images/index.blade.php ENDPATH**/ ?>

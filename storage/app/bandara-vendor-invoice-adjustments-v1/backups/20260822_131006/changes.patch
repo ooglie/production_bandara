@@ -1,0 +1,1691 @@
+--- a/app/Http/Controllers/Admin/VendorInvoiceController.php
++++ b/app/Http/Controllers/Admin/VendorInvoiceController.php
+@@ -12,6 +12,7 @@
+ use App\Models\StockMovement;
+ use App\Models\Vendor;
+ use App\Models\VendorInvoice;
++use App\Models\VendorInvoiceAdjustment;
+ use App\Models\VendorInvoiceItem;
+ use Illuminate\Database\Eloquent\Model;
+ use Illuminate\Http\Request;
+@@ -20,6 +21,8 @@
+ use Illuminate\Support\Facades\Schema;
+ use Illuminate\Validation\Rule;
+ use Illuminate\Validation\ValidationException;
++use App\Services\VendorInvoiceBalanceService;
++use App\Services\VendorReturnService;
+ 
+ class VendorInvoiceController extends Controller
+ {
+@@ -28,7 +31,11 @@
+ 
+     public function index(Request $request)
+     {
+-        $query = VendorInvoice::with(['vendor', 'payments'])
++        $query = VendorInvoice::with(['vendor'])
++            ->withSum('payments as paid_total', 'amount')
++            ->withSum([
++                'adjustments as posted_adjustment_total' => fn ($adjustments) => $adjustments->where('status', VendorInvoiceAdjustment::STATUS_POSTED),
++            ], 'total_delta')
+             ->when($request->filled('vendor_id'), function ($q) use ($request) {
+                 $q->where('vendor_id', $request->vendor_id);
+             })
+@@ -287,14 +294,27 @@
+             ->with('status', 'Vendor invoice created. Inward stock, lots, and individual piece weights were recorded.');
+     }
+ 
+-    public function show(VendorInvoice $vendorInvoice)
+-    {
++    public function show(
++        VendorInvoice $vendorInvoice,
++        VendorInvoiceBalanceService $balances,
++        VendorReturnService $returns,
++    ) {
+         $vendorInvoice->load([
+             'vendor',
+             'items.product',
+             'items.productVariant',
+             'items.hsnCode',
+             'payments',
++            'adjustments.items.invoiceItem.product',
++            'adjustments.items.invoiceItem.productVariant',
++            'adjustments.creator',
++            'adjustments.postedBy',
++            'adjustments.reversal',
++            'vendorReturns.items.invoiceItem.product',
++            'vendorReturns.items.invoiceItem.productVariant',
++            'vendorReturns.supplierCreditAdjustment',
++            'vendorReturns.creator',
++            'vendorReturns.postedBy',
+         ]);
+ 
+         $lots = InventoryLot::query()
+@@ -323,44 +343,80 @@
+         return view('admin.vendor_invoices.show', [
+             'invoice' => $vendorInvoice,
+             'itemLotMap' => $directMap,
++            'balanceSummary' => $balances->summary($vendorInvoice),
++            'reversalAssessment' => $returns->assessFullReversal($vendorInvoice),
+         ]);
+     }
+ 
+     public function outstandingSummary(Request $request)
+     {
+-        $invoiceAgg = \App\Models\VendorInvoice::query()
+-            ->selectRaw('vendor_id, COUNT(*) as inv_count, SUM(total_amount) as inv_total')
+-            ->whereNotIn('status', ['cancelled'])
+-            ->groupBy('vendor_id');
+-
+-        $paymentAgg = \App\Models\VendorPayment::query()
+-            ->join('vendor_invoices', 'vendor_invoices.id', '=', 'vendor_payments.vendor_invoice_id')
+-            ->selectRaw('vendor_invoices.vendor_id as vendor_id, SUM(vendor_payments.amount) as paid_total')
++        $adjustmentAgg = VendorInvoiceAdjustment::query()
++            ->selectRaw('vendor_invoice_id, SUM(total_delta) as adjustment_total')
++            ->where('status', VendorInvoiceAdjustment::STATUS_POSTED)
++            ->groupBy('vendor_invoice_id');
++
++        $paymentByInvoice = \App\Models\VendorPayment::query()
++            ->selectRaw('vendor_invoice_id, SUM(amount) as paid_total')
++            ->whereNotNull('vendor_invoice_id')
++            ->groupBy('vendor_invoice_id');
++
++        $adjustedExpression = '(CASE '
++            . 'WHEN vendor_invoices.total_amount + COALESCE(vaa.adjustment_total, 0) > 0 '
++            . 'THEN vendor_invoices.total_amount + COALESCE(vaa.adjustment_total, 0) '
++            . 'ELSE 0 END)';
++        $paidExpression = 'COALESCE(vpa.paid_total, 0)';
++
++        $invoicePositions = VendorInvoice::query()
++            ->leftJoinSub($adjustmentAgg, 'vaa', function ($join) {
++                $join->on('vendor_invoices.id', '=', 'vaa.vendor_invoice_id');
++            })
++            ->leftJoinSub($paymentByInvoice, 'vpa', function ($join) {
++                $join->on('vendor_invoices.id', '=', 'vpa.vendor_invoice_id');
++            })
+             ->whereNotIn('vendor_invoices.status', ['cancelled'])
+-            ->groupBy('vendor_invoices.vendor_id');
++            ->selectRaw('vendor_invoices.id, vendor_invoices.vendor_id')
++            ->selectRaw("{$adjustedExpression} as adjusted_total")
++            ->selectRaw("{$paidExpression} as paid_total")
++            ->selectRaw("CASE WHEN {$adjustedExpression} > {$paidExpression} THEN {$adjustedExpression} - {$paidExpression} ELSE 0 END as outstanding_total")
++            ->selectRaw("CASE WHEN {$paidExpression} > {$adjustedExpression} THEN {$paidExpression} - {$adjustedExpression} ELSE 0 END as vendor_credit_due");
++
++        $vendorPositions = DB::query()
++            ->fromSub($invoicePositions, 'vip')
++            ->selectRaw('vendor_id, COUNT(*) as inv_count')
++            ->selectRaw('SUM(adjusted_total) as inv_total')
++            ->selectRaw('SUM(paid_total) as paid_total')
++            ->selectRaw('SUM(outstanding_total) as outstanding_total')
++            ->selectRaw('SUM(vendor_credit_due) as vendor_credit_due')
++            ->groupBy('vendor_id');
+ 
+         $rows = \App\Models\Vendor::query()
+-            ->leftJoinSub($invoiceAgg, 'ia', function ($join) {
+-                $join->on('vendors.id', '=', 'ia.vendor_id');
++            ->leftJoinSub($vendorPositions, 'vp', function ($join) {
++                $join->on('vendors.id', '=', 'vp.vendor_id');
+             })
+-            ->leftJoinSub($paymentAgg, 'pa', function ($join) {
+-                $join->on('vendors.id', '=', 'pa.vendor_id');
++            ->selectRaw(''
++                . 'vendors.id as vendor_id, '
++                . 'vendors.name as vendor_name, '
++                . 'COALESCE(vp.inv_count, 0) as inv_count, '
++                . 'COALESCE(vp.inv_total, 0) as inv_total, '
++                . 'COALESCE(vp.paid_total, 0) as paid_total, '
++                . 'COALESCE(vp.outstanding_total, 0) as outstanding_total, '
++                . 'COALESCE(vp.vendor_credit_due, 0) as vendor_credit_due')
++            ->where(function ($query) {
++                $query->whereRaw('COALESCE(vp.outstanding_total, 0) > 0')
++                    ->orWhereRaw('COALESCE(vp.vendor_credit_due, 0) > 0');
+             })
+-            ->selectRaw('
+-                vendors.id as vendor_id,
+-                vendors.name as vendor_name,
+-                COALESCE(ia.inv_count, 0) as inv_count,
+-                COALESCE(ia.inv_total, 0) as inv_total,
+-                COALESCE(pa.paid_total, 0) as paid_total,
+-                GREATEST(COALESCE(ia.inv_total, 0) - COALESCE(pa.paid_total, 0), 0) as outstanding_total
+-            ')
+-            ->whereRaw('COALESCE(ia.inv_total, 0) > 0')
+             ->orderByDesc('outstanding_total')
++            ->orderByDesc('vendor_credit_due')
+             ->get();
+ 
+         $totalOutstandingAllVendors = (float) $rows->sum('outstanding_total');
++        $totalVendorCreditDue = (float) $rows->sum('vendor_credit_due');
+ 
+-        return view('admin.vendor_invoices.outstanding', compact('rows', 'totalOutstandingAllVendors'));
++        return view('admin.vendor_invoices.outstanding', compact(
++            'rows',
++            'totalOutstandingAllVendors',
++            'totalVendorCreditDue'
++        ));
+     }
+ 
+     private function normalizeInvoiceItems(array $items): array
+--- a/app/Http/Controllers/Admin/VendorPaymentController.php
++++ b/app/Http/Controllers/Admin/VendorPaymentController.php
+@@ -5,13 +5,20 @@
+ use App\Http\Controllers\Controller;
+ use App\Models\Vendor;
+ use App\Models\VendorInvoice;
++use App\Models\VendorInvoiceAdjustment;
+ use App\Models\VendorPayment;
++use App\Services\VendorInvoiceBalanceService;
+ use Illuminate\Http\Request;
+ use Illuminate\Support\Facades\DB;
+ use Illuminate\Validation\ValidationException;
+ 
+ class VendorPaymentController extends Controller
+ {
++    public function __construct(
++        private readonly VendorInvoiceBalanceService $balances,
++    ) {
++    }
++
+     public function index(Request $request)
+     {
+         $query = VendorPayment::with(['vendor', 'invoice'])
+@@ -25,15 +32,15 @@
+             ->orderByDesc('id');
+ 
+         $payments = $query->paginate(20)->withQueryString();
+-        $vendors  = Vendor::orderBy('name')->get();
++        $vendors = Vendor::orderBy('name')->get();
+ 
+         return view('admin.vendor_payments.index', compact('payments', 'vendors'));
+     }
+ 
+     /**
+-     * Single OR Bulk create screen.
+-     * - Single: uses vendor_invoice_id
+-     * - Bulk: uses invoice_ids[] (from vendor_invoices index)
++     * Single or bulk create screen.
++     * - Single: vendor_invoice_id
++     * - Bulk: invoice_ids[] from the vendor-invoice index
+      */
+     public function create(Request $request)
+     {
+@@ -43,17 +50,19 @@
+             ? Vendor::find($request->vendor_id)
+             : null;
+ 
+-        // Bulk mode: invoice_ids[] present
+         $invoiceIds = $request->input('invoice_ids', []);
+-        if (!is_array($invoiceIds)) $invoiceIds = [];
++        if (! is_array($invoiceIds)) {
++            $invoiceIds = [];
++        }
+ 
+-        $bulkMode = !empty($invoiceIds);
++        $bulkMode = $invoiceIds !== [];
+ 
+         if ($bulkMode) {
+             $invoiceIds = array_values(array_unique(array_map('intval', $invoiceIds)));
+ 
+-            $selectedInvoices = VendorInvoice::with('vendor')
++            $selectedInvoices = $this->invoiceBalanceQuery()
+                 ->whereIn('id', $invoiceIds)
++                ->whereNotIn('status', ['cancelled'])
+                 ->orderByDesc('invoice_date')
+                 ->orderByDesc('id')
+                 ->get();
+@@ -64,7 +73,6 @@
+                     ->with('status', 'No valid invoices selected for bulk payment.');
+             }
+ 
+-            // Ensure single vendor
+             $vendorIds = $selectedInvoices->pluck('vendor_id')->unique()->values();
+             if ($vendorIds->count() !== 1) {
+                 throw ValidationException::withMessages([
+@@ -74,38 +82,31 @@
+ 
+             $selectedVendor = Vendor::find($vendorIds->first());
+ 
+-            // preload paid amounts
+-            $paidMap = VendorPayment::query()
+-                ->selectRaw('vendor_invoice_id, SUM(amount) as paid')
+-                ->whereIn('vendor_invoice_id', $invoiceIds)
+-                ->groupBy('vendor_invoice_id')
+-                ->pluck('paid', 'vendor_invoice_id');
+-
+-            // Compute outstanding + defaults
+-            $rows = $selectedInvoices->map(function ($inv) use ($paidMap) {
+-                $paid = (float) ($paidMap[$inv->id] ?? 0);
+-                $total = (float) ($inv->total_amount ?? 0);
+-                $outstanding = max($total - $paid, 0);
++            $rows = $selectedInvoices->map(function (VendorInvoice $invoice) {
++                $summary = $this->balances->summary($invoice);
+ 
+                 return [
+-                    'invoice'      => $inv,
+-                    'total'        => $total,
+-                    'paid'         => $paid,
+-                    'outstanding'  => $outstanding,
+-                    'default_pay'  => $outstanding,
++                    'invoice' => $invoice,
++                    'original_total' => $summary['original_total'],
++                    'adjustment_total' => $summary['adjustment_total'],
++                    'total' => $summary['adjusted_total'],
++                    'paid' => $summary['paid'],
++                    'outstanding' => $summary['outstanding'],
++                    'vendor_credit_due' => $summary['vendor_credit_due'],
++                    'default_pay' => $summary['outstanding'],
+                 ];
+             });
+ 
+             return view('admin.vendor_payments.bulk_create', [
+-                'vendors'         => $vendors,
+-                'selectedVendor'  => $selectedVendor,
+-                'rows'            => $rows,
+-                'invoiceIds'      => $invoiceIds,
++                'vendors' => $vendors,
++                'selectedVendor' => $selectedVendor,
++                'rows' => $rows,
++                'invoiceIds' => $invoiceIds,
+             ]);
+         }
+ 
+-        // Single payment mode (existing)
+-        $invoicesQuery = VendorInvoice::with('vendor')
++        $invoicesQuery = $this->invoiceBalanceQuery()
++            ->whereNotIn('status', ['cancelled'])
+             ->orderByDesc('invoice_date')
+             ->orderByDesc('id');
+ 
+@@ -113,10 +114,16 @@
+             $invoicesQuery->where('vendor_id', $selectedVendor->id);
+         }
+ 
+-        $invoices = $invoicesQuery->take(100)->get();
++        $invoices = $invoicesQuery
++            ->take(200)
++            ->get()
++            ->filter(fn (VendorInvoice $invoice) => $this->balances->outstanding($invoice) > 0.005)
++            ->values();
+ 
+         $selectedInvoice = $request->filled('vendor_invoice_id')
+-            ? VendorInvoice::find($request->vendor_invoice_id)
++            ? $this->invoiceBalanceQuery()
++                ->whereNotIn('status', ['cancelled'])
++                ->find($request->vendor_invoice_id)
+             : null;
+ 
+         return view('admin.vendor_payments.create', compact(
+@@ -128,133 +135,175 @@
+     }
+ 
+     /**
+-     * Single OR bulk store.
+-     * - Single: vendor_invoice_id + amount
+-     * - Bulk: invoice_ids[] + amounts[invoice_id]
++     * Single or bulk payment store.
+      */
+     public function store(Request $request)
+     {
+         $invoiceIds = $request->input('invoice_ids', []);
+-        if (!is_array($invoiceIds)) $invoiceIds = [];
+-        $bulkMode = !empty($invoiceIds);
++        if (! is_array($invoiceIds)) {
++            $invoiceIds = [];
++        }
+ 
+-        if ($bulkMode) {
+-            $validated = $request->validate([
+-                'vendor_id'            => ['required', 'exists:vendors,id'],
+-                'payment_date'         => ['required', 'date'],
+-                'payment_method'       => ['nullable', 'string', 'max:50'],
+-                'reference_number'     => ['nullable', 'string', 'max:100'],
+-                'notes'                => ['nullable', 'string'],
+-                'invoice_ids'          => ['required', 'array', 'min:1'],
+-                'invoice_ids.*'        => ['integer', 'exists:vendor_invoices,id'],
+-                'amounts'              => ['required', 'array'],
+-            ]);
++        if ($invoiceIds !== []) {
++            return $this->storeBulk($request);
++        }
+ 
+-            $vendorId = (int) $validated['vendor_id'];
+-            $invoiceIds = array_values(array_unique(array_map('intval', $validated['invoice_ids'])));
+-            $amounts = $validated['amounts'] ?? [];
++        return $this->storeSingle($request);
++    }
+ 
+-            DB::transaction(function () use ($vendorId, $invoiceIds, $validated, $amounts) {
+-                $invoices = VendorInvoice::query()
+-                    ->lockForUpdate()
+-                    ->whereIn('id', $invoiceIds)
+-                    ->get();
++    private function storeBulk(Request $request)
++    {
++        $validated = $request->validate([
++            'vendor_id' => ['required', 'exists:vendors,id'],
++            'payment_date' => ['required', 'date'],
++            'payment_method' => ['nullable', 'string', 'max:50'],
++            'reference_number' => ['nullable', 'string', 'max:100'],
++            'notes' => ['nullable', 'string'],
++            'invoice_ids' => ['required', 'array', 'min:1'],
++            'invoice_ids.*' => ['integer', 'exists:vendor_invoices,id'],
++            'amounts' => ['required', 'array'],
++        ]);
+ 
+-                if ($invoices->isEmpty()) {
+-                    throw ValidationException::withMessages(['invoice_ids' => 'No valid invoices found.']);
+-                }
++        $vendorId = (int) $validated['vendor_id'];
++        $invoiceIds = array_values(array_unique(array_map('intval', $validated['invoice_ids'])));
++        $amounts = $validated['amounts'] ?? [];
++        $created = 0;
+ 
+-                // Enforce single vendor
+-                $vendorIds = $invoices->pluck('vendor_id')->unique();
+-                if ($vendorIds->count() !== 1 || (int)$vendorIds->first() !== $vendorId) {
++        DB::transaction(function () use ($vendorId, $invoiceIds, $validated, $amounts, &$created) {
++            $invoices = VendorInvoice::query()
++                ->whereIn('id', $invoiceIds)
++                ->orderBy('id')
++                ->lockForUpdate()
++                ->get();
++
++            if ($invoices->isEmpty()) {
++                throw ValidationException::withMessages(['invoice_ids' => 'No valid invoices found.']);
++            }
++
++            $vendorIds = $invoices->pluck('vendor_id')->unique();
++            if ($vendorIds->count() !== 1 || (int) $vendorIds->first() !== $vendorId) {
++                throw ValidationException::withMessages([
++                    'vendor_id' => 'Selected invoices must belong to the chosen vendor.',
++                ]);
++            }
++
++            foreach ($invoices as $invoice) {
++                if ((string) $invoice->status === 'cancelled') {
+                     throw ValidationException::withMessages([
+-                        'vendor_id' => 'Selected invoices must belong to the chosen vendor.',
++                        'invoice_ids' => "Invoice {$invoice->invoice_number} is cancelled and cannot receive a payment.",
+                     ]);
+                 }
+ 
+-                foreach ($invoices as $inv) {
+-                    $total = (float) ($inv->total_amount ?? 0);
+-                    $paid  = (float) $inv->payments()->sum('amount');
+-                    $outstanding = max($total - $paid, 0);
+-
+-                    $raw = $amounts[(string)$inv->id] ?? $amounts[$inv->id] ?? null;
+-                    $pay = (float) $raw;
+-
+-                    if ($pay <= 0) {
+-                        continue; // skip zeros
+-                    }
+-
+-                    // clamp to outstanding
+-                    if ($pay > $outstanding) $pay = $outstanding;
+-
+-                    if ($pay <= 0) continue;
+-
+-                    VendorPayment::create([
+-                        'vendor_id'         => $vendorId,
+-                        'vendor_invoice_id' => $inv->id,
+-                        'amount'            => $pay,
+-                        'payment_date'      => $validated['payment_date'],
+-                        'payment_method'    => $validated['payment_method'] ?? null,
+-                        'reference_number'  => $validated['reference_number'] ?? null,
+-                        'notes'             => $validated['notes'] ?? null,
+-                    ]);
++                $invoice->load(['postedAdjustments', 'payments']);
++                $summary = $this->balances->summary($invoice);
+ 
+-                    // Update invoice status after inserting this payment
+-                    $newPaid = (float) $inv->payments()->sum('amount');
+-                    $status = 'pending';
+-
+-                    if ($total > 0 && $newPaid >= $total) {
+-                        $status = 'paid';
+-                    } elseif ($newPaid > 0 && $newPaid < $total) {
+-                        $status = 'partially_paid';
+-                    }
++                $raw = $amounts[(string) $invoice->id] ?? $amounts[$invoice->id] ?? null;
++                $paymentAmount = round((float) $raw, 2);
+ 
+-                    $inv->update(['status' => $status]);
++                if ($paymentAmount <= 0) {
++                    continue;
++                }
++
++                if ($paymentAmount > $summary['outstanding'] + 0.005) {
++                    throw ValidationException::withMessages([
++                        "amounts.{$invoice->id}" => "Payment for {$invoice->invoice_number} exceeds its adjusted outstanding amount of ₹" . number_format($summary['outstanding'], 2) . '.',
++                    ]);
+                 }
+-            });
+ 
+-            return redirect()
+-                ->route('admin.vendor-payments.index')
+-                ->with('status', 'Bulk vendor payment recorded.');
++                VendorPayment::create([
++                    'vendor_id' => $vendorId,
++                    'vendor_invoice_id' => $invoice->id,
++                    'amount' => $paymentAmount,
++                    'payment_date' => $validated['payment_date'],
++                    'payment_method' => $validated['payment_method'] ?? null,
++                    'reference_number' => $validated['reference_number'] ?? null,
++                    'notes' => $validated['notes'] ?? null,
++                ]);
++
++                $this->balances->syncStatus($invoice->fresh());
++                $created++;
++            }
++        }, 3);
++
++        if ($created === 0) {
++            throw ValidationException::withMessages([
++                'amounts' => 'Enter a positive payment amount for at least one selected invoice.',
++            ]);
+         }
+ 
+-        // ✅ Existing single payment behavior (unchanged)
++        return redirect()
++            ->route('admin.vendor-payments.index')
++            ->with('status', 'Bulk vendor payment recorded.');
++    }
++
++    private function storeSingle(Request $request)
++    {
+         $validated = $request->validate([
+-            'vendor_id'        => ['required', 'exists:vendors,id'],
+-            'vendor_invoice_id'=> ['nullable', 'exists:vendor_invoices,id'],
+-            'amount'           => ['required', 'numeric', 'min:0.01'],
+-            'payment_date'     => ['required', 'date'],
+-            'payment_method'   => ['nullable', 'string', 'max:50'],
++            'vendor_id' => ['required', 'exists:vendors,id'],
++            'vendor_invoice_id' => ['nullable', 'exists:vendor_invoices,id'],
++            'amount' => ['required', 'numeric', 'min:0.01'],
++            'payment_date' => ['required', 'date'],
++            'payment_method' => ['nullable', 'string', 'max:50'],
+             'reference_number' => ['nullable', 'string', 'max:100'],
+-            'notes'            => ['nullable', 'string'],
++            'notes' => ['nullable', 'string'],
+         ]);
+ 
+-        $payment = null;
++        DB::transaction(function () use ($validated) {
++            $invoice = null;
++
++            if (! empty($validated['vendor_invoice_id'])) {
++                $invoice = VendorInvoice::query()
++                    ->lockForUpdate()
++                    ->findOrFail((int) $validated['vendor_invoice_id']);
++
++                if ((int) $invoice->vendor_id !== (int) $validated['vendor_id']) {
++                    throw ValidationException::withMessages([
++                        'vendor_invoice_id' => 'The selected invoice does not belong to the chosen vendor.',
++                    ]);
++                }
+ 
+-        DB::transaction(function () use ($validated, &$payment) {
+-            $payment = VendorPayment::create($validated);
++                if ((string) $invoice->status === 'cancelled') {
++                    throw ValidationException::withMessages([
++                        'vendor_invoice_id' => 'A cancelled vendor invoice cannot receive another payment.',
++                    ]);
++                }
+ 
+-            if (!empty($validated['vendor_invoice_id'])) {
+-                $invoice = VendorInvoice::find($validated['vendor_invoice_id']);
++                $invoice->load(['postedAdjustments', 'payments']);
++                $summary = $this->balances->summary($invoice);
++                $amount = round((float) $validated['amount'], 2);
+ 
+-                if ($invoice) {
+-                    $paid  = $invoice->payments()->sum('amount');
+-                    $total = (float) $invoice->total_amount;
+-
+-                    $status = 'pending';
+-                    if ($total > 0 && $paid >= $total) {
+-                        $status = 'paid';
+-                    } elseif ($paid > 0 && $paid < $total) {
+-                        $status = 'partially_paid';
+-                    }
++                if ($summary['outstanding'] <= 0.005) {
++                    throw ValidationException::withMessages([
++                        'amount' => 'The selected invoice has no adjusted outstanding amount.',
++                    ]);
++                }
+ 
+-                    $invoice->update(['status' => $status]);
++                if ($amount > $summary['outstanding'] + 0.005) {
++                    throw ValidationException::withMessages([
++                        'amount' => 'Payment exceeds the adjusted outstanding amount of ₹' . number_format($summary['outstanding'], 2) . '.',
++                    ]);
+                 }
+             }
+-        });
++
++            VendorPayment::create($validated);
++
++            if ($invoice) {
++                $this->balances->syncStatus($invoice->fresh());
++            }
++        }, 3);
+ 
+         return redirect()
+             ->route('admin.vendor-payments.index')
+             ->with('status', 'Vendor payment recorded.');
+     }
+-}
+\ No newline at end of file
++
++    private function invoiceBalanceQuery()
++    {
++        return VendorInvoice::query()
++            ->with('vendor')
++            ->withSum('payments as paid_total', 'amount')
++            ->withSum([
++                'adjustments as posted_adjustment_total' => fn ($adjustments) => $adjustments->where('status', VendorInvoiceAdjustment::STATUS_POSTED),
++            ], 'total_delta');
++    }
++}
+--- a/app/Http/Middleware/EnforceAdminRoutePermission.php
++++ b/app/Http/Middleware/EnforceAdminRoutePermission.php
+@@ -95,6 +95,17 @@
+         }
+ 
+         if (Str::startsWith($routeName, 'admin.vendor-invoices.')) {
++            if (Str::startsWith($routeName, [
++                'admin.vendor-invoices.adjustments.',
++                'admin.vendor-invoices.returns.',
++                'admin.vendor-invoices.reverse.',
++            ]) || Str::endsWith($routeName, [
++                '.edit-details',
++                '.update-details',
++            ])) {
++                return 'adjust vendor invoices';
++            }
++
+             if (Str::endsWith($routeName, ['.create', '.store'])) {
+                 return 'create vendor invoice';
+             }
+--- a/app/Models/VendorInvoice.php
++++ b/app/Models/VendorInvoice.php
+@@ -32,11 +32,6 @@
+         return $this->belongsTo(Vendor::class);
+     }
+ 
+-    public function vendorInvoice()
+-    {
+-        return $this->belongsTo(vendorInvoice::class);
+-    }
+-
+     public function items()
+     {
+         return $this->hasMany(VendorInvoiceItem::class);
+@@ -47,13 +42,99 @@
+         return $this->hasMany(VendorPayment::class);
+     }
+ 
++    public function adjustments()
++    {
++        return $this->hasMany(VendorInvoiceAdjustment::class);
++    }
++
++    public function postedAdjustments()
++    {
++        return $this->hasMany(VendorInvoiceAdjustment::class)
++            ->where('status', VendorInvoiceAdjustment::STATUS_POSTED);
++    }
++
++    public function vendorReturns()
++    {
++        return $this->hasMany(VendorReturn::class);
++    }
++
+     public function getPaidAmountAttribute(): float
+     {
+-        return (float) $this->payments()->sum('amount');
++        if (array_key_exists('paid_total', $this->attributes)) {
++            return round((float) $this->attributes['paid_total'], 2);
++        }
++
++        if ($this->relationLoaded('payments')) {
++            return round((float) $this->payments->sum('amount'), 2);
++        }
++
++        return round((float) $this->payments()->sum('amount'), 2);
++    }
++
++    public function getPostedAdjustmentTotalAttribute(): float
++    {
++        if (array_key_exists('posted_adjustment_total', $this->attributes)) {
++            return round((float) $this->attributes['posted_adjustment_total'], 2);
++        }
++
++        if ($this->relationLoaded('postedAdjustments')) {
++            return round((float) $this->postedAdjustments->sum('total_delta'), 2);
++        }
++
++        if ($this->relationLoaded('adjustments')) {
++            return round((float) $this->adjustments
++                ->where('status', VendorInvoiceAdjustment::STATUS_POSTED)
++                ->sum('total_delta'), 2);
++        }
++
++        return round((float) $this->postedAdjustments()->sum('total_delta'), 2);
++    }
++
++    public function getAdjustedSubtotalAttribute(): float
++    {
++        $delta = $this->postedAdjustmentComponent('subtotal_delta', 'posted_adjustment_subtotal');
++
++        return round(max(0, (float) $this->subtotal + $delta), 2);
++    }
++
++    public function getAdjustedTaxAmountAttribute(): float
++    {
++        $delta = $this->postedAdjustmentComponent('tax_delta', 'posted_adjustment_tax');
++
++        return round(max(0, (float) $this->tax_amount + $delta), 2);
++    }
++
++    public function getAdjustedTotalAmountAttribute(): float
++    {
++        return round(max(0, (float) $this->total_amount + $this->posted_adjustment_total), 2);
+     }
+ 
+     public function getBalanceAmountAttribute(): float
+     {
+-        return (float) max(0, $this->total_amount - $this->paid_amount);
++        return round(max(0, $this->adjusted_total_amount - $this->paid_amount), 2);
++    }
++
++    public function getVendorCreditDueAttribute(): float
++    {
++        return round(max(0, $this->paid_amount - $this->adjusted_total_amount), 2);
++    }
++
++    private function postedAdjustmentComponent(string $column, string $aggregateAttribute): float
++    {
++        if (array_key_exists($aggregateAttribute, $this->attributes)) {
++            return round((float) $this->attributes[$aggregateAttribute], 2);
++        }
++
++        if ($this->relationLoaded('postedAdjustments')) {
++            return round((float) $this->postedAdjustments->sum($column), 2);
++        }
++
++        if ($this->relationLoaded('adjustments')) {
++            return round((float) $this->adjustments
++                ->where('status', VendorInvoiceAdjustment::STATUS_POSTED)
++                ->sum($column), 2);
++        }
++
++        return round((float) $this->postedAdjustments()->sum($column), 2);
+     }
+ }
+--- a/app/Models/VendorInvoiceItem.php
++++ b/app/Models/VendorInvoiceItem.php
+@@ -62,4 +62,14 @@
+     {
+         return $this->hasOne(\App\Models\InventoryLot::class, 'vendor_invoice_item_id');
+     }
++
++    public function adjustmentItems()
++    {
++        return $this->hasMany(VendorInvoiceAdjustmentItem::class);
++    }
++
++    public function vendorReturnItems()
++    {
++        return $this->hasMany(VendorReturnItem::class);
++    }
+ }
+--- a/resources/views/admin/vendor_invoices/index.blade.php
++++ b/resources/views/admin/vendor_invoices/index.blade.php
+@@ -14,19 +14,6 @@
+     // Bulk pay -> goes to VendorPaymentController@create (GET)
+     $bulkPayUrl = $has('admin.vendor-payments.create') ? route('admin.vendor-payments.create') : null;
+ 
+-    // Build paid map: vendor_invoice_id => sum(amount)
+-    $invoiceIds = collect($invoices)->pluck('id')->filter()->values()->all();
+-
+-    $paidMap = [];
+-    if (!empty($invoiceIds)) {
+-        $paidMap = \App\Models\VendorPayment::query()
+-            ->selectRaw('vendor_invoice_id, SUM(amount) as paid')
+-            ->whereIn('vendor_invoice_id', $invoiceIds)
+-            ->groupBy('vendor_invoice_id')
+-            ->pluck('paid', 'vendor_invoice_id')
+-            ->toArray();
+-    }
+-
+     $outstandingUrl = \Illuminate\Support\Facades\Route::has('admin.vendor-invoices.outstanding')
+         ? route('admin.vendor-invoices.outstanding')
+         : null;
+@@ -38,11 +25,11 @@
+         <div>
+             <h1 class="text-base sm:text-lg font-semibold text-gray-900 dark:text-gray-50">Vendor invoices</h1>
+             <p class="text-[11px] text-gray-500 dark:text-gray-400">
+-                Track inward stock, costs, and batch/expiry data per invoice.
++                Track inward stock, supplier credits/debits, purchase returns and adjusted payable per invoice.
+             </p>
+         </div>
+ 
+-        @can('manage invoices')
++        @can('create vendor invoice')
+         <div class="flex items-center gap-2">
+             <a href="{{ $createUrl }}"
+                class="inline-flex items-center rounded-xl border border-gray-900 dark:border-gray-100 bg-gray-900 text-white dark:bg-gray-100 dark:text-gray-900 px-4 py-2 text-[12px] font-semibold hover:bg-gray-800 dark:hover:bg-gray-200">
+@@ -130,7 +117,7 @@
+             <div>
+                 <div class="text-sm font-semibold text-gray-900 dark:text-gray-50">Bulk payment</div>
+                 <div class="text-[11px] text-gray-500 dark:text-gray-400">
+-                    Select multiple invoices (same vendor). Paid/cancelled invoices cannot be selected.
++                    Select multiple invoices from one vendor. Only invoices with an adjusted outstanding amount can be selected.
+                 </div>
+             </div>
+ 
+@@ -183,11 +170,14 @@
+                     $status = (string)($inv->status ?? 'pending');
+                     $vendorId = (int)($inv->vendor_id ?? ($inv->vendor?->id ?? 0));
+ 
+-                    $total = (float)($inv->total_amount ?? (($inv->subtotal ?? 0) + ($inv->tax_amount ?? 0)) ?? 0);
+-                    $paid  = (float)($paidMap[$inv->id] ?? 0);
++                    $originalTotal = (float)($inv->total_amount ?? 0);
++                    $adjustmentTotal = (float)($inv->posted_adjustment_total ?? 0);
++                    $total = max(0, $originalTotal + $adjustmentTotal);
++                    $paid = (float)($inv->paid_total ?? 0);
+                     $outstanding = max($total - $paid, 0);
++                    $vendorCreditDue = max($paid - $total, 0);
+ 
+-                    $disabled = in_array($status, ['paid','cancelled'], true);
++                    $disabled = $status === 'cancelled' || $outstanding <= 0.005;
+                 @endphp
+                 <tr class="hover:bg-gray-50 dark:hover:bg-gray-900/40">
+                     <td class="px-3 py-3 align-top">
+@@ -231,22 +221,21 @@
+ 
+                     <td class="px-3 py-3 align-top text-right text-gray-900 dark:text-gray-50">
+                         ₹{{ number_format($total, 2) }}
++                        @if(abs($adjustmentTotal) > 0.005)
++                            <div class="text-[10px] text-gray-400">Original ₹{{ number_format($originalTotal, 2) }} · Adj {{ $adjustmentTotal >= 0 ? '+' : '' }}₹{{ number_format($adjustmentTotal, 2) }}</div>
++                        @endif
+                         @if($paid > 0)
+                             <div class="text-[10px] text-gray-400">Paid: ₹{{ number_format($paid, 2) }}</div>
+                         @endif
+                     </td>
+ 
+                     <td class="px-3 py-3 align-top text-right">
+-                        @if($outstanding <= 0.0001)
+-                            <span class="inline-flex items-center rounded-full border px-2 py-0.5 text-[11px]
+-                                border-emerald-200 bg-emerald-50 text-emerald-700
+-                                dark:border-emerald-800 dark:bg-emerald-900/30 dark:text-emerald-200">
+-                                ₹0.00
+-                            </span>
++                        @if($vendorCreditDue > 0.005)
++                            <span class="font-semibold text-amber-700 dark:text-amber-300">Vendor credit ₹{{ number_format($vendorCreditDue, 2) }}</span>
++                        @elseif($outstanding <= 0.005)
++                            <span class="inline-flex items-center rounded-full border border-emerald-200 bg-emerald-50 px-2 py-0.5 text-[11px] text-emerald-700 dark:border-emerald-800 dark:bg-emerald-900/30 dark:text-emerald-200">₹0.00</span>
+                         @else
+-                            <span class="font-semibold text-gray-900 dark:text-gray-50">
+-                                ₹{{ number_format($outstanding, 2) }}
+-                            </span>
++                            <span class="font-semibold text-gray-900 dark:text-gray-50">₹{{ number_format($outstanding, 2) }}</span>
+                         @endif
+                     </td>
+                 </tr>
+--- a/resources/views/admin/vendor_invoices/outstanding.blade.php
++++ b/resources/views/admin/vendor_invoices/outstanding.blade.php
+@@ -5,17 +5,15 @@
+ @section('content')
+ @php
+     $has = fn(string $r) => \Illuminate\Support\Facades\Route::has($r);
+-
+     $backUrl = $has('admin.vendor-invoices.index') ? route('admin.vendor-invoices.index') : url()->previous();
+ @endphp
+ 
+ <div class="max-w-6xl mx-auto px-4 py-6 space-y-4 text-xs">
+-
+     <div class="flex items-start justify-between gap-3">
+         <div>
+-            <h1 class="text-lg font-semibold text-gray-900 dark:text-gray-50">Outstanding by vendor</h1>
++            <h1 class="text-lg font-semibold text-gray-900 dark:text-gray-50">Adjusted payable by vendor</h1>
+             <p class="text-[11px] text-gray-500 dark:text-gray-400">
+-                Total outstanding across vendors and breakdown per vendor.
++                Posted supplier credits and debits are included. Vendor credit shows amounts already paid above the adjusted payable.
+             </p>
+         </div>
+ 
+@@ -25,10 +23,18 @@
+         </a>
+     </div>
+ 
+-    <div class="rounded-2xl border border-gray-200 dark:border-gray-800 bg-white dark:bg-gray-900 p-4">
+-        <div class="text-[11px] text-gray-500 dark:text-gray-400">Total outstanding (all vendors)</div>
+-        <div class="text-2xl font-semibold text-gray-900 dark:text-gray-50">
+-            ₹{{ number_format((float)$totalOutstandingAllVendors, 2) }}
++    <div class="grid gap-3 sm:grid-cols-2">
++        <div class="rounded-2xl border border-gray-200 dark:border-gray-800 bg-white dark:bg-gray-900 p-4">
++            <div class="text-[11px] text-gray-500 dark:text-gray-400">Total adjusted outstanding</div>
++            <div class="mt-1 text-2xl font-semibold text-gray-900 dark:text-gray-50">
++                ₹{{ number_format((float)$totalOutstandingAllVendors, 2) }}
++            </div>
++        </div>
++        <div class="rounded-2xl border border-amber-200 dark:border-amber-900 bg-amber-50/60 dark:bg-amber-950/20 p-4">
++            <div class="text-[11px] text-amber-800 dark:text-amber-300">Vendor credit / refund receivable</div>
++            <div class="mt-1 text-2xl font-semibold text-amber-900 dark:text-amber-200">
++                ₹{{ number_format((float)($totalVendorCreditDue ?? 0), 2) }}
++            </div>
+         </div>
+     </div>
+ 
+@@ -38,9 +44,10 @@
+             <tr>
+                 <th class="px-3 py-2 text-left font-medium text-gray-500 dark:text-gray-400">Vendor</th>
+                 <th class="px-3 py-2 text-right font-medium text-gray-500 dark:text-gray-400">Invoices</th>
+-                <th class="px-3 py-2 text-right font-medium text-gray-500 dark:text-gray-400">Total</th>
++                <th class="px-3 py-2 text-right font-medium text-gray-500 dark:text-gray-400">Adjusted payable</th>
+                 <th class="px-3 py-2 text-right font-medium text-gray-500 dark:text-gray-400">Paid</th>
+                 <th class="px-3 py-2 text-right font-medium text-gray-500 dark:text-gray-400">Outstanding</th>
++                <th class="px-3 py-2 text-right font-medium text-gray-500 dark:text-gray-400">Vendor credit</th>
+                 <th class="px-3 py-2 text-right font-medium text-gray-500 dark:text-gray-400">Action</th>
+             </tr>
+             </thead>
+@@ -52,22 +59,19 @@
+                         : '#';
+                 @endphp
+                 <tr>
+-                    <td class="px-3 py-2 text-gray-900 dark:text-gray-50 font-medium">
+-                        {{ $r->vendor_name }}
+-                    </td>
+-                    <td class="px-3 py-2 text-right text-gray-700 dark:text-gray-200">
+-                        {{ (int)$r->inv_count }}
+-                    </td>
+-                    <td class="px-3 py-2 text-right text-gray-700 dark:text-gray-200">
+-                        ₹{{ number_format((float)$r->inv_total, 2) }}
+-                    </td>
+-                    <td class="px-3 py-2 text-right text-gray-700 dark:text-gray-200">
+-                        ₹{{ number_format((float)$r->paid_total, 2) }}
++                    <td class="px-3 py-2 text-gray-900 dark:text-gray-50 font-medium">{{ $r->vendor_name }}</td>
++                    <td class="px-3 py-2 text-right text-gray-700 dark:text-gray-200">{{ (int)$r->inv_count }}</td>
++                    <td class="px-3 py-2 text-right text-gray-700 dark:text-gray-200">₹{{ number_format((float)$r->inv_total, 2) }}</td>
++                    <td class="px-3 py-2 text-right text-gray-700 dark:text-gray-200">₹{{ number_format((float)$r->paid_total, 2) }}</td>
++                    <td class="px-3 py-2 text-right">
++                        <span class="font-semibold text-gray-900 dark:text-gray-50">₹{{ number_format((float)$r->outstanding_total, 2) }}</span>
+                     </td>
+                     <td class="px-3 py-2 text-right">
+-                        <span class="font-semibold text-gray-900 dark:text-gray-50">
+-                            ₹{{ number_format((float)$r->outstanding_total, 2) }}
+-                        </span>
++                        @if((float)($r->vendor_credit_due ?? 0) > 0.005)
++                            <span class="font-semibold text-amber-800 dark:text-amber-300">₹{{ number_format((float)$r->vendor_credit_due, 2) }}</span>
++                        @else
++                            <span class="text-gray-400">—</span>
++                        @endif
+                     </td>
+                     <td class="px-3 py-2 text-right">
+                         <a href="{{ $vendorInvoicesUrl }}"
+@@ -78,8 +82,8 @@
+                 </tr>
+             @empty
+                 <tr>
+-                    <td colspan="6" class="px-3 py-6 text-center text-gray-500 dark:text-gray-400">
+-                        No outstanding found.
++                    <td colspan="7" class="px-3 py-6 text-center text-gray-500 dark:text-gray-400">
++                        No outstanding payable or vendor credit found.
+                     </td>
+                 </tr>
+             @endforelse
+@@ -87,4 +91,4 @@
+         </table>
+     </div>
+ </div>
+-@endsection
+\ No newline at end of file
++@endsection
+--- a/resources/views/admin/vendor_invoices/show.blade.php
++++ b/resources/views/admin/vendor_invoices/show.blade.php
+@@ -5,19 +5,28 @@
+ 
+ @section('content')
+ @php
+-    use Illuminate\Support\Facades\Route;
+-    use Illuminate\Support\Carbon;
+-
+-    $backUrl = Route::has('admin.vendor-invoices.index') ? route('admin.vendor-invoices.index') : url()->previous();
+     $items = $invoice->items ?? collect();
+     $payments = $invoice->payments ?? collect();
++    $adjustments = ($invoice->adjustments ?? collect())->sortByDesc(fn($row) => $row->posted_at ?? $row->created_at);
++    $returns = ($invoice->vendorReturns ?? collect())->sortByDesc(fn($row) => $row->posted_at ?? $row->created_at);
++    $balance = $balanceSummary ?? [
++        'original_subtotal' => (float)$invoice->subtotal,
++        'original_tax' => (float)$invoice->tax_amount,
++        'original_total' => (float)$invoice->total_amount,
++        'adjustment_subtotal' => 0,
++        'adjustment_tax' => 0,
++        'adjustment_total' => 0,
++        'adjusted_subtotal' => (float)$invoice->subtotal,
++        'adjusted_tax' => (float)$invoice->tax_amount,
++        'adjusted_total' => (float)$invoice->total_amount,
++        'paid' => (float)$payments->sum('amount'),
++        'outstanding' => max((float)$invoice->total_amount - (float)$payments->sum('amount'), 0),
++        'vendor_credit_due' => 0,
++    ];
++    $status = (string)($invoice->status ?? 'pending');
++    $canAdjust = auth()->user()?->can('adjust vendor invoices') ?? false;
+     $itemLotMap = $itemLotMap ?? [];
+ 
+-    $paidTotal = (float) $payments->sum(fn ($p) => (float) data_get($p, 'amount', 0));
+-    $invoiceTotal = (float) data_get($invoice, 'total_amount', 0);
+-    $outstandingTotal = max($invoiceTotal - $paidTotal, 0);
+-    $status = (string) data_get($invoice, 'status', 'pending');
+-
+     $statusClasses = match ($status) {
+         'paid' => 'border-emerald-200 bg-emerald-50 text-emerald-700 dark:border-emerald-800 dark:bg-emerald-900/30 dark:text-emerald-200',
+         'partially_paid' => 'border-amber-200 bg-amber-50 text-amber-700 dark:border-amber-800 dark:bg-amber-900/30 dark:text-amber-200',
+@@ -25,244 +34,146 @@
+         default => 'border-gray-200 bg-gray-50 text-gray-600 dark:border-gray-700 dark:bg-gray-900/40 dark:text-gray-300',
+     };
+ 
+-    $receiptLabel = function (?string $type): string {
+-        return match ((string) $type) {
+-            'pieces_weight', 'bulk_weight' => 'Pieces with weight',
+-            'quantity', 'loose_pieces', 'finished_pack' => 'Quantity',
+-            default => 'Received stock',
+-        };
++    $receiptLabel = fn (?string $type): string => match ((string)$type) {
++        'pieces_weight', 'bulk_weight' => 'Pieces with weight',
++        'quantity', 'loose_pieces', 'finished_pack' => 'Quantity',
++        default => 'Received stock',
+     };
+-
+-    $normalReceiptType = fn (?string $type): string => match ((string) $type) {
+-        'bulk_weight' => 'pieces_weight',
+-        'loose_pieces', 'finished_pack' => 'quantity',
+-        default => (string) ($type ?: 'received'),
+-    };
+-
+-    $stockSummary = $items->groupBy(fn ($item) => $normalReceiptType($item->receipt_type ?? 'received'));
+ @endphp
+ 
+ <div class="max-w-7xl mx-auto px-4 py-6 space-y-4 text-xs">
+-    <div class="flex flex-col sm:flex-row sm:items-start sm:justify-between gap-3">
++    <div class="flex flex-col gap-3 xl:flex-row xl:items-start xl:justify-between">
+         <div>
+             <h1 class="text-xl font-semibold text-gray-900 dark:text-gray-50">Vendor Invoice {{ $invoice->invoice_number ?? '—' }}</h1>
+             <div class="mt-2 flex flex-wrap items-center gap-2">
+                 <span class="inline-flex items-center rounded-full border px-2.5 py-1 text-[11px] {{ $statusClasses }}">{{ str_replace('_', ' ', ucfirst($status)) }}</span>
+-                @if(data_get($invoice, 'invoice_date'))
+-                    <span class="text-[11px] text-gray-500 dark:text-gray-400">Invoice date: {{ Carbon::parse($invoice->invoice_date)->format('d M Y') }}</span>
+-                @endif
++                <span class="text-[11px] text-gray-500 dark:text-gray-400">{{ $invoice->vendor?->name ?? '—' }}</span>
++                @if($invoice->invoice_date)<span class="text-[11px] text-gray-500 dark:text-gray-400">· {{ $invoice->invoice_date->format('d M Y') }}</span>@endif
++                @if($adjustments->where('status', 'posted')->isNotEmpty())<span class="rounded-full border border-gray-200 dark:border-gray-700 px-2 py-1 text-[10px]">Adjusted</span>@endif
++                @if($returns->where('status', '!=', 'draft')->isNotEmpty())<span class="rounded-full border border-gray-200 dark:border-gray-700 px-2 py-1 text-[10px]">Return recorded</span>@endif
+             </div>
+         </div>
+-        <a href="{{ $backUrl }}" class="inline-flex items-center rounded-lg border border-gray-300 dark:border-gray-700 px-3 py-2 text-[12px] hover:bg-gray-50 dark:hover:bg-gray-800">Back</a>
+-    </div>
+ 
+-    <div class="grid gap-4 md:grid-cols-2 xl:grid-cols-4">
+-        <div class="rounded-2xl border border-gray-200 dark:border-gray-800 bg-white dark:bg-gray-900 p-4">
+-            <div class="text-[11px] uppercase tracking-wide text-gray-400">Vendor</div>
+-            <div class="mt-2 text-sm font-semibold text-gray-900 dark:text-gray-50">{{ data_get($invoice, 'vendor.name', '—') }}</div>
+-            @if(data_get($invoice, 'vendor.code'))
+-                <div class="mt-1 text-[11px] text-gray-500 dark:text-gray-400">Code: {{ data_get($invoice, 'vendor.code') }}</div>
++        <div class="flex flex-wrap gap-2">
++            <a href="{{ route('admin.vendor-invoices.index') }}" class="rounded-lg border border-gray-300 dark:border-gray-700 px-3 py-2 text-[11px] hover:bg-gray-50 dark:hover:bg-gray-800">Back</a>
++            @if($status !== 'cancelled' && $balance['outstanding'] > 0.005 && \Illuminate\Support\Facades\Route::has('admin.vendor-payments.create'))
++                <a href="{{ route('admin.vendor-payments.create', ['vendor_id' => $invoice->vendor_id, 'vendor_invoice_id' => $invoice->id]) }}" class="rounded-lg border border-gray-300 dark:border-gray-700 px-3 py-2 text-[11px] hover:bg-gray-50 dark:hover:bg-gray-800">Record payment</a>
++            @endif
++            @if($canAdjust && $status !== 'cancelled')
++                <a href="{{ route('admin.vendor-invoices.edit-details', $invoice) }}" class="rounded-lg border border-gray-300 dark:border-gray-700 px-3 py-2 text-[11px] hover:bg-gray-50 dark:hover:bg-gray-800">Edit details</a>
++                <a href="{{ route('admin.vendor-invoices.returns.create', $invoice) }}" class="rounded-lg border border-gray-300 dark:border-gray-700 px-3 py-2 text-[11px] hover:bg-gray-50 dark:hover:bg-gray-800">Record return</a>
++                <a href="{{ route('admin.vendor-invoices.adjustments.create', [$invoice, 'credit']) }}" class="rounded-lg border border-gray-300 dark:border-gray-700 px-3 py-2 text-[11px] hover:bg-gray-50 dark:hover:bg-gray-800">Credit note</a>
++                <a href="{{ route('admin.vendor-invoices.adjustments.create', [$invoice, 'debit']) }}" class="rounded-lg border border-gray-300 dark:border-gray-700 px-3 py-2 text-[11px] hover:bg-gray-50 dark:hover:bg-gray-800">Debit note</a>
++                <a href="{{ route('admin.vendor-invoices.reverse.confirm', $invoice) }}" class="rounded-lg border border-red-300 dark:border-red-800 px-3 py-2 text-[11px] text-red-700 dark:text-red-300 hover:bg-red-50 dark:hover:bg-red-950/20">Reverse invoice</a>
+             @endif
+         </div>
++    </div>
++
++    @if(session('status'))
++        <div class="rounded-lg border border-emerald-200 bg-emerald-50 px-4 py-3 text-[12px] text-emerald-800 dark:border-emerald-800 dark:bg-emerald-950/30 dark:text-emerald-200">{{ session('status') }}</div>
++    @endif
++    @if($errors->any())
++        <div class="rounded-lg border border-red-200 bg-red-50 px-4 py-3 text-[12px] text-red-800 dark:border-red-800 dark:bg-red-950/30 dark:text-red-200"><ul class="list-disc pl-4 space-y-1">@foreach($errors->all() as $error)<li>{{ $error }}</li>@endforeach</ul></div>
++    @endif
+ 
++    <div class="grid gap-3 sm:grid-cols-2 xl:grid-cols-6">
++        <div class="rounded-2xl border border-gray-200 dark:border-gray-800 bg-white dark:bg-gray-900 p-4 xl:col-span-2">
++            <div class="text-[10px] uppercase tracking-wide text-gray-400">Vendor</div>
++            <div class="mt-2 text-sm font-semibold text-gray-900 dark:text-gray-50">{{ $invoice->vendor?->name ?? '—' }}</div>
++            @if($invoice->vendor?->code)<div class="mt-1 text-[10px] text-gray-400">{{ $invoice->vendor->code }}</div>@endif
++            <div class="mt-3 grid grid-cols-2 gap-2 text-[11px]"><div><span class="text-gray-400">Due</span><div>{{ $invoice->due_date?->format('d M Y') ?: '—' }}</div></div><div><span class="text-gray-400">Tally ref</span><div>{{ $invoice->tally_reference ?: '—' }}</div></div></div>
++        </div>
+         <div class="rounded-2xl border border-gray-200 dark:border-gray-800 bg-white dark:bg-gray-900 p-4">
+-            <div class="text-[11px] uppercase tracking-wide text-gray-400">Invoice dates</div>
+-            <div class="mt-2 space-y-1 text-[12px] text-gray-700 dark:text-gray-200">
+-                <div><span class="text-gray-500 dark:text-gray-400">Number:</span> {{ $invoice->invoice_number ?? '—' }}</div>
+-                <div><span class="text-gray-500 dark:text-gray-400">Invoice:</span> {{ data_get($invoice, 'invoice_date') ? Carbon::parse($invoice->invoice_date)->format('d M Y') : '—' }}</div>
+-                <div><span class="text-gray-500 dark:text-gray-400">Due:</span> {{ data_get($invoice, 'due_date') ? Carbon::parse($invoice->due_date)->format('d M Y') : '—' }}</div>
+-            </div>
++            <div class="text-[10px] uppercase tracking-wide text-gray-400">Original total</div>
++            <div class="mt-2 text-lg font-semibold">₹{{ number_format($balance['original_total'], 2) }}</div>
++            <div class="mt-1 text-[10px] text-gray-400">Subtotal ₹{{ number_format($balance['original_subtotal'], 2) }} · Tax ₹{{ number_format($balance['original_tax'], 2) }}</div>
+         </div>
+-
+         <div class="rounded-2xl border border-gray-200 dark:border-gray-800 bg-white dark:bg-gray-900 p-4">
+-            <div class="text-[11px] uppercase tracking-wide text-gray-400">Invoice total</div>
+-            <div class="mt-2 text-lg font-semibold text-gray-900 dark:text-gray-50">₹{{ number_format((float) data_get($invoice, 'total_amount', 0), 2) }}</div>
+-            <div class="mt-1 text-[11px] text-gray-500 dark:text-gray-400">Subtotal ₹{{ number_format((float) data_get($invoice, 'subtotal', 0), 2) }} · Tax ₹{{ number_format((float) data_get($invoice, 'tax_amount', 0), 2) }}</div>
++            <div class="text-[10px] uppercase tracking-wide text-gray-400">Posted adjustments</div>
++            <div class="mt-2 text-lg font-semibold">₹{{ number_format($balance['adjustment_total'], 2) }}</div>
++            <div class="mt-1 text-[10px] text-gray-400">Credits negative · debits positive</div>
+         </div>
+-
+         <div class="rounded-2xl border border-gray-200 dark:border-gray-800 bg-white dark:bg-gray-900 p-4">
+-            <div class="text-[11px] uppercase tracking-wide text-gray-400">Payment</div>
+-            <div class="mt-2 text-sm font-semibold text-gray-900 dark:text-gray-50">Paid ₹{{ number_format($paidTotal, 2) }}</div>
+-            <div class="mt-1 text-[12px] text-gray-700 dark:text-gray-200">Outstanding ₹{{ number_format($outstandingTotal, 2) }}</div>
++            <div class="text-[10px] uppercase tracking-wide text-gray-400">Adjusted payable</div>
++            <div class="mt-2 text-lg font-semibold">₹{{ number_format($balance['adjusted_total'], 2) }}</div>
++            <div class="mt-1 text-[10px] text-gray-400">Paid ₹{{ number_format($balance['paid'], 2) }}</div>
++        </div>
++        <div class="rounded-2xl border {{ $balance['vendor_credit_due'] > 0 ? 'border-amber-300 dark:border-amber-800' : 'border-gray-200 dark:border-gray-800' }} bg-white dark:bg-gray-900 p-4">
++            <div class="text-[10px] uppercase tracking-wide text-gray-400">{{ $balance['vendor_credit_due'] > 0 ? 'Vendor credit / refund due' : 'Outstanding' }}</div>
++            <div class="mt-2 text-lg font-semibold">₹{{ number_format($balance['vendor_credit_due'] > 0 ? $balance['vendor_credit_due'] : $balance['outstanding'], 2) }}</div>
++            <div class="mt-1 text-[10px] text-gray-400">Based on adjusted payable</div>
+         </div>
+     </div>
+ 
+-    <div class="grid gap-4 md:grid-cols-2">
+-        @foreach(['pieces_weight' => 'Pieces with weight', 'quantity' => 'Quantity inward'] as $type => $title)
+-            @php $group = $stockSummary->get($type, collect()); @endphp
+-            <div class="rounded-2xl border border-gray-200 dark:border-gray-800 bg-white dark:bg-gray-900 p-4">
+-                <div class="text-[11px] uppercase tracking-wide text-gray-400">{{ $title }}</div>
+-                <div class="mt-2 text-lg font-semibold text-gray-900 dark:text-gray-50">
+-                    @if($type === 'pieces_weight')
+-                        {{ number_format((float) $group->sum(fn ($item) => (float) ($item->total_weight_kg ?? 0)), 3) }} kg
+-                    @else
+-                        {{ number_format((float) $group->sum(fn ($item) => (float) ($item->quantity ?? 0)), 3) }} units
+-                    @endif
+-                </div>
+-                <p class="mt-1 text-[11px] text-gray-500 dark:text-gray-400">
+-                    @if($type === 'pieces_weight')
+-                        Raw weighted stock with optional individual inventory pieces.
+-                    @else
+-                        Unit/pack stock received directly against the selected product.
+-                    @endif
+-                </p>
+-            </div>
+-        @endforeach
+-    </div>
+-
+-    @if(!empty($invoice->notes))
+-        <section class="rounded-2xl border border-gray-200 dark:border-gray-800 bg-white dark:bg-gray-900 overflow-hidden">
+-            <div class="px-5 py-4 border-b border-gray-200 dark:border-gray-800 text-[11px] uppercase tracking-wide text-gray-500 dark:text-gray-400">Notes</div>
+-            <div class="p-5 text-[12px] text-gray-700 dark:text-gray-200 whitespace-pre-line">{{ $invoice->notes }}</div>
+-        </section>
++    @if($invoice->notes)
++        <section class="rounded-2xl border border-gray-200 dark:border-gray-800 bg-white dark:bg-gray-900 p-5"><div class="text-[10px] uppercase tracking-wide text-gray-400">Invoice notes</div><div class="mt-2 whitespace-pre-line text-[12px] text-gray-700 dark:text-gray-200">{{ $invoice->notes }}</div></section>
+     @endif
+ 
+     <section class="rounded-2xl border border-gray-200 dark:border-gray-800 bg-white dark:bg-gray-900 overflow-hidden">
+-        <div class="px-5 py-4 border-b border-gray-200 dark:border-gray-800">
+-            <div class="text-[11px] uppercase tracking-wide text-gray-500 dark:text-gray-400">Invoice items</div>
+-            <div class="text-sm font-semibold text-gray-900 dark:text-gray-50">Received stock, tax, and lots</div>
+-            <p class="mt-1 text-[12px] text-gray-500 dark:text-gray-400">Pieces-with-weight rows create weighted lots and inventory pieces. Quantity rows create unit/pack stock for the selected product.</p>
+-        </div>
+-
++        <div class="px-5 py-4 border-b border-gray-200 dark:border-gray-800"><div class="text-[11px] uppercase tracking-wide text-gray-400">Original invoice items</div><div class="mt-1 text-sm font-semibold">Received stock, tax and source lots</div><p class="mt-1 text-[10px] text-gray-400">These original values are retained permanently. Returns and financial changes appear separately below.</p></div>
+         <div class="overflow-x-auto">
+-            <table class="min-w-full text-[12px]">
+-                <thead class="bg-gray-50 dark:bg-gray-950/40">
+-                    <tr class="text-left text-gray-500 dark:text-gray-400">
+-                        <th class="px-4 py-3 font-medium">Product</th>
+-                        <th class="px-4 py-3 font-medium">Receipt</th>
+-                        <th class="px-4 py-3 font-medium">Qty</th>
+-                        <th class="px-4 py-3 font-medium">Unit cost</th>
+-                        <th class="px-4 py-3 font-medium">GST / Tax</th>
+-                        <th class="px-4 py-3 font-medium">Lot</th>
+-                        <th class="px-4 py-3 font-medium text-right">Line total</th>
+-                    </tr>
+-                </thead>
++            <table class="min-w-full text-[11px]">
++                <thead class="bg-gray-50 dark:bg-gray-950/40"><tr><th class="px-4 py-3 text-left font-medium text-gray-500">Product</th><th class="px-4 py-3 text-left font-medium text-gray-500">Receipt</th><th class="px-4 py-3 text-right font-medium text-gray-500">Quantity / weight</th><th class="px-4 py-3 text-right font-medium text-gray-500">Unit cost</th><th class="px-4 py-3 text-right font-medium text-gray-500">Tax</th><th class="px-4 py-3 text-left font-medium text-gray-500">Lot</th><th class="px-4 py-3 text-right font-medium text-gray-500">Line total</th></tr></thead>
+                 <tbody class="divide-y divide-gray-100 dark:divide-gray-800">
+                     @forelse($items as $item)
+                         @php
+-                            $lot = $itemLotMap[$item->id] ?? null;
+-                            $receiptType = (string) ($item->receipt_type ?? data_get($lot, 'inward_mode', 'received'));
+-                            $gstRate = $item->gst_rate !== null ? (float) $item->gst_rate : (float) data_get($item, 'hsnCode.gst_rate', 0);
+-                            $taxManual = (bool) ($item->tax_manual ?? false);
+-                            $costIncludesGst = (bool) ($item->unit_cost_includes_gst ?? false);
+-                            $normalizedReceipt = $normalReceiptType($receiptType);
+-                            $quantitySuffix = $normalizedReceipt === 'pieces_weight' ? 'pcs' : 'units';
++                            $lot = $itemLotMap[$item->id] ?? $item->inventoryLot;
+                             $pieceRows = $lot?->pieces ?? collect();
+-                            $variantLabel = trim((string) ($item->productVariant?->name ?? '')) ?: trim((string) ($item->productVariant?->sku ?? ''));
++                            $variantLabel = $item->productVariant?->name ?: $item->productVariant?->sku;
++                            $weighted = in_array((string)$item->receipt_type, ['pieces_weight','bulk_weight'], true);
+                         @endphp
+                         <tr>
+-                            <td class="px-4 py-3 align-top">
+-                                <div class="font-medium text-gray-900 dark:text-gray-50">{{ $item->product?->name ?? '—' }}</div>
+-                                @if($variantLabel !== '')
+-                                    <div class="mt-1 text-[11px] text-gray-500 dark:text-gray-400">Pack variant: {{ $variantLabel }}</div>
+-                                @endif
+-                                @if($item->mrp_incl_gst)
+-                                    <div class="mt-1 text-[11px] text-gray-500 dark:text-gray-400">MRP incl GST entered: ₹{{ number_format((float) $item->mrp_incl_gst, 2) }}</div>
+-                                @endif
+-                            </td>
+-                            <td class="px-4 py-3 align-top">
+-                                <span class="inline-flex rounded-full border border-gray-200 dark:border-gray-700 bg-gray-50 dark:bg-gray-950/40 px-2 py-1 text-[11px] text-gray-600 dark:text-gray-300">{{ $receiptLabel($receiptType) }}</span>
+-                                @if($costIncludesGst)
+-                                    <div class="mt-2 text-[11px] text-gray-500 dark:text-gray-400">Unit cost includes GST</div>
+-                                @endif
+-                            </td>
+-                            <td class="px-4 py-3 align-top text-gray-700 dark:text-gray-200">
+-                                {{ number_format((float) ($item->quantity ?? 0), 3) }} {{ $quantitySuffix }}
+-                                @if($lot && ($lot->total_weight_kg || $lot->available_weight_kg))
+-                                    <div class="mt-1 text-[11px] text-gray-500 dark:text-gray-400">Weight: {{ number_format((float) ($lot->total_weight_kg ?? $lot->available_weight_kg), 3) }} kg</div>
+-                                @endif
+-                                @if($pieceRows->isNotEmpty())
+-                                    <div class="mt-1 text-[11px] text-gray-500 dark:text-gray-400">{{ $pieceRows->count() }} individual weight(s) recorded</div>
+-                                @endif
+-                                @if($lot && $lot->pieces_per_pack)
+-                                    <div class="mt-1 text-[11px] text-gray-500 dark:text-gray-400">{{ number_format((float) $lot->pieces_per_pack, 0) }} pcs/pack</div>
+-                                @endif
+-                            </td>
+-                            <td class="px-4 py-3 align-top text-gray-700 dark:text-gray-200">₹{{ number_format((float) ($item->unit_cost ?? 0), 2) }}</td>
+-                            <td class="px-4 py-3 align-top text-gray-700 dark:text-gray-200">
+-                                <div>₹{{ number_format((float) ($item->tax_amount ?? 0), 2) }}</div>
+-                                <div class="mt-1 text-[11px] text-gray-500 dark:text-gray-400">
+-                                    @if($costIncludesGst)
+-                                        No extra GST added
+-                                    @else
+-                                        GST {{ number_format($gstRate, 2) }}% {{ $taxManual ? '· manual' : '· auto from HSN' }}
+-                                    @endif
+-                                </div>
+-                            </td>
+-                            <td class="px-4 py-3 align-top text-gray-700 dark:text-gray-200">
+-                                @if($lot)
+-                                    <div class="font-medium text-gray-900 dark:text-gray-50">{{ $lot->lot_code ?? ('Lot #' . $lot->id) }}</div>
+-                                    <div class="mt-1 flex flex-wrap gap-1 text-[10px]">
+-                                        @if($lot->batch_code)
+-                                            <span class="rounded-sm border border-gray-200 dark:border-gray-700 px-2 py-1">Batch {{ $lot->batch_code }}</span>
+-                                        @endif
+-                                        @if($lot->expiry_date)
+-                                            <span class="rounded-sm border border-gray-200 dark:border-gray-700 px-2 py-1">Exp {{ Carbon::parse($lot->expiry_date)->format('d M Y') }}</span>
+-                                        @endif
+-                                        <span class="rounded-sm border border-gray-200 dark:border-gray-700 px-2 py-1">{{ $lot->is_saleable ? 'Saleable' : 'Repackable' }}</span>
+-                                    </div>
+-                                @else
+-                                    —
+-                                @endif
+-                            </td>
+-                            <td class="px-4 py-3 align-top text-right font-semibold text-gray-900 dark:text-gray-50">₹{{ number_format((float) ($item->total ?? 0), 2) }}</td>
++                            <td class="px-4 py-3 align-top"><div class="font-medium text-gray-900 dark:text-gray-50">{{ $item->product?->name ?? '—' }}</div>@if($variantLabel)<div class="mt-1 text-[10px] text-gray-400">{{ $variantLabel }}</div>@endif</td>
++                            <td class="px-4 py-3 align-top"><span class="rounded-full border border-gray-200 dark:border-gray-700 px-2 py-1 text-[10px]">{{ $receiptLabel($item->receipt_type) }}</span>@if($item->unit_cost_includes_gst)<div class="mt-2 text-[10px] text-gray-400">Cost includes GST</div>@endif</td>
++                            <td class="px-4 py-3 align-top text-right">@if($weighted){{ number_format((float)($item->total_weight_kg ?? $lot?->total_weight_kg), 3) }} kg<div class="text-[10px] text-gray-400">{{ number_format((float)$item->quantity, 0) }} pieces</div>@else{{ number_format((float)$item->quantity, 3) }} units @if($lot?->total_weight_kg)<div class="text-[10px] text-gray-400">{{ number_format((float)$lot->total_weight_kg, 3) }} kg</div>@endif @endif @if($pieceRows->isNotEmpty())<div class="text-[10px] text-gray-400">{{ $pieceRows->count() }} tracked pieces</div>@endif</td>
++                            <td class="px-4 py-3 align-top text-right">₹{{ number_format((float)$item->unit_cost, 2) }}</td>
++                            <td class="px-4 py-3 align-top text-right">₹{{ number_format((float)$item->tax_amount, 2) }}<div class="text-[10px] text-gray-400">{{ number_format((float)($item->gst_rate ?? 0), 2) }}%</div></td>
++                            <td class="px-4 py-3 align-top">@if($lot)<div class="font-medium">{{ $lot->lot_code ?: ('Lot #'.$lot->id) }}</div><div class="mt-1 text-[10px] text-gray-400">Available: {{ number_format((float)($weighted ? $lot->available_weight_kg : $lot->available_quantity), 3) }} {{ $weighted ? 'kg' : 'units' }} · {{ ucfirst((string)$lot->lot_status) }}</div>@else—@endif</td>
++                            <td class="px-4 py-3 align-top text-right font-semibold">₹{{ number_format((float)$item->total, 2) }}</td>
+                         </tr>
+                     @empty
+-                        <tr>
+-                            <td colspan="7" class="px-4 py-8 text-center text-gray-500 dark:text-gray-400">No invoice items found.</td>
+-                        </tr>
++                        <tr><td colspan="7" class="px-4 py-8 text-center text-gray-500">No invoice items found.</td></tr>
+                     @endforelse
+                 </tbody>
+             </table>
+         </div>
+     </section>
+ 
+-    <section class="rounded-2xl border border-gray-200 dark:border-gray-800 bg-white dark:bg-gray-900 overflow-hidden">
+-        <div class="px-5 py-4 border-b border-gray-200 dark:border-gray-800">
+-            <div class="text-[11px] uppercase tracking-wide text-gray-500 dark:text-gray-400">Payments</div>
+-            <div class="text-sm font-semibold text-gray-900 dark:text-gray-50">Recorded vendor payments</div>
+-        </div>
++    <div class="grid gap-4 xl:grid-cols-2">
++        <section class="rounded-2xl border border-gray-200 dark:border-gray-800 bg-white dark:bg-gray-900 overflow-hidden">
++            <div class="flex items-center justify-between gap-3 px-5 py-4 border-b border-gray-200 dark:border-gray-800"><div><div class="text-[11px] uppercase tracking-wide text-gray-400">Financial adjustments</div><div class="mt-1 text-sm font-semibold">Credit notes, debit notes and corrections</div></div>@if($canAdjust && $status !== 'cancelled')<div class="flex gap-2"><a class="text-[10px] underline" href="{{ route('admin.vendor-invoices.adjustments.create', [$invoice,'credit']) }}">New credit</a><a class="text-[10px] underline" href="{{ route('admin.vendor-invoices.adjustments.create', [$invoice,'debit']) }}">New debit</a></div>@endif</div>
++            @forelse($adjustments as $adjustment)
++                <a href="{{ route('admin.vendor-invoices.adjustments.show', [$invoice, $adjustment]) }}" class="block border-b border-gray-100 dark:border-gray-800 px-5 py-4 last:border-b-0 hover:bg-gray-50 dark:hover:bg-gray-800/30">
++                    <div class="flex items-start justify-between gap-3"><div><div class="font-medium text-gray-900 dark:text-gray-50">{{ $adjustment->typeLabel() }} · {{ $adjustment->adjustment_number }}</div><div class="mt-1 text-[10px] text-gray-400">{{ $adjustment->supplier_document_number ?: $adjustment->reason }} · {{ ucfirst($adjustment->status) }}</div></div><div class="text-right font-semibold {{ (float)$adjustment->total_delta < 0 ? 'text-emerald-700 dark:text-emerald-300' : '' }}">₹{{ number_format((float)$adjustment->total_delta, 2) }}<div class="text-[10px] font-normal text-gray-400">{{ ($adjustment->posted_at ?? $adjustment->created_at)?->format('d M Y') }}</div></div></div>
++                </a>
++            @empty
++                <div class="p-5 text-[11px] text-gray-500">No adjustments recorded.</div>
++            @endforelse
++        </section>
++
++        <section class="rounded-2xl border border-gray-200 dark:border-gray-800 bg-white dark:bg-gray-900 overflow-hidden">
++            <div class="flex items-center justify-between gap-3 px-5 py-4 border-b border-gray-200 dark:border-gray-800"><div><div class="text-[11px] uppercase tracking-wide text-gray-400">Purchase returns</div><div class="mt-1 text-sm font-semibold">Physical stock returned to supplier</div></div>@if($canAdjust && $status !== 'cancelled')<a class="text-[10px] underline" href="{{ route('admin.vendor-invoices.returns.create', $invoice) }}">New return</a>@endif</div>
++            @forelse($returns as $return)
++                <a href="{{ route('admin.vendor-invoices.returns.show', [$invoice, $return]) }}" class="block border-b border-gray-100 dark:border-gray-800 px-5 py-4 last:border-b-0 hover:bg-gray-50 dark:hover:bg-gray-800/30">
++                    <div class="flex items-start justify-between gap-3"><div><div class="font-medium text-gray-900 dark:text-gray-50">{{ $return->return_number }}</div><div class="mt-1 text-[10px] text-gray-400">{{ $return->reason }} · {{ str_replace('_',' ',ucfirst($return->status)) }}</div></div><div class="text-right font-semibold">₹{{ number_format((float)$return->expected_total, 2) }}<div class="text-[10px] font-normal text-gray-400">{{ $return->return_date?->format('d M Y') }}</div></div></div>
++                </a>
++            @empty
++                <div class="p-5 text-[11px] text-gray-500">No purchase returns recorded.</div>
++            @endforelse
++        </section>
++    </div>
+ 
++    <section class="rounded-2xl border border-gray-200 dark:border-gray-800 bg-white dark:bg-gray-900 overflow-hidden">
++        <div class="px-5 py-4 border-b border-gray-200 dark:border-gray-800"><div class="text-[11px] uppercase tracking-wide text-gray-400">Payments</div><div class="mt-1 text-sm font-semibold">Recorded vendor payments</div></div>
+         @if($payments->isEmpty())
+-            <div class="p-5 text-[12px] text-gray-500 dark:text-gray-400">No payments recorded yet.</div>
++            <div class="p-5 text-[11px] text-gray-500">No payments recorded.</div>
+         @else
+-            <div class="overflow-x-auto">
+-                <table class="min-w-full text-[12px]">
+-                    <thead class="bg-gray-50 dark:bg-gray-950/40">
+-                        <tr class="text-left text-gray-500 dark:text-gray-400">
+-                            <th class="px-4 py-3 font-medium">Date</th>
+-                            <th class="px-4 py-3 font-medium">Method</th>
+-                            <th class="px-4 py-3 font-medium">Reference</th>
+-                            <th class="px-4 py-3 font-medium">Notes</th>
+-                            <th class="px-4 py-3 font-medium text-right">Amount</th>
+-                        </tr>
+-                    </thead>
+-                    <tbody class="divide-y divide-gray-100 dark:divide-gray-800">
+-                        @foreach($payments as $payment)
+-                            @php
+-                                $paymentDate = data_get($payment, 'payment_date') ?: data_get($payment, 'created_at');
+-                                $paymentMethod = data_get($payment, 'payment_method') ?: data_get($payment, 'method') ?: '—';
+-                                $paymentReference = data_get($payment, 'reference_number') ?: data_get($payment, 'reference_no') ?: '—';
+-                                $paymentNotes = data_get($payment, 'notes') ?: '—';
+-                            @endphp
+-                            <tr>
+-                                <td class="px-4 py-3 text-gray-700 dark:text-gray-200">{{ $paymentDate ? Carbon::parse($paymentDate)->format('d M Y') : '—' }}</td>
+-                                <td class="px-4 py-3 text-gray-700 dark:text-gray-200">{{ $paymentMethod }}</td>
+-                                <td class="px-4 py-3 text-gray-700 dark:text-gray-200">{{ $paymentReference }}</td>
+-                                <td class="px-4 py-3 text-gray-700 dark:text-gray-200">{{ $paymentNotes }}</td>
+-                                <td class="px-4 py-3 text-right font-semibold text-gray-900 dark:text-gray-50">₹{{ number_format((float) data_get($payment, 'amount', 0), 2) }}</td>
+-                            </tr>
+-                        @endforeach
+-                    </tbody>
+-                    <tfoot class="bg-gray-50 dark:bg-gray-950/40">
+-                        <tr>
+-                            <td colspan="4" class="px-4 py-3 text-right font-medium text-gray-600 dark:text-gray-300">Total paid</td>
+-                            <td class="px-4 py-3 text-right font-semibold text-gray-900 dark:text-gray-50">₹{{ number_format($paidTotal, 2) }}</td>
+-                        </tr>
+-                    </tfoot>
+-                </table>
+-            </div>
++            <div class="overflow-x-auto"><table class="min-w-full text-[11px]"><thead class="bg-gray-50 dark:bg-gray-950/40"><tr><th class="px-4 py-3 text-left">Date</th><th class="px-4 py-3 text-left">Method</th><th class="px-4 py-3 text-left">Reference</th><th class="px-4 py-3 text-left">Notes</th><th class="px-4 py-3 text-right">Amount</th></tr></thead><tbody class="divide-y divide-gray-100 dark:divide-gray-800">@foreach($payments as $payment)<tr><td class="px-4 py-3">{{ $payment->payment_date?->format('d M Y') ?: $payment->created_at?->format('d M Y') }}</td><td class="px-4 py-3">{{ $payment->payment_method ?: '—' }}</td><td class="px-4 py-3">{{ $payment->reference_number ?: '—' }}</td><td class="px-4 py-3">{{ $payment->notes ?: '—' }}</td><td class="px-4 py-3 text-right font-semibold">₹{{ number_format((float)$payment->amount, 2) }}</td></tr>@endforeach</tbody><tfoot class="bg-gray-50 dark:bg-gray-950/40"><tr><td colspan="4" class="px-4 py-3 text-right font-medium">Total paid</td><td class="px-4 py-3 text-right font-semibold">₹{{ number_format($balance['paid'], 2) }}</td></tr></tfoot></table></div>
+         @endif
+     </section>
++
++    @if($canAdjust && $status !== 'cancelled' && isset($reversalAssessment) && !$reversalAssessment['can_reverse'])
++        <details class="rounded-xl border border-gray-200 dark:border-gray-800 bg-white dark:bg-gray-900 p-4"><summary class="cursor-pointer text-[11px] font-medium">Why full reversal is currently blocked</summary><ul class="mt-3 list-disc pl-5 text-[10px] text-gray-500 space-y-1">@foreach($reversalAssessment['blockers'] as $blocker)<li>{{ $blocker }}</li>@endforeach</ul></details>
++    @endif
+ </div>
+ @endsection
+--- a/resources/views/admin/vendor_payments/bulk_create.blade.php
++++ b/resources/views/admin/vendor_payments/bulk_create.blade.php
+@@ -5,20 +5,17 @@
+ @section('content')
+ @php
+     $has = fn($r) => \Illuminate\Support\Facades\Route::has($r);
+-
+     $storeUrl = $has('admin.vendor-payments.store') ? route('admin.vendor-payments.store') : '#';
+     $backUrl  = $has('admin.vendor-invoices.index') ? route('admin.vendor-invoices.index') : url()->previous();
+-
+     $vendorName = $selectedVendor?->name ?? 'Vendor';
+ @endphp
+ 
+ <div class="max-w-6xl mx-auto px-4 py-6 space-y-4 text-xs">
+-
+     <div class="flex items-start justify-between gap-3">
+         <div>
+             <h1 class="text-lg font-semibold text-gray-900 dark:text-gray-50">Bulk payment</h1>
+             <p class="text-[11px] text-gray-500 dark:text-gray-400">
+-                Paying invoices for <span class="font-semibold">{{ $vendorName }}</span>. Default payment = outstanding (editable).
++                Paying invoices for <span class="font-semibold">{{ $vendorName }}</span>. Each default amount equals the adjusted outstanding after posted supplier credits and debits.
+             </p>
+         </div>
+ 
+@@ -29,11 +26,9 @@
+     </div>
+ 
+     @if($errors->any())
+-        <div class="rounded border border-red-300 bg-red-50 px-3 py-2 text-[11px] text-red-800">
++        <div class="rounded border border-red-300 bg-red-50 px-3 py-2 text-[11px] text-red-800 dark:border-red-800 dark:bg-red-950/30 dark:text-red-200">
+             <ul class="list-disc pl-4 space-y-0.5">
+-                @foreach($errors->all() as $error)
+-                    <li>{{ $error }}</li>
+-                @endforeach
++                @foreach($errors->all() as $error)<li>{{ $error }}</li>@endforeach
+             </ul>
+         </div>
+     @endif
+@@ -58,14 +53,14 @@
+                     <label class="block text-[11px] font-medium text-gray-700 dark:text-gray-300 mb-1">Payment method</label>
+                     <input type="text" name="payment_method" value="{{ old('payment_method') }}"
+                            class="w-full rounded border border-gray-300 dark:border-gray-700 bg-white dark:bg-gray-950 px-2 py-1.5 text-xs"
+-                           placeholder="Bank / UPI / Cash">
++                           placeholder="NEFT / RTGS / IMPS / Cheque">
+                 </div>
+ 
+                 <div>
+                     <label class="block text-[11px] font-medium text-gray-700 dark:text-gray-300 mb-1">Reference</label>
+                     <input type="text" name="reference_number" value="{{ old('reference_number') }}"
+                            class="w-full rounded border border-gray-300 dark:border-gray-700 bg-white dark:bg-gray-950 px-2 py-1.5 text-xs"
+-                           placeholder="UTR / Cheque #">
++                           placeholder="UTR / Cheque number">
+                 </div>
+             </div>
+ 
+@@ -81,33 +76,35 @@
+                 <thead class="bg-gray-50 dark:bg-gray-950/40">
+                 <tr>
+                     <th class="px-3 py-2 text-left font-medium text-gray-500 dark:text-gray-400">Invoice</th>
+-                    <th class="px-3 py-2 text-right font-medium text-gray-500 dark:text-gray-400">Total</th>
++                    <th class="px-3 py-2 text-right font-medium text-gray-500 dark:text-gray-400">Original</th>
++                    <th class="px-3 py-2 text-right font-medium text-gray-500 dark:text-gray-400">Adjustments</th>
++                    <th class="px-3 py-2 text-right font-medium text-gray-500 dark:text-gray-400">Adjusted payable</th>
+                     <th class="px-3 py-2 text-right font-medium text-gray-500 dark:text-gray-400">Paid</th>
+                     <th class="px-3 py-2 text-right font-medium text-gray-500 dark:text-gray-400">Outstanding</th>
+                     <th class="px-3 py-2 text-right font-medium text-gray-500 dark:text-gray-400">Pay now</th>
+                 </tr>
+                 </thead>
+                 <tbody class="divide-y divide-gray-100 dark:divide-gray-800">
+-                @php $sum = 0.0; @endphp
+                 @foreach($rows as $r)
+                     @php
+                         $inv = $r['invoice'];
+                         $out = (float)$r['outstanding'];
+                         $defaultPay = old('amounts.' . $inv->id, $r['default_pay']);
+-                        $sum += (float)$defaultPay;
+                     @endphp
+                     <tr>
+                         <td class="px-3 py-2">
+-                            <div class="text-gray-900 dark:text-gray-50 font-medium">
+-                                {{ $inv->invoice_number ?? ('#'.$inv->id) }}
+-                            </div>
++                            <div class="text-gray-900 dark:text-gray-50 font-medium">{{ $inv->invoice_number ?? ('#'.$inv->id) }}</div>
+                             <div class="text-[10px] text-gray-400">#{{ $inv->id }}</div>
+                         </td>
+-                        <td class="px-3 py-2 text-right">₹{{ number_format((float)$r['total'], 2) }}</td>
++                        <td class="px-3 py-2 text-right">₹{{ number_format((float)$r['original_total'], 2) }}</td>
++                        <td class="px-3 py-2 text-right {{ (float)$r['adjustment_total'] < 0 ? 'text-emerald-700 dark:text-emerald-300' : '' }}">
++                            {{ (float)$r['adjustment_total'] >= 0 ? '+' : '' }}₹{{ number_format((float)$r['adjustment_total'], 2) }}
++                        </td>
++                        <td class="px-3 py-2 text-right font-medium">₹{{ number_format((float)$r['total'], 2) }}</td>
+                         <td class="px-3 py-2 text-right">₹{{ number_format((float)$r['paid'], 2) }}</td>
+-                        <td class="px-3 py-2 text-right">₹{{ number_format($out, 2) }}</td>
++                        <td class="px-3 py-2 text-right font-medium">₹{{ number_format($out, 2) }}</td>
+                         <td class="px-3 py-2 text-right">
+-                            <input type="number" step="0.01" min="0" max="{{ $out }}"
++                            <input type="number" step="0.01" min="0" max="{{ number_format($out, 2, '.', '') }}"
+                                    name="amounts[{{ $inv->id }}]"
+                                    value="{{ $defaultPay }}"
+                                    class="w-28 rounded border border-gray-300 dark:border-gray-700 bg-white dark:bg-gray-950 px-2 py-1 text-[11px] text-right">
+@@ -120,7 +117,7 @@
+ 
+         <div class="flex items-center justify-between">
+             <div class="text-[11px] text-gray-500 dark:text-gray-400">
+-                Leave “Pay now” as 0 to skip an invoice.
++                Enter 0 to skip an invoice. A payment cannot exceed its adjusted outstanding amount.
+             </div>
+ 
+             <button type="submit"
+@@ -130,4 +127,4 @@
+         </div>
+     </form>
+ </div>
+-@endsection
+\ No newline at end of file
++@endsection
+--- a/resources/views/admin/vendor_payments/create.blade.php
++++ b/resources/views/admin/vendor_payments/create.blade.php
+@@ -3,17 +3,21 @@
+ @section('title', 'New vendor payment')
+ 
+ @section('content')
++@php
++    $selectedOutstanding = $selectedInvoice ? (float)$selectedInvoice->balance_amount : null;
++@endphp
+ <div class="max-w-4xl mx-auto px-4 py-6 text-xs space-y-4">
+-    <h1 class="text-lg font-semibold text-gray-900 dark:text-gray-50 mb-2">
+-        New vendor payment
+-    </h1>
++    <div>
++        <h1 class="text-lg font-semibold text-gray-900 dark:text-gray-50">New vendor payment</h1>
++        <p class="mt-1 text-[11px] text-gray-500 dark:text-gray-400">
++            Payments are checked against the invoice's adjusted payable after posted supplier credits and debits.
++        </p>
++    </div>
+ 
+     @if($errors->any())
+-        <div class="rounded border border-red-300 bg-red-50 px-3 py-2 text-[11px] text-red-800 mb-2">
++        <div class="rounded border border-red-300 bg-red-50 px-3 py-2 text-[11px] text-red-800 dark:border-red-800 dark:bg-red-950/30 dark:text-red-200">
+             <ul class="list-disc pl-4 space-y-0.5">
+-                @foreach($errors->all() as $error)
+-                    <li>{{ $error }}</li>
+-                @endforeach
++                @foreach($errors->all() as $error)<li>{{ $error }}</li>@endforeach
+             </ul>
+         </div>
+     @endif
+@@ -21,18 +25,15 @@
+     <form method="POST" action="{{ route('admin.vendor-payments.store') }}" class="space-y-3">
+         @csrf
+ 
+-        <div class="rounded-xl border border-gray-200 dark:border-gray-800 bg-white dark:bg-gray-900 px-4 py-3 space-y-2">
++        <div class="rounded-xl border border-gray-200 dark:border-gray-800 bg-white dark:bg-gray-900 px-4 py-3 space-y-3">
+             <div class="grid gap-3 md:grid-cols-2">
+                 <div>
+-                    <label class="block text-[11px] font-medium text-gray-700 dark:text-gray-300 mb-1">
+-                        Vendor
+-                    </label>
+-                    <select name="vendor_id"
++                    <label class="block text-[11px] font-medium text-gray-700 dark:text-gray-300 mb-1">Vendor</label>
++                    <select name="vendor_id" required
+                             class="w-full rounded border border-gray-300 dark:border-gray-700 bg-white dark:bg-gray-950 px-2 py-1.5 text-xs focus:outline-none focus:ring-1 focus:ring-gray-400 dark:focus:ring-gray-500">
+                         <option value="">Select vendor…</option>
+                         @foreach($vendors as $v)
+-                            <option value="{{ $v->id }}"
+-                                @selected(old('vendor_id', $selectedVendor?->id ?? null) == $v->id)>
++                            <option value="{{ $v->id }}" @selected(old('vendor_id', $selectedVendor?->id ?? null) == $v->id)>
+                                 {{ $v->name }}
+                             </option>
+                         @endforeach
+@@ -40,77 +41,67 @@
+                 </div>
+ 
+                 <div>
+-                    <label class="block text-[11px] font-medium text-gray-700 dark:text-gray-300 mb-1">
+-                        Invoice (optional)
+-                    </label>
+-                    <select name="vendor_invoice_id"
++                    <label class="block text-[11px] font-medium text-gray-700 dark:text-gray-300 mb-1">Invoice (optional)</label>
++                    <select name="vendor_invoice_id" id="vendor-invoice-select"
+                             class="w-full rounded border border-gray-300 dark:border-gray-700 bg-white dark:bg-gray-950 px-2 py-1.5 text-xs focus:outline-none focus:ring-1 focus:ring-gray-400 dark:focus:ring-gray-500">
+-                        <option value="">No specific invoice</option>
++                        <option value="" data-outstanding="">No specific invoice</option>
+                         @foreach($invoices as $inv)
++                            @php
++                                $outstanding = (float)$inv->balance_amount;
++                                $adjusted = (float)$inv->adjusted_total_amount;
++                                $paid = (float)$inv->paid_amount;
++                            @endphp
+                             <option value="{{ $inv->id }}"
+-                                @selected(old('vendor_invoice_id', $selectedInvoice?->id ?? null) == $inv->id)>
+-                                {{ $inv->invoice_number }} – {{ $inv->vendor?->name }}
++                                    data-outstanding="{{ number_format($outstanding, 2, '.', '') }}"
++                                    @selected(old('vendor_invoice_id', $selectedInvoice?->id ?? null) == $inv->id)>
++                                {{ $inv->invoice_number }} · {{ $inv->vendor?->name }} · Outstanding ₹{{ number_format($outstanding, 2) }} (Adjusted ₹{{ number_format($adjusted, 2) }}, Paid ₹{{ number_format($paid, 2) }})
+                             </option>
+                         @endforeach
+                     </select>
++                    <p class="mt-1 text-[10px] text-gray-400">Only non-cancelled invoices are listed. The server prevents overpayment.</p>
+                 </div>
+             </div>
+ 
+             <div class="grid gap-3 md:grid-cols-3">
+                 <div>
+-                    <label class="block text-[11px] font-medium text-gray-700 dark:text-gray-300 mb-1">
+-                        Amount
+-                    </label>
+-                    <input type="number" step="0.01" min="0.01" name="amount"
+-                           value="{{ old('amount') }}"
++                    <label class="block text-[11px] font-medium text-gray-700 dark:text-gray-300 mb-1">Amount</label>
++                    <input type="number" step="0.01" min="0.01" name="amount" id="vendor-payment-amount" required
++                           value="{{ old('amount', $selectedOutstanding !== null && $selectedOutstanding > 0 ? number_format($selectedOutstanding, 2, '.', '') : '') }}"
+                            class="w-full rounded border border-gray-300 dark:border-gray-700 bg-white dark:bg-gray-950 px-2 py-1.5 text-xs focus:outline-none focus:ring-1 focus:ring-gray-400 dark:focus:ring-gray-500">
++                    <p id="vendor-payment-limit" class="mt-1 text-[10px] text-gray-400"></p>
+                 </div>
+ 
+                 <div>
+-                    <label class="block text-[11px] font-medium text-gray-700 dark:text-gray-300 mb-1">
+-                        Payment date
+-                    </label>
+-                    <input type="date" name="payment_date"
++                    <label class="block text-[11px] font-medium text-gray-700 dark:text-gray-300 mb-1">Payment date</label>
++                    <input type="date" name="payment_date" required
+                            value="{{ old('payment_date', now()->format('Y-m-d')) }}"
+                            class="w-full rounded border border-gray-300 dark:border-gray-700 bg-white dark:bg-gray-950 px-2 py-1.5 text-xs focus:outline-none focus:ring-1 focus:ring-gray-400 dark:focus:ring-gray-500">
+                 </div>
+ 
+                 <div>
+-                    <label class="block text-[11px] font-medium text-gray-700 dark:text-gray-300 mb-1">
+-                        Method
+-                    </label>
+-                    <input type="text" name="payment_method"
+-                           value="{{ old('payment_method') }}"
+-                           placeholder="NEFT, RTGS, UPI…"
++                    <label class="block text-[11px] font-medium text-gray-700 dark:text-gray-300 mb-1">Method</label>
++                    <input type="text" name="payment_method" value="{{ old('payment_method') }}"
++                           placeholder="NEFT, RTGS, IMPS, cheque…"
+                            class="w-full rounded border border-gray-300 dark:border-gray-700 bg-white dark:bg-gray-950 px-2 py-1.5 text-xs focus:outline-none focus:ring-1 focus:ring-gray-400 dark:focus:ring-gray-500">
+                 </div>
+             </div>
+ 
+             <div class="grid gap-3 md:grid-cols-2">
+                 <div>
+-                    <label class="block text-[11px] font-medium text-gray-700 dark:text-gray-300 mb-1">
+-                        Reference number
+-                    </label>
+-                    <input type="text" name="reference_number"
+-                           value="{{ old('reference_number') }}"
++                    <label class="block text-[11px] font-medium text-gray-700 dark:text-gray-300 mb-1">Reference number</label>
++                    <input type="text" name="reference_number" value="{{ old('reference_number') }}"
+                            class="w-full rounded border border-gray-300 dark:border-gray-700 bg-white dark:bg-gray-950 px-2 py-1.5 text-xs focus:outline-none focus:ring-1 focus:ring-gray-400 dark:focus:ring-gray-500">
+                 </div>
+                 <div>
+-                    <label class="block text-[11px] font-medium text-gray-700 dark:text-gray-300 mb-1">
+-                        Notes
+-                    </label>
+-                    <input type="text" name="notes"
+-                           value="{{ old('notes') }}"
++                    <label class="block text-[11px] font-medium text-gray-700 dark:text-gray-300 mb-1">Notes</label>
++                    <input type="text" name="notes" value="{{ old('notes') }}"
+                            class="w-full rounded border border-gray-300 dark:border-gray-700 bg-white dark:bg-gray-950 px-2 py-1.5 text-xs focus:outline-none focus:ring-1 focus:ring-gray-400 dark:focus:ring-gray-500">
+                 </div>
+             </div>
+         </div>
+ 
+         <div class="flex items-center justify-between pt-2">
+-            <a href="{{ route('admin.vendor-payments.index') }}"
+-               class="text-[11px] text-gray-500 dark:text-gray-400 hover:underline">
+-                Cancel
+-            </a>
++            <a href="{{ route('admin.vendor-payments.index') }}" class="text-[11px] text-gray-500 dark:text-gray-400 hover:underline">Cancel</a>
+             <button type="submit"
+                     class="inline-flex items-center rounded-full border border-gray-900 dark:border-gray-100 bg-gray-900 text-white dark:bg-gray-100 dark:text-gray-900 px-4 py-1.5 text-[11px] font-medium hover:bg-gray-800 dark:hover:bg-gray-200">
+                 Save payment
+@@ -118,4 +109,35 @@
+         </div>
+     </form>
+ </div>
++
++<script>
++(function () {
++    const select = document.getElementById('vendor-invoice-select');
++    const amount = document.getElementById('vendor-payment-amount');
++    const limit = document.getElementById('vendor-payment-limit');
++    if (!select || !amount || !limit) return;
++
++    function refreshLimit(fillAmount) {
++        const option = select.options[select.selectedIndex];
++        const raw = option?.dataset?.outstanding || '';
++        const outstanding = raw === '' ? null : Number(raw);
++
++        if (outstanding === null || Number.isNaN(outstanding)) {
++            amount.removeAttribute('max');
++            limit.textContent = 'A payment without an invoice is recorded against the vendor account only.';
++            return;
++        }
++
++        amount.max = outstanding.toFixed(2);
++        limit.textContent = 'Maximum adjusted outstanding: ₹' + outstanding.toFixed(2);
++
++        if (fillAmount && (!amount.value || Number(amount.value) <= 0)) {
++            amount.value = outstanding.toFixed(2);
++        }
++    }
++
++    select.addEventListener('change', function () { refreshLimit(true); });
++    refreshLimit(false);
++})();
++</script>
+ @endsection
+--- a/routes/web.php
++++ b/routes/web.php
+@@ -65,6 +65,7 @@
+     TicketCategoryController,
+     TicketTagController,
+     VendorInvoiceController,
++    VendorInvoiceAdjustmentController,
+     VendorPaymentController,
+     InventoryPackController,
+     DashboardController as AdminDashboardController,
+@@ -461,6 +462,45 @@
+         Route::get('vendor-invoices', [VendorInvoiceController::class, 'index'])->name('vendor-invoices.index');
+         Route::get('vendor-invoices/create', [VendorInvoiceController::class, 'create'])->name('vendor-invoices.create');
+         Route::post('vendor-invoices', [VendorInvoiceController::class, 'store'])->name('vendor-invoices.store');
++
++        Route::get('vendor-invoices/{vendorInvoice}/edit-details', [VendorInvoiceAdjustmentController::class, 'editDetails'])
++            ->name('vendor-invoices.edit-details');
++        Route::put('vendor-invoices/{vendorInvoice}/details', [VendorInvoiceAdjustmentController::class, 'updateDetails'])
++            ->name('vendor-invoices.update-details');
++
++        Route::get('vendor-invoices/{vendorInvoice}/adjustments/create/{direction}', [VendorInvoiceAdjustmentController::class, 'createFinancial'])
++            ->whereIn('direction', ['credit', 'debit'])
++            ->name('vendor-invoices.adjustments.create');
++        Route::post('vendor-invoices/{vendorInvoice}/adjustments/{direction}', [VendorInvoiceAdjustmentController::class, 'storeFinancial'])
++            ->whereIn('direction', ['credit', 'debit'])
++            ->name('vendor-invoices.adjustments.store');
++        Route::get('vendor-invoices/{vendorInvoice}/adjustments/{adjustment}', [VendorInvoiceAdjustmentController::class, 'showAdjustment'])
++            ->name('vendor-invoices.adjustments.show');
++        Route::post('vendor-invoices/{vendorInvoice}/adjustments/{adjustment}/post', [VendorInvoiceAdjustmentController::class, 'postAdjustment'])
++            ->name('vendor-invoices.adjustments.post');
++        Route::post('vendor-invoices/{vendorInvoice}/adjustments/{adjustment}/reverse', [VendorInvoiceAdjustmentController::class, 'reverseAdjustment'])
++            ->name('vendor-invoices.adjustments.reverse');
++        Route::delete('vendor-invoices/{vendorInvoice}/adjustments/{adjustment}', [VendorInvoiceAdjustmentController::class, 'destroyAdjustment'])
++            ->name('vendor-invoices.adjustments.destroy');
++
++        Route::get('vendor-invoices/{vendorInvoice}/returns/create', [VendorInvoiceAdjustmentController::class, 'createReturn'])
++            ->name('vendor-invoices.returns.create');
++        Route::post('vendor-invoices/{vendorInvoice}/returns', [VendorInvoiceAdjustmentController::class, 'storeReturn'])
++            ->name('vendor-invoices.returns.store');
++        Route::get('vendor-invoices/{vendorInvoice}/returns/{vendorReturn}', [VendorInvoiceAdjustmentController::class, 'showReturn'])
++            ->name('vendor-invoices.returns.show');
++        Route::post('vendor-invoices/{vendorInvoice}/returns/{vendorReturn}/post', [VendorInvoiceAdjustmentController::class, 'postReturn'])
++            ->name('vendor-invoices.returns.post');
++        Route::get('vendor-invoices/{vendorInvoice}/returns/{vendorReturn}/credit-note', [VendorInvoiceAdjustmentController::class, 'createReturnCredit'])
++            ->name('vendor-invoices.returns.credit-note');
++        Route::delete('vendor-invoices/{vendorInvoice}/returns/{vendorReturn}', [VendorInvoiceAdjustmentController::class, 'destroyReturn'])
++            ->name('vendor-invoices.returns.destroy');
++
++        Route::get('vendor-invoices/{vendorInvoice}/reverse', [VendorInvoiceAdjustmentController::class, 'reverseConfirm'])
++            ->name('vendor-invoices.reverse.confirm');
++        Route::post('vendor-invoices/{vendorInvoice}/reverse', [VendorInvoiceAdjustmentController::class, 'reverseInvoice'])
++            ->name('vendor-invoices.reverse.store');
++
+         Route::get('vendor-invoices/{vendorInvoice}', [VendorInvoiceController::class, 'show'])->name('vendor-invoices.show');
+ 
+         Route::get('vendor-payments', [VendorPaymentController::class, 'index'])->name('vendor-payments.index');

@@ -5,20 +5,17 @@
 @section('content')
 @php
     $has = fn($r) => \Illuminate\Support\Facades\Route::has($r);
-
     $storeUrl = $has('admin.vendor-payments.store') ? route('admin.vendor-payments.store') : '#';
     $backUrl  = $has('admin.vendor-invoices.index') ? route('admin.vendor-invoices.index') : url()->previous();
-
     $vendorName = $selectedVendor?->name ?? 'Vendor';
 @endphp
 
 <div class="max-w-6xl mx-auto px-4 py-6 space-y-4 text-xs">
-
     <div class="flex items-start justify-between gap-3">
         <div>
             <h1 class="text-lg font-semibold text-gray-900 dark:text-gray-50">Bulk payment</h1>
             <p class="text-[11px] text-gray-500 dark:text-gray-400">
-                Paying invoices for <span class="font-semibold">{{ $vendorName }}</span>. Default payment = outstanding (editable).
+                Paying invoices for <span class="font-semibold">{{ $vendorName }}</span>. Each default amount equals the adjusted outstanding after posted supplier credits and debits.
             </p>
         </div>
 
@@ -29,11 +26,9 @@
     </div>
 
     @if($errors->any())
-        <div class="rounded border border-red-300 bg-red-50 px-3 py-2 text-[11px] text-red-800">
+        <div class="rounded border border-red-300 bg-red-50 px-3 py-2 text-[11px] text-red-800 dark:border-red-800 dark:bg-red-950/30 dark:text-red-200">
             <ul class="list-disc pl-4 space-y-0.5">
-                @foreach($errors->all() as $error)
-                    <li>{{ $error }}</li>
-                @endforeach
+                @foreach($errors->all() as $error)<li>{{ $error }}</li>@endforeach
             </ul>
         </div>
     @endif
@@ -58,14 +53,14 @@
                     <label class="block text-[11px] font-medium text-gray-700 dark:text-gray-300 mb-1">Payment method</label>
                     <input type="text" name="payment_method" value="{{ old('payment_method') }}"
                            class="w-full rounded border border-gray-300 dark:border-gray-700 bg-white dark:bg-gray-950 px-2 py-1.5 text-xs"
-                           placeholder="Bank / UPI / Cash">
+                           placeholder="NEFT / RTGS / IMPS / Cheque">
                 </div>
 
                 <div>
                     <label class="block text-[11px] font-medium text-gray-700 dark:text-gray-300 mb-1">Reference</label>
                     <input type="text" name="reference_number" value="{{ old('reference_number') }}"
                            class="w-full rounded border border-gray-300 dark:border-gray-700 bg-white dark:bg-gray-950 px-2 py-1.5 text-xs"
-                           placeholder="UTR / Cheque #">
+                           placeholder="UTR / Cheque number">
                 </div>
             </div>
 
@@ -81,33 +76,35 @@
                 <thead class="bg-gray-50 dark:bg-gray-950/40">
                 <tr>
                     <th class="px-3 py-2 text-left font-medium text-gray-500 dark:text-gray-400">Invoice</th>
-                    <th class="px-3 py-2 text-right font-medium text-gray-500 dark:text-gray-400">Total</th>
+                    <th class="px-3 py-2 text-right font-medium text-gray-500 dark:text-gray-400">Original</th>
+                    <th class="px-3 py-2 text-right font-medium text-gray-500 dark:text-gray-400">Adjustments</th>
+                    <th class="px-3 py-2 text-right font-medium text-gray-500 dark:text-gray-400">Adjusted payable</th>
                     <th class="px-3 py-2 text-right font-medium text-gray-500 dark:text-gray-400">Paid</th>
                     <th class="px-3 py-2 text-right font-medium text-gray-500 dark:text-gray-400">Outstanding</th>
                     <th class="px-3 py-2 text-right font-medium text-gray-500 dark:text-gray-400">Pay now</th>
                 </tr>
                 </thead>
                 <tbody class="divide-y divide-gray-100 dark:divide-gray-800">
-                @php $sum = 0.0; @endphp
                 @foreach($rows as $r)
                     @php
                         $inv = $r['invoice'];
                         $out = (float)$r['outstanding'];
                         $defaultPay = old('amounts.' . $inv->id, $r['default_pay']);
-                        $sum += (float)$defaultPay;
                     @endphp
                     <tr>
                         <td class="px-3 py-2">
-                            <div class="text-gray-900 dark:text-gray-50 font-medium">
-                                {{ $inv->invoice_number ?? ('#'.$inv->id) }}
-                            </div>
+                            <div class="text-gray-900 dark:text-gray-50 font-medium">{{ $inv->invoice_number ?? ('#'.$inv->id) }}</div>
                             <div class="text-[10px] text-gray-400">#{{ $inv->id }}</div>
                         </td>
-                        <td class="px-3 py-2 text-right">₹{{ number_format((float)$r['total'], 2) }}</td>
+                        <td class="px-3 py-2 text-right">₹{{ number_format((float)$r['original_total'], 2) }}</td>
+                        <td class="px-3 py-2 text-right {{ (float)$r['adjustment_total'] < 0 ? 'text-emerald-700 dark:text-emerald-300' : '' }}">
+                            {{ (float)$r['adjustment_total'] >= 0 ? '+' : '' }}₹{{ number_format((float)$r['adjustment_total'], 2) }}
+                        </td>
+                        <td class="px-3 py-2 text-right font-medium">₹{{ number_format((float)$r['total'], 2) }}</td>
                         <td class="px-3 py-2 text-right">₹{{ number_format((float)$r['paid'], 2) }}</td>
-                        <td class="px-3 py-2 text-right">₹{{ number_format($out, 2) }}</td>
+                        <td class="px-3 py-2 text-right font-medium">₹{{ number_format($out, 2) }}</td>
                         <td class="px-3 py-2 text-right">
-                            <input type="number" step="0.01" min="0" max="{{ $out }}"
+                            <input type="number" step="0.01" min="0" max="{{ number_format($out, 2, '.', '') }}"
                                    name="amounts[{{ $inv->id }}]"
                                    value="{{ $defaultPay }}"
                                    class="w-28 rounded border border-gray-300 dark:border-gray-700 bg-white dark:bg-gray-950 px-2 py-1 text-[11px] text-right">
@@ -120,7 +117,7 @@
 
         <div class="flex items-center justify-between">
             <div class="text-[11px] text-gray-500 dark:text-gray-400">
-                Leave “Pay now” as 0 to skip an invoice.
+                Enter 0 to skip an invoice. A payment cannot exceed its adjusted outstanding amount.
             </div>
 
             <button type="submit"

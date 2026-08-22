@@ -99,6 +99,17 @@ class EnforceAdminRoutePermission
         }
 
         if (Str::startsWith($routeName, 'admin.vendor-invoices.')) {
+            if (Str::startsWith($routeName, [
+                'admin.vendor-invoices.adjustments.',
+                'admin.vendor-invoices.returns.',
+                'admin.vendor-invoices.reverse.',
+            ]) || Str::endsWith($routeName, [
+                '.edit-details',
+                '.update-details',
+            ])) {
+                return 'adjust vendor invoices';
+            }
+
             if (Str::endsWith($routeName, ['.create', '.store'])) {
                 return 'create vendor invoice';
             }

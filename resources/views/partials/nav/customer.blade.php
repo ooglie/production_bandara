@@ -39,13 +39,22 @@
 
     $languageOptions = [
         'en' => ['label' => 'English', 'flag' => '🇺🇸'],
-        'hi' => ['label' => 'Hindi',   'flag' => '🇮🇳'],
-        'mr' => ['label' => 'Marathi', 'flag' => '🇮🇳'],
         'th' => ['label' => 'Thai',    'flag' => '🇹🇭'],
         'ko' => ['label' => 'Korean',  'flag' => '🇰🇷'],
+        'ja' => ['label' => 'Japanese','flag' => '🇯🇵'],
         'fr' => ['label' => 'French',  'flag' => '🇫🇷'],
         'es' => ['label' => 'Spanish', 'flag' => '🇪🇸'],
         'de' => ['label' => 'German',  'flag' => '🇩🇪'],
+        'ru' => ['label' => 'Russian', 'flag' => '🇷🇺'],
+        'hi' => ['label' => 'Hindi',   'flag' => '🇮🇳'],
+        'mr' => ['label' => 'Marathi', 'flag' => '🇮🇳'],
+        'ta' => ['label' => 'Tamil',   'flag' => '🇮🇳'],
+        'bn' => ['label' => 'Bengali', 'flag' => '🇮🇳'],
+        'gu' => ['label' => 'Gujarati','flag' => '🇮🇳'],
+        'pa' => ['label' => 'Punjabi', 'flag' => '🇮🇳'],
+        'ml' => ['label' => 'Malayalam','flag' => '🇮🇳'],
+        'te' => ['label' => 'Telugu',  'flag' => '🇮🇳'],
+        'kn' => ['label' => 'Kannada', 'flag' => '🇮🇳'],
     ];
 
     $sourceLanguage = 'en';

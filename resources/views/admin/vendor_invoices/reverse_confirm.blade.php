@@ -1,0 +1,27 @@
+@extends('layouts.company')
+
+@section('title', 'Reverse Vendor Invoice')
+@section('breadcrumb', 'Admin · Vendor Invoices · Full reversal')
+
+@section('content')
+<div class="max-w-5xl mx-auto px-4 py-6 space-y-4 text-xs">
+    <div class="flex items-start justify-between gap-3"><div><div class="text-[11px] uppercase tracking-wide text-red-500">Full reversal</div><h1 class="mt-1 text-lg font-semibold">Reverse {{ $invoice->invoice_number }}</h1><p class="mt-1 text-[12px] text-gray-500">This is available only when the original stock remains completely untouched and no payment or financial adjustment exists.</p></div><a href="{{ route('admin.vendor-invoices.show', $invoice) }}" class="rounded-lg border border-gray-300 dark:border-gray-700 px-3 py-2 text-[11px]">Back</a></div>
+
+    @if($errors->any())<div class="rounded-lg border border-red-200 bg-red-50 px-4 py-3 text-red-800 dark:border-red-800 dark:bg-red-950/30 dark:text-red-200"><ul class="list-disc pl-4">@foreach($errors->all() as $error)<li>{{ $error }}</li>@endforeach</ul></div>@endif
+
+    <div class="grid gap-3 sm:grid-cols-3"><div class="rounded-xl border border-gray-200 dark:border-gray-800 bg-white dark:bg-gray-900 p-4"><div class="text-[10px] uppercase tracking-wide text-gray-400">Vendor</div><div class="mt-1 font-semibold">{{ $invoice->vendor?->name }}</div></div><div class="rounded-xl border border-gray-200 dark:border-gray-800 bg-white dark:bg-gray-900 p-4"><div class="text-[10px] uppercase tracking-wide text-gray-400">Invoice total</div><div class="mt-1 font-semibold">₹{{ number_format($balance['original_total'], 2) }}</div></div><div class="rounded-xl border border-gray-200 dark:border-gray-800 bg-white dark:bg-gray-900 p-4"><div class="text-[10px] uppercase tracking-wide text-gray-400">Current status</div><div class="mt-1 font-semibold">{{ ucfirst(str_replace('_',' ',$invoice->status)) }}</div></div></div>
+
+    @if(!$assessment['can_reverse'])
+        <section class="rounded-2xl border border-red-200 bg-red-50/60 p-5 dark:border-red-900 dark:bg-red-950/20"><div class="text-sm font-semibold text-red-900 dark:text-red-200">This invoice cannot be fully reversed</div><ul class="mt-3 list-disc pl-5 space-y-1 text-[11px] text-red-700 dark:text-red-300">@foreach($assessment['blockers'] as $blocker)<li>{{ $blocker }}</li>@endforeach</ul><p class="mt-4 text-[11px] text-red-700 dark:text-red-300">Use a partial purchase return or a financial credit/debit note where appropriate.</p></section>
+    @else
+        <section class="rounded-2xl border border-gray-200 dark:border-gray-800 bg-white dark:bg-gray-900 overflow-hidden"><div class="px-5 py-4 border-b border-gray-200 dark:border-gray-800"><div class="text-sm font-semibold">Stock that will be returned</div></div><div class="overflow-x-auto"><table class="min-w-full text-[11px]"><thead class="bg-gray-50 dark:bg-gray-950/40"><tr><th class="px-4 py-3 text-left">Product</th><th class="px-4 py-3 text-right">Quantity / weight</th><th class="px-4 py-3 text-right">Credit total</th></tr></thead><tbody class="divide-y divide-gray-100 dark:divide-gray-800">@foreach($assessment['lines'] as $line)<tr><td class="px-4 py-3">{{ optional($invoice->items->firstWhere('id', $line['vendor_invoice_item_id']))->product?->name ?? ('Invoice item #'.$line['vendor_invoice_item_id']) }}</td><td class="px-4 py-3 text-right">@if((float)$line['weight_kg'] > 0){{ number_format((float)$line['weight_kg'], 3) }} kg @else {{ number_format((float)$line['quantity'], 3) }} units @endif</td><td class="px-4 py-3 text-right font-semibold">₹{{ number_format((float)$line['total_amount'], 2) }}</td></tr>@endforeach</tbody></table></div></section>
+
+        <form method="POST" action="{{ route('admin.vendor-invoices.reverse.store', $invoice) }}" class="rounded-2xl border border-red-200 bg-red-50/60 p-5 space-y-4 dark:border-red-900 dark:bg-red-950/20" onsubmit="return confirm('Reverse this complete vendor invoice and remove all original stock?')">
+            @csrf
+            <div><label class="block mb-1 text-[11px] font-medium text-red-900 dark:text-red-200">Reason for full reversal</label><textarea name="reversal_reason" rows="3" required maxlength="500" class="w-full rounded-lg border border-red-300 dark:border-red-800 bg-white dark:bg-gray-950 px-3 py-2 text-[12px]">{{ old('reversal_reason') }}</textarea></div>
+            <label class="flex items-start gap-3 text-[11px] text-red-800 dark:text-red-300"><input type="checkbox" name="confirm_reversal" value="1" required class="mt-0.5 rounded border-red-300"><span>I confirm that this supplier invoice was entered in error, no payment should remain against it, and all listed stock must be removed through an audited return.</span></label>
+            <div class="flex justify-end"><button class="rounded-xl bg-red-700 px-5 py-2.5 text-[12px] font-semibold text-white hover:bg-red-800">Reverse complete invoice</button></div>
+        </form>
+    @endif
+</div>
+@endsection

@@ -48,6 +48,7 @@ use App\Http\Controllers\Support\{
 
 use App\Http\Controllers\Admin\{
     ProductController,
+    ProductLabelController,
     CategoryController,
     VendorController,
     ProductVariantController,
@@ -90,6 +91,10 @@ use App\Http\Controllers\Admin\{
 
 use App\Http\Controllers\Stores\DashboardController as StoresDashboardController;
 use App\Http\Controllers\Delivery\DeliveryDashboardController;
+
+/* BANDARA CONTENT ROUTES */
+require __DIR__.'/content.php';
+/* END BANDARA CONTENT ROUTES */
 
 /*
 |--------------------------------------------------------------------------
@@ -435,6 +440,17 @@ Route::middleware(['auth', 'active', 'role:Admin|Manager|Accountant|CAAccountant
             ->name('orders.bulk-status');
 
         Route::resource('products', ProductController::class)->except(['show']);
+
+        Route::get('product-labels', [ProductLabelController::class, 'index'])
+            ->name('labels.index');
+        Route::get('products/{product}/label', [ProductLabelController::class, 'edit'])
+            ->name('labels.edit');
+        Route::post('products/{product}/label/pdf', [ProductLabelController::class, 'pdf'])
+            ->name('labels.pdf');
+        Route::get('products/{product}/label/batch', [ProductLabelController::class, 'batchEdit'])
+            ->name('labels.batch.edit');
+        Route::post('products/{product}/label/batch/pdf', [ProductLabelController::class, 'batchPdf'])
+            ->name('labels.batch.pdf');
 
         Route::resource('products.variants', ProductVariantController::class)
             ->except(['show'])

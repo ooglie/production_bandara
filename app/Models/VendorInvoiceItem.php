@@ -62,4 +62,14 @@ class VendorInvoiceItem extends Model
     {
         return $this->hasOne(\App\Models\InventoryLot::class, 'vendor_invoice_item_id');
     }
+
+    public function adjustmentItems()
+    {
+        return $this->hasMany(VendorInvoiceAdjustmentItem::class);
+    }
+
+    public function vendorReturnItems()
+    {
+        return $this->hasMany(VendorReturnItem::class);
+    }
 }

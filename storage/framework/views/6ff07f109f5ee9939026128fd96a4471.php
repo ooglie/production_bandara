@@ -1,0 +1,94 @@
+<?php
+    /**
+     * Reusable Ticket Tag form.
+     *
+     * Variables:
+     * - $action (string) required
+     * - $mode ('create'|'edit') default 'create'
+     * - $tag (\App\Models\TicketTag|null) default null
+     * - $backUrl (string|null) optional
+     */
+
+    $mode = $mode ?? 'create';
+    $isEdit = $mode === 'edit';
+    $tag = $tag ?? null;
+
+    $backUrl = $backUrl
+        ?? (\Illuminate\Support\Facades\Route::has('admin.ticket-tags.index')
+            ? route('admin.ticket-tags.index')
+            : url()->previous());
+?>
+
+<?php if($errors->any()): ?>
+    <div class="rounded border border-red-300 bg-red-50 px-3 py-2 text-[11px] text-red-800">
+        <div class="font-medium mb-1">Please fix the following:</div>
+        <ul class="list-disc pl-4 space-y-0.5">
+            <?php $__currentLoopData = $errors->all(); $__env->addLoop($__currentLoopData); foreach($__currentLoopData as $error): $__env->incrementLoopIndices(); $loop = $__env->getLastLoop(); ?>
+                <li><?php echo e($error); ?></li>
+            <?php endforeach; $__env->popLoop(); $loop = $__env->getLastLoop(); ?>
+        </ul>
+    </div>
+<?php endif; ?>
+
+<form id="<?php echo e($isEdit ? 'ticket-tag-edit-form' : 'ticket-tag-create-form'); ?>"
+      method="POST"
+      action="<?php echo e($action); ?>"
+      class="space-y-4">
+    <?php echo csrf_field(); ?>
+    <?php if($isEdit): ?>
+        <?php echo method_field('PUT'); ?>
+    <?php endif; ?>
+
+    <div class="rounded-2xl border border-gray-200 dark:border-gray-800 bg-white dark:bg-gray-900 p-4 space-y-4">
+        <div class="grid gap-4 sm:grid-cols-2">
+            <div class="sm:col-span-2">
+                <label class="block text-[11px] font-medium text-gray-700 dark:text-gray-300 mb-1">Name</label>
+                <input name="name"
+                       value="<?php echo e(old('name', $tag->name ?? '')); ?>"
+                       required
+                       class="w-full rounded-xl border border-gray-300 dark:border-gray-700 bg-white dark:bg-gray-950 px-3 py-2 text-[12px]
+                              focus:outline-none focus:ring-2 focus:ring-gray-300 dark:focus:ring-gray-700">
+            </div>
+
+            <div class="sm:col-span-2">
+                <label class="block text-[11px] font-medium text-gray-700 dark:text-gray-300 mb-1">
+                    Slug <span class="text-[10px] text-gray-400">(optional)</span>
+                </label>
+                <input name="slug"
+                       value="<?php echo e(old('slug', $tag->slug ?? '')); ?>"
+                       placeholder="Leave blank to auto-generate from name"
+                       class="w-full rounded-xl border border-gray-300 dark:border-gray-700 bg-white dark:bg-gray-950 px-3 py-2 text-[12px]
+                              focus:outline-none focus:ring-2 focus:ring-gray-300 dark:focus:ring-gray-700">
+                <div class="mt-1 text-[10px] text-gray-400 dark:text-gray-500">
+                    Leave blank to auto-generate from name.
+                </div>
+            </div>
+
+            <div class="sm:col-span-2">
+                <label class="block text-[11px] font-medium text-gray-700 dark:text-gray-300 mb-1">
+                    Color <span class="text-[10px] text-gray-400">(optional)</span>
+                </label>
+                <input name="color"
+                       value="<?php echo e(old('color', $tag->color ?? '')); ?>"
+                       placeholder="gray / red / #111827 etc."
+                       class="w-full rounded-xl border border-gray-300 dark:border-gray-700 bg-white dark:bg-gray-950 px-3 py-2 text-[12px]
+                              focus:outline-none focus:ring-2 focus:ring-gray-300 dark:focus:ring-gray-700">
+            </div>
+        </div>
+    </div>
+
+    <div class="flex items-center justify-between">
+        <a href="<?php echo e($backUrl); ?>"
+           class="text-[11px] text-gray-500 dark:text-gray-400 hover:underline">
+            Cancel
+        </a>
+
+        <button type="submit"
+                class="inline-flex items-center rounded-full border border-gray-900 dark:border-gray-100
+                       bg-gray-900 text-white dark:bg-gray-100 dark:text-gray-900 px-4 py-2 text-[11px] font-medium
+                       hover:bg-gray-800 dark:hover:bg-gray-200">
+            <?php echo e($isEdit ? 'Save' : 'Create'); ?>
+
+        </button>
+    </div>
+</form><?php /**PATH /Users/ooglie/Website/ChatGPT/PRODUCTIONFrozen/BandaraFrozen/resources/views/admin/ticket-tags/_form.blade.php ENDPATH**/ ?>
