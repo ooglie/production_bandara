@@ -1,0 +1,4 @@
+1	app/Http/Controllers/Admin/ProductionRunController.php
+1	app/Services/ProductionRunReversalService.php
+1	resources/views/admin/production/create.blade.php
+1	tests/Unit/ProductionPiecePickerCompatibilityTest.php

@@ -185,26 +185,17 @@ class ProductionRunReversalService
             }
 
             if ($consumedPieces > 0) {
-                $trackedPieceRecordCount = InventoryPiece::query()
+                $consumedPieceRows = InventoryPiece::query()
                     ->where('inventory_lot_id', $lot->id)
-                    ->count();
+                    ->where('consumed_in_production_run_id', $run->id)
+                    ->get();
 
-                // Newer lots track each physical piece. Some legacy/vendor lots
-                // record only a piece count and total weight. Those whole-lot
-                // production inputs legitimately have no InventoryPiece rows.
-                if ($trackedPieceRecordCount > 0) {
-                    $consumedPieceRows = InventoryPiece::query()
-                        ->where('inventory_lot_id', $lot->id)
-                        ->where('consumed_in_production_run_id', $run->id)
-                        ->get();
+                if ($consumedPieceRows->count() !== $consumedPieces) {
+                    $blockers->push("Source lot {$this->lotLabel($lot)} no longer has all {$consumedPieces} pieces recorded against this run.");
+                }
 
-                    if ($consumedPieceRows->count() !== $consumedPieces) {
-                        $blockers->push("Source lot {$this->lotLabel($lot)} no longer has all {$consumedPieces} pieces recorded against this run.");
-                    }
-
-                    if ($consumedPieceRows->contains(fn (InventoryPiece $piece) => (string) $piece->status !== 'consumed' || $piece->sold_order_item_id !== null)) {
-                        $blockers->push("One or more source pieces from {$this->lotLabel($lot)} have been modified after this run.");
-                    }
+                if ($consumedPieceRows->contains(fn (InventoryPiece $piece) => (string) $piece->status !== 'consumed' || $piece->sold_order_item_id !== null)) {
+                    $blockers->push("One or more source pieces from {$this->lotLabel($lot)} have been modified after this run.");
                 }
 
                 if ($pieceCount !== null && $newPieceCount > $pieceCount) {

@@ -45,15 +45,9 @@ class ProductionRunController extends Controller
                 'productVariant',
                 'vendor',
                 'pieces' => function ($q) {
-                    $q->where('status', 'available')
-                        ->whereNull('sold_order_item_id')
-                        ->whereNull('consumed_in_production_run_id')
-                        ->whereRaw('COALESCE(available_weight_kg, weight_kg, 0) > 0')
-                        ->orderBy('piece_no')
-                        ->orderBy('id');
+                    $q->where('status', 'available')->orderBy('piece_no');
                 },
             ])
-            ->withCount('pieces as tracked_piece_record_count')
             ->availableForRepack()
             ->orderBy('product_id')
             ->orderBy('expiry_date')
@@ -89,7 +83,6 @@ class ProductionRunController extends Controller
 
             'selected_piece_ids' => ['nullable', 'array'],
             'selected_piece_ids.*' => ['integer', 'exists:inventory_pieces,id'],
-            'consume_entire_input_lot' => ['nullable', 'boolean'],
 
             'consumed_weight_kg' => ['nullable', 'numeric', 'min:0.001'],
             'consumed_quantity' => ['nullable', 'numeric', 'min:0'],
@@ -169,100 +162,50 @@ class ProductionRunController extends Controller
                 ]);
             }
 
-            $selectedPieceIds = collect($validated['selected_piece_ids'] ?? [])
-                ->map(fn ($id) => (int) $id)
-                ->filter()
-                ->unique()
-                ->values();
-
-            $consumeEntireInputLot = (bool) ($validated['consume_entire_input_lot'] ?? false);
-            $pieceModeAliases = ['pieces', 'pieces_weight'];
-            $lotDeclaresPieceInventory = in_array(
-                strtolower(trim((string) ($inputLot->inward_mode ?? ''))),
-                $pieceModeAliases,
-                true
-            );
-
-            $trackedPieceRecordCount = InventoryPiece::query()
-                ->where('inventory_lot_id', $inputLot->id)
-                ->count();
-
-            $availableTrackedPieceCount = InventoryPiece::query()
-                ->where('inventory_lot_id', $inputLot->id)
-                ->where('status', 'available')
-                ->whereNull('sold_order_item_id')
-                ->whereNull('consumed_in_production_run_id')
-                ->whereRaw('COALESCE(available_weight_kg, weight_kg, 0) > 0')
-                ->count();
-
-            $reportedAvailablePieceCount = max((int) ($inputLot->available_piece_count ?? 0), 0);
-            $usesTrackedPieces = $availableTrackedPieceCount > 0;
-            $usesWholeLotPieceFallback = $trackedPieceRecordCount === 0
-                && $lotDeclaresPieceInventory
-                && $reportedAvailablePieceCount > 0;
-
-            if ($lotDeclaresPieceInventory && $trackedPieceRecordCount > 0 && ! $usesTrackedPieces) {
-                throw ValidationException::withMessages([
-                    'input_lot_id' => 'This lot has tracked piece records, but none are currently available. Refresh or reconcile the lot before starting production.',
-                ]);
-            }
-            $piecesMode = $usesTrackedPieces || $usesWholeLotPieceFallback;
+            $piecesMode = ($inputLot->inward_mode === 'pieces');
 
             $consumedWeight = 0.0;
             $consumedQty = null;
             $consumedPieceCount = null;
             $selectedPieces = collect();
 
-            if ($usesTrackedPieces) {
+            if ($piecesMode) {
+                $selectedPieceIds = collect($validated['selected_piece_ids'] ?? [])
+                    ->map(fn ($id) => (int) $id)
+                    ->filter()
+                    ->values();
+
                 if ($selectedPieceIds->isEmpty()) {
                     throw ValidationException::withMessages([
-                        'selected_piece_ids' => 'Please select one or more available pieces from the chosen lot.',
+                        'selected_piece_ids' => 'Please select one or more pieces from the chosen lot.',
                     ]);
                 }
 
                 $selectedPieces = InventoryPiece::query()
                     ->whereIn('id', $selectedPieceIds)
                     ->where('inventory_lot_id', $inputLot->id)
-                    ->where('status', 'available')
-                    ->whereNull('sold_order_item_id')
-                    ->whereNull('consumed_in_production_run_id')
-                    ->whereRaw('COALESCE(available_weight_kg, weight_kg, 0) > 0')
                     ->lockForUpdate()
                     ->get();
 
                 if ($selectedPieces->count() !== $selectedPieceIds->count()) {
                     throw ValidationException::withMessages([
-                        'selected_piece_ids' => 'One or more selected pieces are no longer available for this lot. Refresh the page and select again.',
+                        'selected_piece_ids' => 'One or more selected pieces do not belong to the chosen lot.',
                     ]);
                 }
 
-                $consumedWeight = round((float) $selectedPieces->sum(
-                    fn ($piece) => (float) ($piece->available_weight_kg ?? $piece->weight_kg ?? 0)
-                ), 3);
+                if ($selectedPieces->contains(fn ($piece) => $piece->status !== 'available')) {
+                    throw ValidationException::withMessages([
+                        'selected_piece_ids' => 'One or more selected pieces are no longer available.',
+                    ]);
+                }
+
+                $consumedWeight = round((float) $selectedPieces->sum(fn ($piece) => (float) $piece->weight_kg), 3);
                 $consumedPieceCount = (int) $selectedPieces->count();
 
-                // Raw source lots remain weight-driven; slab lots are count-driven.
+                // raw lots remain weight-driven; slab piece lots are count-driven
                 $consumedQty = $inputLot->lot_stage === 'raw'
                     ? $consumedWeight
                     : (float) $consumedPieceCount;
-            } elseif ($usesWholeLotPieceFallback) {
-                if (! $consumeEntireInputLot) {
-                    throw ValidationException::withMessages([
-                        'consume_entire_input_lot' => 'This legacy piece lot has no individual piece records. Select the entire lot to continue.',
-                    ]);
-                }
-
-                $consumedWeight = round((float) ($inputLot->available_weight_kg ?? 0), 3);
-                $consumedPieceCount = $reportedAvailablePieceCount;
-                $consumedQty = $inputLot->lot_stage === 'raw'
-                    ? $consumedWeight
-                    : (float) $consumedPieceCount;
-
-                if ($consumedWeight <= 0) {
-                    throw ValidationException::withMessages([
-                        'consume_entire_input_lot' => 'This lot does not have an available weight to consume.',
-                    ]);
-                }
             } else {
                 $consumedWeight = round((float) ($validated['consumed_weight_kg'] ?? 0), 3);
                 $consumedQty = isset($validated['consumed_quantity']) && $validated['consumed_quantity'] !== null && $validated['consumed_quantity'] !== ''

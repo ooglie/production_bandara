@@ -1,41 +1,28 @@
-<?php $__env->startSection('title', 'New Production Run'); ?>
+@extends('layouts.company')
 
-<?php $__env->startSection('content'); ?>
-<?php
+@section('title', 'New Production Run')
+
+@section('content')
+@php
     $lotMeta = $inputLots->mapWithKeys(function ($lot) {
-        $normalizedInwardMode = strtolower(trim((string) ($lot->inward_mode ?? 'qty')));
-        $availablePieces = ($lot->pieces ?? collect())->values();
-        $trackedPieceRecordCount = (int) ($lot->tracked_piece_record_count ?? $availablePieces->count());
-        $hasAvailableTrackedPieces = $availablePieces->isNotEmpty();
-        $canConsumeEntirePieceLot = ! $hasAvailableTrackedPieces
-            && $trackedPieceRecordCount === 0
-            && in_array($normalizedInwardMode, ['pieces', 'pieces_weight'], true)
-            && (int) ($lot->available_piece_count ?? 0) > 0
-            && (float) ($lot->available_weight_kg ?? 0) > 0;
-
         return [$lot->id => [
             'id' => (int) $lot->id,
             'product_id' => (int) $lot->product_id,
             'product_name' => (string) ($lot->product->name ?? '—'),
             'lot_code' => (string) ($lot->lot_code ?: ('LOT-' . $lot->id)),
             'lot_stage' => (string) ($lot->lot_stage ?? 'raw'),
-            'inward_mode' => $normalizedInwardMode,
+            'inward_mode' => (string) ($lot->inward_mode ?? 'qty'),
             'available_weight_kg' => (float) ($lot->available_weight_kg ?? 0),
             'available_quantity' => (float) ($lot->available_quantity ?? 0),
             'available_piece_count' => (int) ($lot->available_piece_count ?? 0),
-            'tracked_piece_record_count' => $trackedPieceRecordCount,
-            'available_tracked_piece_count' => $availablePieces->count(),
-            'requires_piece_selection' => $hasAvailableTrackedPieces || $canConsumeEntirePieceLot,
-            'piece_selection_mode' => $hasAvailableTrackedPieces ? 'tracked' : ($canConsumeEntirePieceLot ? 'whole_lot' : 'none'),
             'batch_code' => (string) ($lot->batch_code ?? ''),
             'expiry_date' => $lot->expiry_date ? $lot->expiry_date->format('Y-m-d') : '',
             'sell_unit' => (string) ($lot->product->sell_unit ?? 'piece'),
-            'pieces' => $availablePieces->map(function ($piece) {
+            'pieces' => ($lot->pieces ?? collect())->map(function ($piece) {
                 return [
                     'id' => (int) $piece->id,
                     'piece_no' => (int) $piece->piece_no,
-                    'label' => (string) ($piece->label ?: ('Piece ' . $piece->piece_no)),
-                    'weight_kg' => (float) ($piece->available_weight_kg ?? $piece->weight_kg ?? 0),
+                    'weight_kg' => (float) $piece->weight_kg,
                 ];
             })->values()->all(),
         ]];
@@ -75,7 +62,7 @@
         ->values();
 
     $showByproductLots = $trimProducts->isNotEmpty() || $wasteProducts->isNotEmpty();
-?>
+@endphp
 
 <div class="max-w-6xl mx-auto px-4 py-6 space-y-4 text-xs">
     <div class="flex items-start justify-between gap-3">
@@ -86,25 +73,25 @@
             </p>
         </div>
 
-        <a href="<?php echo e(route('admin.production.index')); ?>"
+        <a href="{{ route('admin.production.index') }}"
            class="text-[12px] px-3 py-2 rounded-lg border border-gray-300 dark:border-gray-700 hover:bg-gray-50 dark:hover:bg-gray-800">
             Back
         </a>
     </div>
 
-    <?php if($errors->any()): ?>
+    @if($errors->any())
         <div class="rounded-xl border border-red-300 bg-red-50 px-4 py-3 text-[12px] text-red-800">
             <div class="font-medium mb-1">Please fix the following:</div>
             <ul class="list-disc pl-5 space-y-0.5">
-                <?php $__currentLoopData = $errors->all(); $__env->addLoop($__currentLoopData); foreach($__currentLoopData as $error): $__env->incrementLoopIndices(); $loop = $__env->getLastLoop(); ?>
-                    <li><?php echo e($error); ?></li>
-                <?php endforeach; $__env->popLoop(); $loop = $__env->getLastLoop(); ?>
+                @foreach($errors->all() as $error)
+                    <li>{{ $error }}</li>
+                @endforeach
             </ul>
         </div>
-    <?php endif; ?>
+    @endif
 
-    <form method="POST" action="<?php echo e(route('admin.production.store')); ?>" class="space-y-4">
-        <?php echo csrf_field(); ?>
+    <form method="POST" action="{{ route('admin.production.store') }}" class="space-y-4">
+        @csrf
 
         <section class="rounded-2xl border border-gray-200 dark:border-gray-800 bg-white dark:bg-gray-900 overflow-hidden">
             <div class="px-5 py-4 border-b border-gray-200 dark:border-gray-800">
@@ -117,7 +104,7 @@
                     <div>
                         <label class="block text-[12px] font-medium text-gray-700 dark:text-gray-300 mb-1">Run date</label>
                         <input type="date" name="run_date"
-                               value="<?php echo e(old('run_date', now()->format('Y-m-d'))); ?>"
+                               value="{{ old('run_date', now()->format('Y-m-d')) }}"
                                class="w-full rounded-lg border border-gray-300 dark:border-gray-700 bg-white dark:bg-gray-950 px-3 py-2 text-[13px]"
                                required>
                     </div>
@@ -127,9 +114,9 @@
                         <select name="run_type" id="run_type"
                                 class="w-full rounded-lg border border-gray-300 dark:border-gray-700 bg-white dark:bg-gray-950 px-3 py-2 text-[13px]"
                                 required>
-                            <option value="raw_to_slab" <?php if(old('run_type') === 'raw_to_slab'): echo 'selected'; endif; ?>>Raw → Slab</option>
-                            <option value="slab_to_slice" <?php if(old('run_type') === 'slab_to_slice'): echo 'selected'; endif; ?>>Slab → Slice</option>
-                            <option value="raw_to_slice_direct" <?php if(old('run_type') === 'raw_to_slice_direct'): echo 'selected'; endif; ?>>Raw → Slice Direct</option>
+                            <option value="raw_to_slab" @selected(old('run_type') === 'raw_to_slab')>Raw → Slab</option>
+                            <option value="slab_to_slice" @selected(old('run_type') === 'slab_to_slice')>Slab → Slice</option>
+                            <option value="raw_to_slice_direct" @selected(old('run_type') === 'raw_to_slice_direct')>Raw → Slice Direct</option>
                         </select>
                     </div>
 
@@ -181,96 +168,41 @@
                     </div>
 
                     <div id="pieces-list">
-                        <?php $__currentLoopData = $inputLots; $__env->addLoop($__currentLoopData); foreach($__currentLoopData as $pieceLot): $__env->incrementLoopIndices(); $loop = $__env->getLastLoop(); ?>
-                            <?php
-                                $availablePieceRows = ($pieceLot->pieces ?? collect())->values();
-                                $normalizedPieceLotMode = strtolower(trim((string) ($pieceLot->inward_mode ?? '')));
-                                $trackedPieceRecordCount = (int) ($pieceLot->tracked_piece_record_count ?? $availablePieceRows->count());
-                                $canConsumeEntirePieceLot = $availablePieceRows->isEmpty()
-                                    && $trackedPieceRecordCount === 0
-                                    && in_array($normalizedPieceLotMode, ['pieces', 'pieces_weight'], true)
-                                    && (int) ($pieceLot->available_piece_count ?? 0) > 0
-                                    && (float) ($pieceLot->available_weight_kg ?? 0) > 0;
-                                $hasPieceSelection = $availablePieceRows->isNotEmpty() || $canConsumeEntirePieceLot;
-                            ?>
-
-                            <?php if($hasPieceSelection): ?>
-                                <div class="hidden"
-                                     data-piece-lot-group="<?php echo e($pieceLot->id); ?>"
-                                     data-piece-selection-mode="<?php echo e($availablePieceRows->isNotEmpty() ? 'tracked' : 'whole_lot'); ?>">
-                                    <?php if($availablePieceRows->isNotEmpty()): ?>
-                                        <div class="mb-2 text-[11px] text-gray-500 dark:text-gray-400">
-                                            <?php echo e($availablePieceRows->count()); ?> available piece(s) loaded from this lot.
-                                        </div>
-                                        <div class="grid gap-2 md:grid-cols-2">
-                                            <?php $__currentLoopData = $availablePieceRows; $__env->addLoop($__currentLoopData); foreach($__currentLoopData as $piece): $__env->incrementLoopIndices(); $loop = $__env->getLastLoop(); ?>
-                                                <?php
-                                                    $pieceInputId = 'production-piece-' . $piece->id;
-                                                    $isOldPiece = in_array((int) $piece->id, $oldSelectedPieceIds, true);
-                                                ?>
-                                                <label for="<?php echo e($pieceInputId); ?>"
-                                                       class="flex min-h-12 cursor-pointer items-center justify-between gap-3 rounded-xl border border-gray-200 bg-white px-3 py-2.5 transition hover:shadow-sm focus-within:ring-2 focus-within:ring-gray-300 dark:border-gray-800 dark:bg-gray-900 dark:focus-within:ring-gray-700">
-                                                    <span class="flex min-w-0 items-center gap-3">
-                                                        <input id="<?php echo e($pieceInputId); ?>"
-                                                               type="checkbox"
-                                                               name="selected_piece_ids[]"
-                                                               value="<?php echo e($piece->id); ?>"
-                                                               data-piece-selection-control="1"
-                                                               data-selection-kind="piece"
-                                                               data-piece-checkbox="1"
-                                                               data-lot-id="<?php echo e($pieceLot->id); ?>"
-                                                               data-weight="<?php echo e((float) ($piece->available_weight_kg ?? $piece->weight_kg ?? 0)); ?>"
-                                                               <?php if($isOldPiece): echo 'checked'; endif; ?>
-                                                               <?php if((string) $oldInputLotId !== (string) $pieceLot->id): echo 'disabled'; endif; ?>
-                                                               class="h-5 w-5 shrink-0 rounded border-gray-300 text-gray-900 focus:ring-gray-400 dark:border-gray-700 dark:bg-gray-950 dark:text-gray-100">
-                                                        <span class="truncate text-[12px] text-gray-800 dark:text-gray-200">
-                                                            <?php echo e($piece->label ?: ('Piece ' . $piece->piece_no)); ?>
-
-                                                        </span>
+                        @foreach($inputLots as $pieceLot)
+                            @if((string) ($pieceLot->inward_mode ?? '') === 'pieces' && ($pieceLot->pieces ?? collect())->isNotEmpty())
+                                <div class="hidden" data-piece-lot-group="{{ $pieceLot->id }}">
+                                    <div class="grid gap-2 md:grid-cols-2">
+                                        @foreach($pieceLot->pieces as $piece)
+                                            @php
+                                                $pieceInputId = 'production-piece-' . $piece->id;
+                                                $isOldPiece = in_array((int) $piece->id, $oldSelectedPieceIds, true);
+                                            @endphp
+                                            <label for="{{ $pieceInputId }}"
+                                                   class="flex min-h-12 cursor-pointer items-center justify-between gap-3 rounded-xl border border-gray-200 bg-white px-3 py-2.5 transition hover:shadow-sm focus-within:ring-2 focus-within:ring-gray-300 dark:border-gray-800 dark:bg-gray-900 dark:focus-within:ring-gray-700">
+                                                <span class="flex min-w-0 items-center gap-3">
+                                                    <input id="{{ $pieceInputId }}"
+                                                           type="checkbox"
+                                                           name="selected_piece_ids[]"
+                                                           value="{{ $piece->id }}"
+                                                           data-piece-checkbox="1"
+                                                           data-lot-id="{{ $pieceLot->id }}"
+                                                           data-weight="{{ (float) ($piece->available_weight_kg ?? $piece->weight_kg ?? 0) }}"
+                                                           @checked($isOldPiece)
+                                                           @disabled((string) $oldInputLotId !== (string) $pieceLot->id)
+                                                           class="h-5 w-5 shrink-0 rounded border-gray-300 text-gray-900 focus:ring-gray-400 dark:border-gray-700 dark:bg-gray-950 dark:text-gray-100">
+                                                    <span class="truncate text-[12px] text-gray-800 dark:text-gray-200">
+                                                        {{ $piece->label ?: ('Piece ' . $piece->piece_no) }}
                                                     </span>
-                                                    <span class="shrink-0 text-[12px] font-medium text-gray-700 dark:text-gray-300">
-                                                        <?php echo e(number_format((float) ($piece->available_weight_kg ?? $piece->weight_kg ?? 0), 3)); ?> kg
-                                                    </span>
-                                                </label>
-                                            <?php endforeach; $__env->popLoop(); $loop = $__env->getLastLoop(); ?>
-                                        </div>
-                                    <?php else: ?>
-                                        <?php
-                                            $wholeLotInputId = 'production-whole-lot-' . $pieceLot->id;
-                                            $isOldWholeLot = (string) $oldInputLotId === (string) $pieceLot->id
-                                                && (bool) old('consume_entire_input_lot');
-                                        ?>
-                                        <div class="mb-2 rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-[11px] text-amber-800 dark:border-amber-900/60 dark:bg-amber-950/30 dark:text-amber-200">
-                                            This older piece lot has no individual piece records. It can be consumed only as the entire remaining lot.
-                                        </div>
-                                        <label for="<?php echo e($wholeLotInputId); ?>"
-                                               class="flex min-h-12 cursor-pointer items-center justify-between gap-3 rounded-xl border border-gray-200 bg-white px-3 py-2.5 transition hover:shadow-sm focus-within:ring-2 focus-within:ring-gray-300 dark:border-gray-800 dark:bg-gray-900 dark:focus-within:ring-gray-700">
-                                            <span class="flex min-w-0 items-center gap-3">
-                                                <input id="<?php echo e($wholeLotInputId); ?>"
-                                                       type="checkbox"
-                                                       name="consume_entire_input_lot"
-                                                       value="1"
-                                                       data-piece-selection-control="1"
-                                                       data-selection-kind="whole-lot"
-                                                       data-lot-id="<?php echo e($pieceLot->id); ?>"
-                                                       data-weight="<?php echo e((float) ($pieceLot->available_weight_kg ?? 0)); ?>"
-                                                       data-quantity="<?php echo e((float) ($pieceLot->available_quantity ?? 0)); ?>"
-                                                       data-piece-count="<?php echo e((int) ($pieceLot->available_piece_count ?? 0)); ?>"
-                                                       <?php if($isOldWholeLot): echo 'checked'; endif; ?>
-                                                       <?php if((string) $oldInputLotId !== (string) $pieceLot->id): echo 'disabled'; endif; ?>
-                                                       class="h-5 w-5 shrink-0 rounded border-gray-300 text-gray-900 focus:ring-gray-400 dark:border-gray-700 dark:bg-gray-950 dark:text-gray-100">
-                                                <span class="truncate text-[12px] text-gray-800 dark:text-gray-200">
-                                                    Use the entire remaining lot
                                                 </span>
-                                            </span>
-                                            <span class="shrink-0 text-right text-[12px] font-medium text-gray-700 dark:text-gray-300">
-                                                <?php echo e((int) ($pieceLot->available_piece_count ?? 0)); ?> piece(s) · <?php echo e(number_format((float) ($pieceLot->available_weight_kg ?? 0), 3)); ?> kg
-                                            </span>
-                                        </label>
-                                    <?php endif; ?>
+                                                <span class="shrink-0 text-[12px] font-medium text-gray-700 dark:text-gray-300">
+                                                    {{ number_format((float) ($piece->available_weight_kg ?? $piece->weight_kg ?? 0), 3) }} kg
+                                                </span>
+                                            </label>
+                                        @endforeach
+                                    </div>
                                 </div>
-                            <?php endif; ?>
-                        <?php endforeach; $__env->popLoop(); $loop = $__env->getLastLoop(); ?>
+                            @endif
+                        @endforeach
                     </div>
 
                     <noscript>
@@ -289,14 +221,14 @@
                     <div>
                         <label class="block text-[12px] font-medium text-gray-700 dark:text-gray-300 mb-1">Consumed weight (kg)</label>
                         <input type="number" step="0.001" min="0.001" name="consumed_weight_kg" id="consumed_weight_kg"
-                               value="<?php echo e(old('consumed_weight_kg')); ?>"
+                               value="{{ old('consumed_weight_kg') }}"
                                class="w-full rounded-lg border border-gray-300 dark:border-gray-700 bg-white dark:bg-gray-950 px-3 py-2 text-[13px]">
                     </div>
 
                     <div>
                         <label class="block text-[12px] font-medium text-gray-700 dark:text-gray-300 mb-1">Consumed quantity</label>
                         <input type="number" step="0.001" min="0" name="consumed_quantity" id="consumed_quantity"
-                               value="<?php echo e(old('consumed_quantity')); ?>"
+                               value="{{ old('consumed_quantity') }}"
                                class="w-full rounded-lg border border-gray-300 dark:border-gray-700 bg-white dark:bg-gray-950 px-3 py-2 text-[13px]">
                         <div class="text-[11px] text-gray-500 dark:text-gray-400 mt-1">
                             Auto-calculated for piece-based lots.
@@ -306,43 +238,43 @@
                     <div>
                         <label class="block text-[12px] font-medium text-gray-700 dark:text-gray-300 mb-1">Trim weight (kg)</label>
                         <input type="number" step="0.001" min="0" name="trim_weight_kg"
-                            value="<?php echo e(old('trim_weight_kg', 0)); ?>"
+                            value="{{ old('trim_weight_kg', 0) }}"
                             class="w-full rounded-lg border border-gray-300 dark:border-gray-700 bg-white dark:bg-gray-950 px-3 py-2 text-[13px]">
 
-                        <?php if($trimProducts->isNotEmpty()): ?>
+                        @if($trimProducts->isNotEmpty())
                             <div class="mt-1 text-[11px] text-gray-500 dark:text-gray-400">
                                 You can keep this as summary only, or choose a trim product below to create a trim lot.
                             </div>
-                        <?php else: ?>
+                        @else
                             <div class="mt-1 text-[11px] text-amber-600 dark:text-amber-400">
                                 No trim product configured yet. This will be recorded as summary only.
                             </div>
-                        <?php endif; ?>
+                        @endif
                     </div>
 
                     <div>
                         <label class="block text-[12px] font-medium text-gray-700 dark:text-gray-300 mb-1">Waste weight (kg)</label>
                         <input type="number" step="0.001" min="0" name="waste_weight_kg"
-                            value="<?php echo e(old('waste_weight_kg', 0)); ?>"
+                            value="{{ old('waste_weight_kg', 0) }}"
                             class="w-full rounded-lg border border-gray-300 dark:border-gray-700 bg-white dark:bg-gray-950 px-3 py-2 text-[13px]">
 
-                        <?php if($wasteProducts->isNotEmpty()): ?>
+                        @if($wasteProducts->isNotEmpty())
                             <div class="mt-1 text-[11px] text-gray-500 dark:text-gray-400">
                                 You can keep this as summary only, or choose a waste product below to create a waste lot.
                             </div>
-                        <?php else: ?>
+                        @else
                             <div class="mt-1 text-[11px] text-amber-600 dark:text-amber-400">
                                 No waste product configured yet. This will be recorded as summary only.
                             </div>
-                        <?php endif; ?>
+                        @endif
                     </div>
                 </div>
 
-                
-                                <?php if($showByproductLots): ?>
-                    
-                    <div class="grid gap-4 <?php echo e($trimProducts->isNotEmpty() && $wasteProducts->isNotEmpty() ? 'lg:grid-cols-2' : 'lg:grid-cols-1'); ?>">
-                        <?php if($trimProducts->isNotEmpty()): ?>
+                {{-- Optional trim / waste lots --}}
+                                @if($showByproductLots)
+                    {{-- Optional trim / waste lots --}}
+                    <div class="grid gap-4 {{ $trimProducts->isNotEmpty() && $wasteProducts->isNotEmpty() ? 'lg:grid-cols-2' : 'lg:grid-cols-1' }}">
+                        @if($trimProducts->isNotEmpty())
                             <div class="rounded-xl border border-gray-200 dark:border-gray-800 bg-gray-50 dark:bg-gray-950/40 p-4 space-y-3">
                                 <div>
                                     <div class="text-[12px] font-medium text-gray-700 dark:text-gray-300">Optional trim lot</div>
@@ -357,12 +289,11 @@
                                         <select name="trim_product_id"
                                                 class="w-full rounded-lg border border-gray-300 dark:border-gray-700 bg-white dark:bg-gray-950 px-3 py-2 text-[13px]">
                                             <option value="">— None —</option>
-                                            <?php $__currentLoopData = $trimProducts; $__env->addLoop($__currentLoopData); foreach($__currentLoopData as $product): $__env->incrementLoopIndices(); $loop = $__env->getLastLoop(); ?>
-                                                <option value="<?php echo e($product->id); ?>" <?php if((int) old('trim_product_id', 0) === (int) $product->id): echo 'selected'; endif; ?>>
-                                                    <?php echo e($product->name); ?>
-
+                                            @foreach($trimProducts as $product)
+                                                <option value="{{ $product->id }}" @selected((int) old('trim_product_id', 0) === (int) $product->id)>
+                                                    {{ $product->name }}
                                                 </option>
-                                            <?php endforeach; $__env->popLoop(); $loop = $__env->getLastLoop(); ?>
+                                            @endforeach
                                         </select>
                                     </div>
 
@@ -370,7 +301,7 @@
                                         <label class="block text-[12px] font-medium text-gray-700 dark:text-gray-300 mb-1">Trim quantity</label>
                                         <input type="number" step="0.001" min="0"
                                                name="trim_quantity_output"
-                                               value="<?php echo e(old('trim_quantity_output')); ?>"
+                                               value="{{ old('trim_quantity_output') }}"
                                                class="w-full rounded-lg border border-gray-300 dark:border-gray-700 bg-white dark:bg-gray-950 px-3 py-2 text-[13px]">
                                     </div>
 
@@ -378,14 +309,14 @@
                                         <label class="block text-[12px] font-medium text-gray-700 dark:text-gray-300 mb-1">Trim notes</label>
                                         <input type="text"
                                                name="trim_notes"
-                                               value="<?php echo e(old('trim_notes')); ?>"
+                                               value="{{ old('trim_notes') }}"
                                                class="w-full rounded-lg border border-gray-300 dark:border-gray-700 bg-white dark:bg-gray-950 px-3 py-2 text-[13px]">
                                     </div>
                                 </div>
                             </div>
-                        <?php endif; ?>
+                        @endif
 
-                        <?php if($wasteProducts->isNotEmpty()): ?>
+                        @if($wasteProducts->isNotEmpty())
                             <div class="rounded-xl border border-gray-200 dark:border-gray-800 bg-gray-50 dark:bg-gray-950/40 p-4 space-y-3">
                                 <div>
                                     <div class="text-[12px] font-medium text-gray-700 dark:text-gray-300">Optional waste lot</div>
@@ -400,12 +331,11 @@
                                         <select name="waste_product_id"
                                                 class="w-full rounded-lg border border-gray-300 dark:border-gray-700 bg-white dark:bg-gray-950 px-3 py-2 text-[13px]">
                                             <option value="">— None —</option>
-                                            <?php $__currentLoopData = $wasteProducts; $__env->addLoop($__currentLoopData); foreach($__currentLoopData as $product): $__env->incrementLoopIndices(); $loop = $__env->getLastLoop(); ?>
-                                                <option value="<?php echo e($product->id); ?>" <?php if((int) old('waste_product_id', 0) === (int) $product->id): echo 'selected'; endif; ?>>
-                                                    <?php echo e($product->name); ?>
-
+                                            @foreach($wasteProducts as $product)
+                                                <option value="{{ $product->id }}" @selected((int) old('waste_product_id', 0) === (int) $product->id)>
+                                                    {{ $product->name }}
                                                 </option>
-                                            <?php endforeach; $__env->popLoop(); $loop = $__env->getLastLoop(); ?>
+                                            @endforeach
                                         </select>
                                     </div>
 
@@ -413,7 +343,7 @@
                                         <label class="block text-[12px] font-medium text-gray-700 dark:text-gray-300 mb-1">Waste quantity</label>
                                         <input type="number" step="0.001" min="0"
                                                name="waste_quantity_output"
-                                               value="<?php echo e(old('waste_quantity_output')); ?>"
+                                               value="{{ old('waste_quantity_output') }}"
                                                class="w-full rounded-lg border border-gray-300 dark:border-gray-700 bg-white dark:bg-gray-950 px-3 py-2 text-[13px]">
                                     </div>
 
@@ -421,19 +351,19 @@
                                         <label class="block text-[12px] font-medium text-gray-700 dark:text-gray-300 mb-1">Waste notes</label>
                                         <input type="text"
                                                name="waste_notes"
-                                               value="<?php echo e(old('waste_notes')); ?>"
+                                               value="{{ old('waste_notes') }}"
                                                class="w-full rounded-lg border border-gray-300 dark:border-gray-700 bg-white dark:bg-gray-950 px-3 py-2 text-[13px]">
                                     </div>
                                 </div>
                             </div>
-                        <?php endif; ?>
+                        @endif
                     </div>
-                <?php endif; ?>
+                @endif
 
                 <div>
                     <label class="block text-[12px] font-medium text-gray-700 dark:text-gray-300 mb-1">Notes</label>
                     <textarea name="notes" rows="3"
-                              class="w-full rounded-lg border border-gray-300 dark:border-gray-700 bg-white dark:bg-gray-950 px-3 py-2 text-[13px]"><?php echo e(old('notes')); ?></textarea>
+                              class="w-full rounded-lg border border-gray-300 dark:border-gray-700 bg-white dark:bg-gray-950 px-3 py-2 text-[13px]">{{ old('notes') }}</textarea>
                 </div>
             </div>
         </section>
@@ -462,7 +392,7 @@
         </section>
 
         <div class="flex items-center justify-between pt-2">
-            <a href="<?php echo e(route('admin.production.index')); ?>"
+            <a href="{{ route('admin.production.index') }}"
                class="text-[12px] text-gray-500 dark:text-gray-400 hover:underline">
                 Cancel
             </a>
@@ -570,12 +500,12 @@
 
 <script>
 (function () {
-    const lotMeta = <?php echo json_encode($lotMeta, 15, 512) ?>;
-    const outputProductMeta = <?php echo json_encode($outputProductMeta, 15, 512) ?>;
-    const oldOutputs = <?php echo json_encode($oldOutputs, 15, 512) ?>;
-    const oldInputProductId = <?php echo json_encode($oldInputProductId, 15, 512) ?>;
-    const oldInputLotId = <?php echo json_encode($oldInputLotId, 15, 512) ?>;
-    const oldSelectedPieceIds = <?php echo json_encode($oldSelectedPieceIds, 15, 512) ?>;
+    const lotMeta = @json($lotMeta);
+    const outputProductMeta = @json($outputProductMeta);
+    const oldOutputs = @json($oldOutputs);
+    const oldInputProductId = @json($oldInputProductId);
+    const oldInputLotId = @json($oldInputLotId);
+    const oldSelectedPieceIds = @json($oldSelectedPieceIds);
 
     const runTypeEl = document.getElementById('run_type');
     const inputProductEl = document.getElementById('input_product_id');
@@ -724,51 +654,31 @@
         }
     }
 
-    function activePieceSelectionControls() {
-        return Array.from(pieceList.querySelectorAll('input[data-piece-selection-control="1"]:not(:disabled)'));
+    function selectedPieceCheckboxes() {
+        return Array.from(pieceList.querySelectorAll('input[data-piece-checkbox="1"]:not(:disabled)'));
     }
 
     function refreshPieceSummary() {
         const lot = lotMeta[inputLotEl.value];
-        const selectedControls = activePieceSelectionControls().filter(function (control) {
-            return control.checked;
-        });
+        const boxes = selectedPieceCheckboxes().filter(cb => cb.checked);
 
-        if (!lot || selectedControls.length === 0) {
+        if (!lot || boxes.length === 0) {
             pieceSummary.textContent = 'No pieces selected.';
             consumedWeightEl.value = '';
             consumedQuantityEl.value = '';
             return;
         }
 
-        const wholeLotControl = selectedControls.find(function (control) {
-            return control.dataset.selectionKind === 'whole-lot';
-        });
-
-        if (wholeLotControl) {
-            const totalWeight = Number(wholeLotControl.dataset.weight || 0);
-            const pieceCount = Number(wholeLotControl.dataset.pieceCount || 0);
-            const availableQuantity = Number(wholeLotControl.dataset.quantity || 0);
-
-            pieceSummary.textContent = 'Entire lot selected · '
-                + pieceCount + ' piece(s) · '
-                + totalWeight.toFixed(3) + ' kg';
-            consumedWeightEl.value = totalWeight.toFixed(3);
-            consumedQuantityEl.value = lot.lot_stage === 'raw'
-                ? totalWeight.toFixed(3)
-                : String(availableQuantity > 0 ? availableQuantity : pieceCount);
-            return;
-        }
-
         let totalWeight = 0;
-        selectedControls.forEach(function (control) {
-            totalWeight += Number(control.dataset.weight || 0);
+        boxes.forEach(function (box) {
+            totalWeight += Number(box.dataset.weight || 0);
         });
 
-        const pieceCount = selectedControls.length;
+        const pieceCount = boxes.length;
 
         pieceSummary.textContent = pieceCount + ' piece(s) selected · ' + totalWeight.toFixed(3) + ' kg';
         consumedWeightEl.value = totalWeight.toFixed(3);
+
         consumedQuantityEl.value = lot.lot_stage === 'raw'
             ? totalWeight.toFixed(3)
             : String(pieceCount);
@@ -776,24 +686,19 @@
 
     function renderPiecePicker() {
         const lot = lotMeta[inputLotEl.value];
-        const previousActiveLotId = pieceWrap.dataset.activeLotId || '';
         let activeGroup = null;
 
         pieceGroups.forEach(function (group) {
             const isActive = !!lot
-                && Boolean(lot.requires_piece_selection)
+                && lot.inward_mode === 'pieces'
                 && String(group.dataset.pieceLotGroup) === String(lot.id);
 
-            if (isActive) {
-                group.classList.remove('hidden');
-            } else {
-                group.classList.add('hidden');
-            }
+            group.classList.toggle('hidden', !isActive);
 
-            group.querySelectorAll('input[data-piece-selection-control="1"]').forEach(function (control) {
-                control.disabled = !isActive;
+            group.querySelectorAll('input[data-piece-checkbox="1"]').forEach(function (checkbox) {
+                checkbox.disabled = !isActive;
                 if (!isActive) {
-                    control.checked = false;
+                    checkbox.checked = false;
                 }
             });
 
@@ -802,21 +707,14 @@
             }
         });
 
-        if (!lot || !Boolean(lot.requires_piece_selection) || !activeGroup) {
+        if (!lot || lot.inward_mode !== 'pieces' || !activeGroup) {
             pieceWrap.classList.add('hidden');
-            pieceWrap.dataset.activeLotId = '';
             setConsumedFieldsReadonly(false);
             pieceSummary.textContent = 'No pieces selected.';
-
-            if (previousActiveLotId !== '') {
-                consumedWeightEl.value = '';
-                consumedQuantityEl.value = '';
-            }
             return;
         }
 
         pieceWrap.classList.remove('hidden');
-        pieceWrap.dataset.activeLotId = String(lot.id);
         setConsumedFieldsReadonly(true);
         refreshPieceSummary();
     }
@@ -1076,15 +974,12 @@
         return rowEl;
     }
 
-    function handlePieceSelectionEvent(event) {
+    pieceList.addEventListener('change', function (event) {
         const target = event.target;
-        if (target && typeof target.matches === 'function' && target.matches('input[data-piece-selection-control="1"]')) {
+        if (target instanceof HTMLInputElement && target.matches('input[data-piece-checkbox="1"]')) {
             refreshPieceSummary();
         }
-    }
-
-    pieceList.addEventListener('change', handlePieceSelectionEvent);
-    pieceList.addEventListener('input', handlePieceSelectionEvent);
+    });
 
     runTypeEl.addEventListener('change', function () {
         inputProductEl.value = '';
@@ -1107,16 +1002,12 @@
     inputLotEl.addEventListener('input', handleInputLotSelection);
 
     selectAllPiecesBtn?.addEventListener('click', function () {
-        activePieceSelectionControls().forEach(function (control) {
-            control.checked = true;
-        });
+        selectedPieceCheckboxes().forEach(cb => cb.checked = true);
         refreshPieceSummary();
     });
 
     clearAllPiecesBtn?.addEventListener('click', function () {
-        activePieceSelectionControls().forEach(function (control) {
-            control.checked = false;
-        });
+        selectedPieceCheckboxes().forEach(cb => cb.checked = false);
         refreshPieceSummary();
     });
 
@@ -1139,5 +1030,4 @@
     }
 })();
 </script>
-<?php $__env->stopSection(); ?>
-<?php echo $__env->make('layouts.company', array_diff_key(get_defined_vars(), ['__data' => 1, '__path' => 1]))->render(); ?><?php /**PATH /Users/ooglie/Website/ChatGPT/PRODUCTIONFrozen/BandaraFrozen/resources/views/admin/production/create.blade.php ENDPATH**/ ?>
+@endsection
