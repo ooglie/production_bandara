@@ -19,6 +19,17 @@ class User extends Authenticatable implements MustVerifyEmail
     use HasRoles, HasFactory, Notifiable;
 
     /**
+     * Bandara's existing Spatie roles and permissions are stored under the
+     * `web` guard. Staff may authenticate through Laravel's separate `staff`
+     * guard, but role and permission resolution must continue using `web`.
+     *
+     * Without this explicit authorization guard, Spatie follows Laravel's
+     * request-default guard and incorrectly searches for roles such as
+     * Customer and Admin under `staff`.
+     */
+    protected string $guard_name = 'web';
+
+    /**
      * The attributes that are mass assignable.
      *
      * @var list<string>

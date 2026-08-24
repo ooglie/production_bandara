@@ -291,6 +291,9 @@
 
 
         
+        <?php echo $__env->make('admin.finance.partials.admin-nav-link', array_diff_key(get_defined_vars(), ['__data' => 1, '__path' => 1]))->render(); ?>
+
+        
         <?php if (app(\Illuminate\Contracts\Auth\Access\Gate::class)->check('manage tickets')): ?>
             <div class="mb-4">
                 <p class="text-[11px] uppercase tracking-wide text-gray-400 dark:text-gray-500 mb-1">Support</p>

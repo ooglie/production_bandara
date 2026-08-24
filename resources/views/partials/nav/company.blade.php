@@ -290,6 +290,9 @@
         @endcan
 
 
+        {{-- FINANCE --}}
+        @include('admin.finance.partials.admin-nav-link')
+
         {{-- SUPPORT --}}
         @can('manage tickets')
             <div class="mb-4">

@@ -102,6 +102,9 @@ require __DIR__.'/content.php';
 |--------------------------------------------------------------------------
 */
 
+/* Staff/customer authentication isolation routes. */
+require __DIR__.'/staff-auth.php';
+
 Route::get('/', [HomeController::class, 'index'])
     ->name('home');
 Route::get('/shop', [ShopController::class, 'index'])->name('shop.index');
@@ -802,3 +805,7 @@ Route::middleware(['auth', 'role:Stores|Admin'])
         return redirect()->route('admin.stores.dashboard');
     })
     ->name('stores.dashboard');
+
+// BANDARA_FINANCE_V1_ROUTES_START
+require __DIR__.'/finance.php';
+// BANDARA_FINANCE_V1_ROUTES_END

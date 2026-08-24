@@ -46,3 +46,7 @@ Schedule::command('queue:prune-batches --hours=48 --unfinished=168 --cancelled=1
     ->dailyAt('03:20')
     ->onOneServer()
     ->withoutOverlapping();
+
+// BANDARA_FINANCE_V1_SCHEDULE_START
+require __DIR__.'/finance-console.php';
+// BANDARA_FINANCE_V1_SCHEDULE_END

@@ -68,7 +68,11 @@
                         
                         <nav class="hidden md:flex items-center gap-4 text-[11px] text-gray-700 dark:text-gray-200">
                             
-                        </nav>
+                        
+    
+    <?php echo $__env->make('partials.b2b-application.customer-nav-link', array_diff_key(get_defined_vars(), ['__data' => 1, '__path' => 1]))->render(); ?>
+    
+</nav>
 
                         
                         <div class="flex items-center gap-2">

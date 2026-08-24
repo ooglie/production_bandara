@@ -40,6 +40,8 @@
     36 => 'Spatie\\Permission\\PermissionServiceProvider',
     37 => 'Spatie\\Translatable\\TranslatableServiceProvider',
     38 => 'App\\Providers\\AppServiceProvider',
+    39 => 'App\\Providers\\B2BApplicationServiceProvider',
+    40 => 'App\\Providers\\StaffAuthenticationServiceProvider',
   ),
   'eager' => 
   array (
@@ -66,6 +68,8 @@
     20 => 'Spatie\\Permission\\PermissionServiceProvider',
     21 => 'Spatie\\Translatable\\TranslatableServiceProvider',
     22 => 'App\\Providers\\AppServiceProvider',
+    23 => 'App\\Providers\\B2BApplicationServiceProvider',
+    24 => 'App\\Providers\\StaffAuthenticationServiceProvider',
   ),
   'deferred' => 
   array (

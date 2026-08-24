@@ -212,7 +212,11 @@
                 <p class="text-[10px] leading-4 text-gray-500 dark:text-gray-400">
                     Each selected or entered weight becomes its own PDF page. Print at 100% / actual size.
                 </p>
-            </aside>
+            
+    {{-- BANDARA_B2B_APPLICATION_ADMIN_LINK_START --}}
+    @include('partials.b2b-application.admin-nav-link')
+    {{-- BANDARA_B2B_APPLICATION_ADMIN_LINK_END --}}
+</aside>
         </form>
     </div>
 

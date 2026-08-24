@@ -92,7 +92,11 @@
                         {{-- Center: main links (desktop) --}}
                         <nav class="hidden md:flex items-center gap-4 text-[11px] text-gray-700 dark:text-gray-200">
                             
-                        </nav>
+                        
+    {{-- BANDARA_B2B_APPLICATION_CUSTOMER_LINK_START --}}
+    @include('partials.b2b-application.customer-nav-link')
+    {{-- BANDARA_B2B_APPLICATION_CUSTOMER_LINK_END --}}
+</nav>
 
                         {{-- Right: actions --}}
                         <div class="flex items-center gap-2">
