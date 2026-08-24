@@ -87,6 +87,7 @@ use App\Http\Controllers\Admin\{
     AdminBandaraCreditPreviewController,
     BandaraCreditController,
     ReportController,
+    VendorInvoiceAdjustmentController,
 };
 
 use App\Http\Controllers\Stores\DashboardController as StoresDashboardController;
@@ -480,6 +481,44 @@ Route::middleware(['auth', 'active', 'role:Admin|Manager|Accountant|CAAccountant
         Route::get('vendor-invoices/create', [VendorInvoiceController::class, 'create'])->name('vendor-invoices.create');
         Route::post('vendor-invoices', [VendorInvoiceController::class, 'store'])->name('vendor-invoices.store');
         Route::get('vendor-invoices/{vendorInvoice}', [VendorInvoiceController::class, 'show'])->name('vendor-invoices.show');
+
+        Route::get('vendor-invoices/{vendorInvoice}/edit-details', [VendorInvoiceAdjustmentController::class, 'editDetails'])
+            ->name('vendor-invoices.edit-details');
+        Route::put('vendor-invoices/{vendorInvoice}/details', [VendorInvoiceAdjustmentController::class, 'updateDetails'])
+            ->name('vendor-invoices.update-details');
+
+        Route::get('vendor-invoices/{vendorInvoice}/adjustments/create/{direction}', [VendorInvoiceAdjustmentController::class, 'createFinancial'])
+            ->whereIn('direction', ['credit', 'debit'])
+            ->name('vendor-invoices.adjustments.create');
+        Route::post('vendor-invoices/{vendorInvoice}/adjustments/{direction}', [VendorInvoiceAdjustmentController::class, 'storeFinancial'])
+            ->whereIn('direction', ['credit', 'debit'])
+            ->name('vendor-invoices.adjustments.store');
+        Route::get('vendor-invoices/{vendorInvoice}/adjustments/{adjustment}', [VendorInvoiceAdjustmentController::class, 'showAdjustment'])
+            ->name('vendor-invoices.adjustments.show');
+        Route::post('vendor-invoices/{vendorInvoice}/adjustments/{adjustment}/post', [VendorInvoiceAdjustmentController::class, 'postAdjustment'])
+            ->name('vendor-invoices.adjustments.post');
+        Route::post('vendor-invoices/{vendorInvoice}/adjustments/{adjustment}/reverse', [VendorInvoiceAdjustmentController::class, 'reverseAdjustment'])
+            ->name('vendor-invoices.adjustments.reverse');
+        Route::delete('vendor-invoices/{vendorInvoice}/adjustments/{adjustment}', [VendorInvoiceAdjustmentController::class, 'destroyAdjustment'])
+            ->name('vendor-invoices.adjustments.destroy');
+
+        Route::get('vendor-invoices/{vendorInvoice}/returns/create', [VendorInvoiceAdjustmentController::class, 'createReturn'])
+            ->name('vendor-invoices.returns.create');
+        Route::post('vendor-invoices/{vendorInvoice}/returns', [VendorInvoiceAdjustmentController::class, 'storeReturn'])
+            ->name('vendor-invoices.returns.store');
+        Route::get('vendor-invoices/{vendorInvoice}/returns/{vendorReturn}', [VendorInvoiceAdjustmentController::class, 'showReturn'])
+            ->name('vendor-invoices.returns.show');
+        Route::post('vendor-invoices/{vendorInvoice}/returns/{vendorReturn}/post', [VendorInvoiceAdjustmentController::class, 'postReturn'])
+            ->name('vendor-invoices.returns.post');
+        Route::get('vendor-invoices/{vendorInvoice}/returns/{vendorReturn}/credit-note', [VendorInvoiceAdjustmentController::class, 'createReturnCredit'])
+            ->name('vendor-invoices.returns.credit-note');
+        Route::delete('vendor-invoices/{vendorInvoice}/returns/{vendorReturn}', [VendorInvoiceAdjustmentController::class, 'destroyReturn'])
+            ->name('vendor-invoices.returns.destroy');
+
+        Route::get('vendor-invoices/{vendorInvoice}/reverse', [VendorInvoiceAdjustmentController::class, 'reverseConfirm'])
+            ->name('vendor-invoices.reverse.confirm');
+        Route::post('vendor-invoices/{vendorInvoice}/reverse', [VendorInvoiceAdjustmentController::class, 'reverseInvoice'])
+            ->name('vendor-invoices.reverse.store');
 
         Route::get('vendor-payments', [VendorPaymentController::class, 'index'])->name('vendor-payments.index');
         Route::get('vendor-payments/create', [VendorPaymentController::class, 'create'])->name('vendor-payments.create');
