@@ -106,7 +106,6 @@ final class BandaraLaunchUiMiddleware
                 'Frozen by Bandara',
                 'Bandara by Maytira',
                 'Bandara Frozen',
-                'frozen.shop',
                 'frozen.bandara.in',
             ],
             [
@@ -115,8 +114,6 @@ final class BandaraLaunchUiMiddleware
                 'Bandara',
                 'Bandara',
                 'Bandara',
-                'bandara.shop',
-                'bandara.shop',
             ],
             $html,
         );
