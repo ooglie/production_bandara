@@ -108,7 +108,9 @@ final class BandaraLaunchContentSyncCommand extends Command
         ['powered by Frozen by Bandara', 'from Bandara'],
         ['Powered by Frozen by Bandara', 'From Bandara'],
         ['Frozen by Bandara', 'Bandara'],
-];
+        ['frozen.bandara.in', 'bandara.shop'],
+        ['frozen.shop', 'bandara.shop'],
+    ];
 
     public function handle(): int
     {

@@ -1,4 +1,4 @@
-<?php if (! $__env->hasRenderedOnce('03895f62-a20f-4b6a-8475-f77fa2403075')): $__env->markAsRenderedOnce('03895f62-a20f-4b6a-8475-f77fa2403075'); ?>
+<?php if (! $__env->hasRenderedOnce('f8b5c7d5-6afb-4ebd-987c-bfa40765b2b8')): $__env->markAsRenderedOnce('f8b5c7d5-6afb-4ebd-987c-bfa40765b2b8'); ?>
     <style id="bandara-storefront-ui-refinement-v3-styles">
         /*
          * Bandara storefront UI refinement v3
