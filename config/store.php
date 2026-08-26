@@ -10,7 +10,7 @@ return [
 
     'invoice' => [
         'seller' => [
-            'signature_name' => env('STORE_INVOICE_SIGNATURE_NAME', 'For Bandara by Maytira'),
+            'signature_name' => env('STORE_INVOICE_SIGNATURE_NAME', 'For Bandara'),
             'fssai_no' => env('STORE_INVOICE_FSSAI_NO', '21526079001348'),
             'gstin_no' => env('STORE_INVOICE_GSTIN_NO', '27ABEFB3240N1ZE'),
             'address' => env('STORE_INVOICE_ADDRESS', '303B, Nityanand Complex, 247A, Bund Garden Road, Pune 411001. MH. India'),

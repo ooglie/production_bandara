@@ -1,0 +1,1 @@
+No syntax errors detected in /Users/ooglie/Downloads/bandara-storefront-launch-ui-content-v1.2/regression_check.php

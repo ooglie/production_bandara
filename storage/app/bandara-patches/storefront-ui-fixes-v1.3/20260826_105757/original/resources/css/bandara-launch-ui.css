@@ -1,0 +1,345 @@
+/* Bandara storefront launch refinements. Kept isolated for simple rollback. */
+
+:root {
+    --bandara-sticky-offset: 5.25rem;
+}
+
+.bandara-launch-reward {
+    position: relative;
+    z-index: 45;
+    border-bottom: 1px solid rgb(226 232 240 / 0.85);
+    background: rgb(248 250 252 / 0.96);
+    color: rgb(30 41 59);
+    backdrop-filter: blur(12px);
+}
+
+.dark .bandara-launch-reward {
+    border-bottom-color: rgb(51 65 85 / 0.8);
+    background: rgb(15 23 42 / 0.96);
+    color: rgb(226 232 240);
+}
+
+.bandara-launch-reward[hidden] {
+    display: none !important;
+}
+
+.bandara-launch-reward__inner {
+    position: relative;
+    display: flex;
+    min-height: 2.65rem;
+    max-width: 90rem;
+    align-items: center;
+    justify-content: center;
+    gap: 0.65rem 1rem;
+    margin-inline: auto;
+    padding: 0.55rem 3rem 0.55rem 1rem;
+    font-size: 0.78rem;
+    line-height: 1.35;
+    text-align: center;
+}
+
+.bandara-launch-reward__inner p {
+    margin: 0;
+}
+
+.bandara-launch-reward__inner a {
+    flex: none;
+    border-bottom: 1px solid currentColor;
+    color: inherit;
+    font-weight: 600;
+    text-decoration: none;
+}
+
+.bandara-launch-reward__inner span {
+    color: rgb(100 116 139);
+    font-size: 0.68rem;
+}
+
+.dark .bandara-launch-reward__inner span {
+    color: rgb(148 163 184);
+}
+
+.bandara-launch-reward__inner button {
+    position: absolute;
+    top: 50%;
+    right: 0.85rem;
+    width: 1.8rem;
+    height: 1.8rem;
+    transform: translateY(-50%);
+    border: 0;
+    border-radius: 999px;
+    background: transparent;
+    color: inherit;
+    font-size: 1.1rem;
+    line-height: 1;
+    cursor: pointer;
+}
+
+.bandara-launch-reward__inner button:hover,
+.bandara-launch-reward__inner button:focus-visible {
+    background: rgb(226 232 240 / 0.75);
+    outline: none;
+}
+
+.dark .bandara-launch-reward__inner button:hover,
+.dark .bandara-launch-reward__inner button:focus-visible {
+    background: rgb(51 65 85 / 0.75);
+}
+
+html.bandara-reveal-enabled .bandara-scroll-reveal {
+    opacity: 0;
+    transform: translate3d(0, 0.9rem, 0);
+    transition:
+        opacity 500ms ease var(--bandara-reveal-delay, 0ms),
+        transform 500ms ease var(--bandara-reveal-delay, 0ms);
+    will-change: opacity, transform;
+}
+
+html.bandara-reveal-enabled .bandara-scroll-reveal.is-bandara-visible {
+    opacity: 1;
+    transform: translate3d(0, 0, 0);
+}
+
+.bandara-product-card {
+    transform: translate3d(0, 0, 0);
+    transition:
+        transform 220ms ease,
+        box-shadow 220ms ease,
+        border-color 220ms ease;
+}
+
+@media (hover: hover) and (pointer: fine) {
+    .bandara-product-card:hover,
+    .bandara-product-card:focus-within {
+        z-index: 2;
+        transform: translate3d(0, -0.3rem, 0);
+        border-color: rgb(148 163 184 / 0.55);
+        box-shadow: 0 1.2rem 2.5rem -1.35rem rgb(15 23 42 / 0.38);
+    }
+
+    .dark .bandara-product-card:hover,
+    .dark .bandara-product-card:focus-within {
+        border-color: rgb(100 116 139 / 0.65);
+        box-shadow: 0 1.2rem 2.5rem -1.35rem rgb(0 0 0 / 0.8);
+    }
+
+    .bandara-product-card img {
+        transition: transform 320ms ease;
+    }
+
+    .bandara-product-card:hover img,
+    .bandara-product-card:focus-within img {
+        transform: scale(1.025);
+    }
+}
+
+.bandara-faq-sticky {
+    position: sticky;
+    top: var(--bandara-sticky-offset);
+    z-index: 35;
+    margin-inline: -0.35rem;
+    padding: 0.6rem 0.35rem;
+    border-bottom: 1px solid rgb(226 232 240 / 0.78);
+    background: rgb(255 255 255 / 0.9);
+    backdrop-filter: blur(14px);
+}
+
+.dark .bandara-faq-sticky {
+    border-bottom-color: rgb(51 65 85 / 0.75);
+    background: rgb(2 6 23 / 0.9);
+}
+
+.bandara-faq-sticky a[href^="#"] {
+    scroll-margin-top: calc(var(--bandara-sticky-offset) + 6.5rem);
+}
+
+.bandara-faq-anchor {
+    scroll-margin-top: calc(var(--bandara-sticky-offset) + 7rem);
+}
+
+.bandara-newsletter-confirmation {
+    display: grid;
+    gap: 0.4rem;
+    padding: 0.9rem 1rem;
+    border: 1px solid rgb(203 213 225 / 0.82);
+    border-radius: 0.65rem;
+    background: rgb(248 250 252 / 0.78);
+    color: rgb(51 65 85);
+    font-size: 0.82rem;
+    line-height: 1.5;
+}
+
+.dark .bandara-newsletter-confirmation {
+    border-color: rgb(51 65 85 / 0.9);
+    background: rgb(15 23 42 / 0.7);
+    color: rgb(203 213 225);
+}
+
+.bandara-newsletter-confirmation strong {
+    color: rgb(15 23 42);
+    font-size: 0.9rem;
+}
+
+.dark .bandara-newsletter-confirmation strong {
+    color: rgb(248 250 252);
+}
+
+.bandara-newsletter-confirmation a {
+    width: fit-content;
+    border-bottom: 1px solid currentColor;
+    color: inherit;
+    font-weight: 600;
+    text-decoration: none;
+}
+
+.bandara-founder-section {
+    padding: clamp(3.5rem, 7vw, 6.5rem) 1rem;
+    border-top: 1px solid rgb(226 232 240 / 0.8);
+    background: rgb(248 250 252 / 0.55);
+}
+
+.dark .bandara-founder-section {
+    border-top-color: rgb(51 65 85 / 0.75);
+    background: rgb(15 23 42 / 0.35);
+}
+
+.bandara-founder-section__inner {
+    width: min(72rem, 100%);
+    margin-inline: auto;
+}
+
+.bandara-founder-section__eyebrow {
+    margin: 0 0 0.65rem;
+    color: rgb(100 116 139);
+    font-size: 0.72rem;
+    font-weight: 600;
+    letter-spacing: 0.16em;
+    text-transform: uppercase;
+}
+
+.bandara-founder-section h2 {
+    margin: 0;
+    color: rgb(15 23 42);
+    font-size: clamp(1.65rem, 3vw, 2.4rem);
+    font-weight: 400;
+    letter-spacing: -0.03em;
+}
+
+.dark .bandara-founder-section h2,
+.dark .bandara-founder-card h3 {
+    color: rgb(248 250 252);
+}
+
+.bandara-founder-section__intro {
+    max-width: 50rem;
+    margin: 1rem 0 0;
+    color: rgb(71 85 105);
+    font-size: 0.95rem;
+    line-height: 1.75;
+}
+
+.dark .bandara-founder-section__intro,
+.dark .bandara-founder-card p {
+    color: rgb(203 213 225);
+}
+
+.bandara-founder-grid {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 1rem;
+    margin-top: 2rem;
+}
+
+.bandara-founder-card {
+    display: grid;
+    grid-template-columns: auto minmax(0, 1fr);
+    gap: 1rem;
+    padding: clamp(1.15rem, 2vw, 1.6rem);
+    border: 1px solid rgb(203 213 225 / 0.8);
+    border-radius: 0.85rem;
+    background: rgb(255 255 255 / 0.75);
+}
+
+.dark .bandara-founder-card {
+    border-color: rgb(51 65 85 / 0.85);
+    background: rgb(15 23 42 / 0.6);
+}
+
+.bandara-founder-card__initials {
+    display: grid;
+    width: 3rem;
+    height: 3rem;
+    place-items: center;
+    border: 1px solid rgb(148 163 184 / 0.7);
+    border-radius: 999px;
+    color: rgb(71 85 105);
+    font-size: 0.75rem;
+    font-weight: 600;
+    letter-spacing: 0.08em;
+}
+
+.dark .bandara-founder-card__initials {
+    border-color: rgb(100 116 139 / 0.85);
+    color: rgb(203 213 225);
+}
+
+.bandara-founder-card h3 {
+    margin: 0;
+    color: rgb(15 23 42);
+    font-size: 1rem;
+    font-weight: 600;
+}
+
+.bandara-founder-card__role {
+    margin: 0.18rem 0 0.75rem !important;
+    color: rgb(100 116 139) !important;
+    font-size: 0.75rem;
+    font-weight: 600;
+    letter-spacing: 0.05em;
+    text-transform: uppercase;
+}
+
+.bandara-founder-card p:last-child {
+    margin: 0;
+    color: rgb(71 85 105);
+    font-size: 0.86rem;
+    line-height: 1.7;
+}
+
+@media (max-width: 767px) {
+    .bandara-launch-reward__inner {
+        flex-wrap: wrap;
+        justify-content: flex-start;
+        padding-block: 0.65rem;
+        padding-right: 2.8rem;
+        text-align: left;
+    }
+
+    .bandara-launch-reward__inner span {
+        flex-basis: 100%;
+    }
+
+    .bandara-founder-grid {
+        grid-template-columns: 1fr;
+    }
+
+    .bandara-founder-card {
+        grid-template-columns: 1fr;
+    }
+
+    .bandara-faq-sticky {
+        overflow-x: auto;
+        overscroll-behavior-inline: contain;
+        scrollbar-width: thin;
+    }
+}
+
+@media (prefers-reduced-motion: reduce) {
+    html.bandara-reveal-enabled .bandara-scroll-reveal,
+    .bandara-product-card,
+    .bandara-product-card img {
+        opacity: 1 !important;
+        transform: none !important;
+        transition: none !important;
+    }
+}

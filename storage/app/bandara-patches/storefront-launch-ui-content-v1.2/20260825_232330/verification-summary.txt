@@ -1,0 +1,8 @@
+PASS: PHP syntax
+PASS: JavaScript syntax
+PASS: managed source integrity
+PASS: Laravel application boot and route discovery
+PASS: Blade view compilation
+PASS: frontend asset build
+PASS: self-contained Bandara launch regression checks
+PASS: transactional database content synchronization

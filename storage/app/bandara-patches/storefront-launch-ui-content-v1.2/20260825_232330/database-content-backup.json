@@ -1,0 +1,58 @@
+{
+    "version": "bandara-storefront-launch-ui-content-v1.2",
+    "status": "applied",
+    "created_at": "2026-08-25T23:23:34+05:30",
+    "connection": "mysql",
+    "database": "bandarafrozen26",
+    "changes": [
+        {
+            "table": "home_sections",
+            "key_column": "id",
+            "key_value": 1,
+            "column": "eyebrow",
+            "old": "Frozen by Bandara",
+            "new": "Bandara"
+        },
+        {
+            "table": "home_sections",
+            "key_column": "id",
+            "key_value": 5,
+            "column": "settings",
+            "old": "{\"recipe_limit\": 3, \"collection_home_section\": \"chef_picks\"}",
+            "new": "{\"recipe_limit\": 1, \"collection_home_section\": \"chef_picks\"}"
+        },
+        {
+            "table": "product_collections",
+            "key_column": "id",
+            "key_value": 5,
+            "column": "name",
+            "old": "Chef spotlight",
+            "new": "Bandara Kitchen"
+        },
+        {
+            "table": "product_collections",
+            "key_column": "id",
+            "key_value": 5,
+            "column": "description",
+            "old": "Use this space for serving notes, quick prep guidance, and practical suggestions that make the product feel easier to cook and easier to order again.",
+            "new": "Discover a carefully selected weekly recipe, a useful kitchen tip, and products that make it easier to prepare."
+        },
+        {
+            "table": "product_collections",
+            "key_column": "id",
+            "key_value": 5,
+            "column": "cta_text",
+            "old": "Browse chef picks",
+            "new": "Explore Bandara Kitchen"
+        },
+        {
+            "table": "settings",
+            "key_column": "id",
+            "key_value": 1,
+            "column": "value",
+            "old": "Bandara by Maytira",
+            "new": "Bandara"
+        }
+    ],
+    "applied_at": "2026-08-25T23:23:34+05:30"
+}

@@ -11,6 +11,8 @@ class B2BApplicationHistory extends Model
 {
     public $timestamps = false;
 
+    protected $table = 'b2b_application_histories';
+
     protected $fillable = [
         'b2b_application_id', 'actor_user_id', 'actor_label', 'event', 'from_status', 'to_status',
         'visibility', 'message', 'metadata', 'created_at',

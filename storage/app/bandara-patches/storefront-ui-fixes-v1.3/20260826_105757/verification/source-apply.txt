@@ -1,0 +1,1 @@
+STATE: /Users/ooglie/Website/ChatGPT/PRODUCTIONFrozen/BandaraFrozen/storage/app/bandara-patches/storefront-ui-fixes-v1.3/20260826_105757/install-state.json

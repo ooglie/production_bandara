@@ -22,10 +22,10 @@
         $chefCollection?->image_path,
     ])));
 
-    $chefSpotlightEyebrow = $section->getSetting('spotlight_eyebrow', $chefCollection?->eyebrow ?: 'Chef spotlight');
+    $chefSpotlightEyebrow = $section->getSetting('spotlight_eyebrow', $chefCollection?->eyebrow ?: 'Bandara Kitchen');
     $chefSpotlightTitle = $section->getSetting('spotlight_title', $chefCollection?->name ?: 'Chef notes, serving ideas, and practical cooking tips.');
     $chefSpotlightDescription = $section->getSetting('spotlight_description', $section->body ?: ($chefCollection?->description ?: 'Use collections and recipes to explain how to finish, plate, or serve your frozen products in a more inspiring way.'));
-    $chefSpotlightCtaText = $section->cta_text ?: ($chefCollection?->cta_text ?: 'Browse chef picks');
+    $chefSpotlightCtaText = $section->cta_text ?: ($chefCollection?->cta_text ?: 'Explore Bandara Kitchen');
     $chefSpotlightCtaUrl = $section->cta_url ?: ($chefCollection ? $collectionUrl($chefCollection) : null);
 
     $spotlightTipOne = $section->getSetting('spotlight_tip_one', 'Great for air fryer, pan, or oven-finish cooking');

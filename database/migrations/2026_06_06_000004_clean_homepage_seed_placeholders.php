@@ -25,7 +25,7 @@ return new class extends Migration {
     {
         $defaults = [
             'hero' => [
-                'eyebrow' => 'Frozen • Bandara by Maytira',
+                'eyebrow' => 'Frozen • Bandara',
                 'title' => 'Frozen favourites for everyday cooking and special gatherings.',
                 'subtitle' => 'Shop frozen and chilled products, discover chef-led serving ideas, and order confidently for home or business.',
                 'cta_text' => 'Shop all products',

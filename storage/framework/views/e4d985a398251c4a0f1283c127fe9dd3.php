@@ -6,7 +6,7 @@
     <meta name="google" content="notranslate">
     <meta name="robots" content="notranslate">
 
-    <title><?php echo $__env->yieldContent('title', config('app.name', 'Bandara by Maytira')); ?></title>
+    <title><?php echo $__env->yieldContent('title', config('app.name', 'Bandara')); ?></title>
 
     <?php echo app('Illuminate\Foundation\Vite')(['resources/css/app.css', 'resources/js/app.js']); ?>
 

@@ -32,7 +32,10 @@ class B2BApplicationController extends Controller
             return redirect()->route('account.business-application.step-one');
         }
 
-        $application?->load(['histories' => static fn ($query) => $query->where('visibility', 'customer'), 'profile']);
+        $application?->load([
+            'histories' => static fn ($query) => $query->where('visibility', 'customer'),
+            'profile',
+        ]);
 
         return view('account.business-application.show', compact('application', 'isB2B'));
     }
@@ -41,7 +44,8 @@ class B2BApplicationController extends Controller
     {
         $application = $this->applicationFor($request);
 
-        if (B2BApplicationAccess::isB2B($request->user()) || ($application && ! $application->status->customerCanEdit())) {
+        if (B2BApplicationAccess::isB2B($request->user())
+            || ($application && ! $application->status->customerCanEdit())) {
             return redirect()->route('account.business-application.show');
         }
 
@@ -49,7 +53,10 @@ class B2BApplicationController extends Controller
         $cities = $this->locations->citiesForState(old('state_id', $application?->state_id));
         $defaults = $this->contactDefaults($request);
 
-        return view('account.business-application.step-one', compact('application', 'states', 'cities', 'defaults'));
+        return view(
+            'account.business-application.step-one',
+            compact('application', 'states', 'cities', 'defaults'),
+        );
     }
 
     public function saveStepOne(SaveB2BApplicationBusinessRequest $request): RedirectResponse
@@ -61,7 +68,7 @@ class B2BApplicationController extends Controller
         $data = $request->validated();
         $data['state_name'] = $this->locations->stateName($data['state_id']) ?: 'Unknown state';
         $data['city_name'] = $this->locations->cityName($data['city_id']) ?: 'Unknown city';
-        $application = $this->workflow->saveBusinessDetails($request->user(), $data);
+        $this->workflow->saveBusinessDetails($request->user(), $data);
 
         return redirect()
             ->route('account.business-application.step-two')
@@ -76,7 +83,8 @@ class B2BApplicationController extends Controller
             return redirect()->route('account.business-application.step-one');
         }
 
-        if (B2BApplicationAccess::isB2B($request->user()) || ! $application->status->customerCanEdit()) {
+        if (B2BApplicationAccess::isB2B($request->user())
+            || ! $application->status->customerCanEdit()) {
             return redirect()->route('account.business-application.show');
         }
 
@@ -101,7 +109,7 @@ class B2BApplicationController extends Controller
         $application = $this->workflow->saveRequirements($request->user(), $application, $data);
 
         if ($request->input('intent') === 'submit') {
-            $application = $this->workflow->submit($request->user(), $application);
+            $this->workflow->submit($request->user(), $application);
 
             return redirect()
                 ->route('account.business-application.show')
@@ -110,16 +118,26 @@ class B2BApplicationController extends Controller
 
         return redirect()
             ->route('account.business-application.show')
-            ->with('success', $application->status->value === 'more_information_required'
-                ? 'Your changes were saved. Submit the application when the requested information is complete.'
-                : 'Your application was saved as a draft.');
+            ->with(
+                'success',
+                $application->status->value === 'more_information_required'
+                    ? 'Your changes were saved. Submit the application when the requested information is complete.'
+                    : 'Your application was saved as a draft.',
+            );
     }
 
     public function cities(Request $request): JsonResponse
     {
         $validated = $request->validate(['state_id' => ['required', 'integer']]);
+        $cities = $this->locations
+            ->citiesForState($validated['state_id'])
+            ->map(static fn (object $city): array => [
+                'id' => $city->id,
+                'name' => (string) $city->name,
+            ])
+            ->values();
 
-        return response()->json($this->locations->citiesForState($validated['state_id'])->values());
+        return response()->json($cities);
     }
 
     public function withdraw(Request $request): RedirectResponse
@@ -128,7 +146,9 @@ class B2BApplicationController extends Controller
         abort_unless($application, 404);
         $this->workflow->withdraw($request->user(), $application);
 
-        return redirect()->route('account.business-application.show')->with('success', 'Your application has been withdrawn.');
+        return redirect()
+            ->route('account.business-application.show')
+            ->with('success', 'Your application has been withdrawn.');
     }
 
     public function restart(Request $request): RedirectResponse
@@ -137,14 +157,19 @@ class B2BApplicationController extends Controller
         abort_unless($application, 404);
         $this->workflow->restart($request->user(), $application);
 
-        return redirect()->route('account.business-application.step-one')->with('success', 'You can now update and resubmit your application.');
+        return redirect()
+            ->route('account.business-application.step-one')
+            ->with('success', 'You can now update and resubmit your application.');
     }
 
     private function applicationFor(Request $request): ?B2BApplication
     {
-        return B2BApplication::query()->where('user_id', $request->user()->getKey())->first();
+        return B2BApplication::query()
+            ->where('user_id', $request->user()->getKey())
+            ->first();
     }
 
+    /** @return array<string, string> */
     private function contactDefaults(Request $request): array
     {
         $user = $request->user();

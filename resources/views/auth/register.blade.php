@@ -10,7 +10,7 @@
         <div class="rounded-lg border border-gray-200 dark:border-gray-800 bg-gradient-to-br from-white via-blue-50 to-gray-50 dark:from-gray-900 dark:via-gray-900 dark:to-slate-900 p-6 sm:p-8 flex flex-col justify-between min-h-[320px]">
             <div class="space-y-4">
                 <span class="inline-flex items-center rounded-sm border border-gray-200 dark:border-gray-700 bg-white/90 dark:bg-gray-950/50 px-3 py-1 text-[11px] font-medium uppercase tracking-[0.14em] text-gray-600 dark:text-gray-300">
-                    Frozen • Bandara by Maytira
+                    Frozen • Bandara
                 </span>
 
                 <div class="space-y-2">
@@ -185,4 +185,8 @@
         </div>
     </div>
 </div>
+
+{{-- BANDARA-B2B-CORRECTIVE:REGISTER:START --}}
+@include('partials.b2b-application.registration-link')
+{{-- BANDARA-B2B-CORRECTIVE:REGISTER:END --}}
 @endsection

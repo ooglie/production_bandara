@@ -18,7 +18,7 @@
                         </span>
                     </div>
                     <p class="text-[11px] text-gray-500 dark:text-gray-400">
-                        Quality frozen products, GST‑ready invoicing, and a mobile‑first shopping experience powered by Frozen by Bandara.
+                        Premium meats, seafood, cheese and speciality foods for homes, chefs and businesses—with GST-ready invoicing and a seamless mobile-first shopping experience from Bandara.
                     </p>
                     <br>
                     <span class="space-y-2 text-[11px] text-gray-600 dark:text-gray-300">
@@ -51,6 +51,10 @@
                         Customer
                     </h3>
                     <ul class="space-y-2 text-[11px] text-gray-600 dark:text-gray-300">
+
+<li><a href="<?php echo e(route('business-account.index')); ?>" class="hover:text-gray-900 dark:hover:text-gray-100">Business Accounts</a></li>
+
+
                         <?php if(Route::has('orders.index')): ?>
                             <li><a href="<?php echo e(route('orders.index')); ?>" class="hover:text-gray-900 dark:hover:text-gray-100">My orders</a></li>
                         <?php endif; ?>

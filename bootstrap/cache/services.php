@@ -42,6 +42,7 @@
     38 => 'App\\Providers\\AppServiceProvider',
     39 => 'App\\Providers\\B2BApplicationServiceProvider',
     40 => 'App\\Providers\\StaffAuthenticationServiceProvider',
+    41 => 'App\\Providers\\BandaraLaunchUiServiceProvider',
   ),
   'eager' => 
   array (
@@ -70,6 +71,7 @@
     22 => 'App\\Providers\\AppServiceProvider',
     23 => 'App\\Providers\\B2BApplicationServiceProvider',
     24 => 'App\\Providers\\StaffAuthenticationServiceProvider',
+    25 => 'App\\Providers\\BandaraLaunchUiServiceProvider',
   ),
   'deferred' => 
   array (

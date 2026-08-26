@@ -14,4 +14,4 @@
 <p>You can also view this invoice anytime in your account under <strong>Invoices</strong>.</p>
 
 <p>Best regards,<br>
-Frozen - Bandara by Maytira</p>
+Frozen - Bandara</p>

@@ -1,0 +1,10 @@
++---------------------+------------------+
+| Table               | Values to update |
++---------------------+------------------+
+| home_sections       | 2                |
+| product_collections | 3                |
+| settings            | 1                |
++---------------------+------------------+
+Total exact value replacements: 6
+Database content replacements applied transactionally.
+Backup: /Users/ooglie/Website/ChatGPT/PRODUCTIONFrozen/BandaraFrozen/storage/app/bandara-patches/storefront-launch-ui-content-v1.2/20260825_232330/database-content-backup.json

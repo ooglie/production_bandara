@@ -1,0 +1,13 @@
+
+> build
+> vite build
+
+vite v7.3.6 building client environment for production...
+transforming...
+✓ 56 modules transformed.
+rendering chunks...
+computing gzip size...
+public/build/manifest.json              0.33 kB │ gzip:  0.17 kB
+public/build/assets/app-ug-ScYoP.css  168.48 kB │ gzip: 23.73 kB
+public/build/assets/app-DG-gpTg2.js    59.43 kB │ gzip: 22.18 kB
+✓ built in 426ms

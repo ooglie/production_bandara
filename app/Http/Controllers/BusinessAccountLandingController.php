@@ -17,7 +17,9 @@ class BusinessAccountLandingController extends Controller
         $isB2B = false;
 
         if ($request->user()) {
-            $application = B2BApplication::query()->where('user_id', $request->user()->getKey())->first();
+            $application = B2BApplication::query()
+                ->where('user_id', $request->user()->getKey())
+                ->first();
             $isB2B = B2BApplicationAccess::isB2B($request->user());
         }
 

@@ -625,7 +625,7 @@
 
 <div class="signoff">
     Sincerely,<br><br>
-    <strong>{{ $seller['signature_name'] ?? 'For Bandara by Maytira' }}</strong>
+    <strong>{{ $seller['signature_name'] ?? 'For Bandara' }}</strong>
 </div>
 
 <div class="company-footer">

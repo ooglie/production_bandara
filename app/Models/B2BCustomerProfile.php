@@ -12,6 +12,8 @@ class B2BCustomerProfile extends Model
 {
     use HasFactory;
 
+    protected $table = 'b2b_customer_profiles';
+
     protected $fillable = [
         'user_id', 'b2b_application_id', 'legal_business_name', 'trading_name', 'business_type',
         'gstin', 'pan', 'fssai_number', 'address_line_1', 'address_line_2', 'state_id', 'city_id',

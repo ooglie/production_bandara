@@ -51,7 +51,7 @@
             </span>
 
             <span class="truncate text-sm font-semibold text-gray-900 dark:text-gray-50">
-                Bandara by Maytira
+                Bandara
             </span>
         </span>
 

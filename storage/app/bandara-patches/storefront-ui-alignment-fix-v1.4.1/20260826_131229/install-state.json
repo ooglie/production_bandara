@@ -1,0 +1,18 @@
+{
+  "patch": "storefront-ui-alignment-fix-v1.4.1",
+  "version": "1.4.1",
+  "app": "/Users/ooglie/Website/ChatGPT/PRODUCTIONFrozen/BandaraFrozen",
+  "backup_dir": "/Users/ooglie/Website/ChatGPT/PRODUCTIONFrozen/BandaraFrozen/storage/app/bandara-patches/storefront-ui-alignment-fix-v1.4.1/20260826_131229",
+  "files": [
+    {
+      "path": "resources/js/bandara-launch-ui.js",
+      "before_sha256": "8981846aaf093943d0c9779c01a14447d3594aa1dbd88811c3b10743b451def0",
+      "after_sha256": "01b5feaa08e6f73523c162b045708c0148483ae114464be5f4616a5f0ccc3fc9"
+    },
+    {
+      "path": "resources/css/bandara-launch-ui.css",
+      "before_sha256": "105c2fc89221106bc1f4c7a9de2af952e0760f4ba61653d7ebb07c771f3b622b",
+      "after_sha256": "94eec39cd4632e3babeeef75002a40893585d2be506e5f57f00f839aaa8c6b7b"
+    }
+  ]
+}

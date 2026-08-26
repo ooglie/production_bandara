@@ -1,0 +1,1 @@
+PASS: self-contained Bandara launch regression checks

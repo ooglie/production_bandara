@@ -1,0 +1,15 @@
+{
+    "patch": "Bandara B2B Tabbed Business Registration UI Hotfix",
+    "version": "4.3-20260825",
+    "status": "installed_verified",
+    "project": "/Users/ooglie/Website/ChatGPT/PRODUCTIONFrozen/BandaraFrozen",
+    "target": "resources/views/business-account/register.blade.php",
+    "created_at": "2026-08-24T20:18:37+00:00",
+    "pre_hash": "24384d515b8e160bee27e40404c992ef2417bac6edfdfbcd050b80459df39e64",
+    "installed_hash": "f5e6b8e12c62041abdc7880f628dcd6049e775e7200f84555d78cb1fbae2afb7",
+    "backup": "backups/resources/views/business-account/register.blade.php",
+    "wrapper_prefix_hash": "bc21f8795be5c528a4b7560dc7d4eb510b762240f76295d9ca9c30badd1942ca",
+    "wrapper_suffix_hash": "02611fe5cd9cf170a4e95274da096ba49822f2cb15c0129fbc569559a9b59ee7",
+    "database_changes": [],
+    "verified_at": "2026-08-24T20:18:40+00:00"
+}

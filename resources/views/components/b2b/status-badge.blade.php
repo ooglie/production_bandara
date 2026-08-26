@@ -1,13 +1,9 @@
 @props(['status'])
-
 @php
     $resolved = $status instanceof \App\Enums\B2BApplicationStatus
         ? $status
-        : \App\Enums\B2BApplicationStatus::tryFrom((string) $status);
+        : (is_string($status) ? \App\Enums\B2BApplicationStatus::tryFrom($status) : null);
 @endphp
-
-@if ($resolved)
-    <span {{ $attributes->merge(['class' => 'inline-flex items-center rounded-full px-2.5 py-1 text-xs font-medium ring-1 ring-inset '.$resolved->badgeClasses()]) }}>
-        {{ $resolved->label() }}
-    </span>
-@endif
+<span {{ $attributes->merge(['class' => config('b2b_application_corrective.ui.badge', '')]) }}>
+    {{ $resolved?->label() ?? ucfirst(str_replace('_', ' ', (string) $status)) }}
+</span>

@@ -1,0 +1,93 @@
+@import 'tailwindcss';
+
+@source '../../vendor/laravel/framework/src/Illuminate/Pagination/resources/views/*.blade.php';
+@source '../../storage/framework/views/*.php';
+@source '../**/*.blade.php';
+@source '../**/*.js';
+
+@theme {
+    --font-sans: 'Instrument Sans', ui-sans-serif, system-ui, sans-serif, 'Apple Color Emoji', 'Segoe UI Emoji',
+        'Segoe UI Symbol', 'Noto Color Emoji';
+}
+
+@custom-variant dark (&:where(.dark, .dark *));
+/* ================================
+   LANGUAGE SWITCHER
+================================ */
+
+.language-switcher {
+    position: relative;
+    display: inline-block;
+}
+
+.lang-btn {
+    min-width: 36px;
+    height: 32px;
+    padding: 0 8px;
+    cursor: pointer;
+    font-size: 10px;
+    line-height: 1;
+    transition: background-color 150ms ease, border-color 150ms ease, transform 150ms ease;
+}
+
+.lang-btn:hover {
+    transform: translateY(-1px);
+}
+
+.lang-dropdown {
+    min-width: 176px;
+    padding: 4px;
+    border-radius: 12px;
+    z-index: 9999;
+    box-shadow: 0 10px 30px rgba(0, 0, 0, 0.12);
+}
+
+.lang-dropdown li + li {
+    margin-top: 2px;
+}
+
+.lang-dropdown button {
+    border-radius: 8px;
+}
+
+/* ================================
+   GOOGLE TRANSLATE CLEANUP
+================================ */
+
+/* this is the key rule hiding the stubborn top-left google UI */
+body > .skiptranslate {
+    display: none !important;
+}
+
+/* hide banner / iframe / gadget remnants */
+.goog-te-banner-frame,
+.goog-te-banner-frame.skiptranslate,
+iframe.goog-te-banner-frame,
+.goog-te-gadget,
+.goog-te-gadget-simple,
+.goog-te-gadget-icon,
+.goog-logo-link,
+.goog-tooltip,
+.goog-te-balloon-frame,
+#goog-gt-tt,
+.skiptranslate iframe {
+    display: none !important;
+    visibility: hidden !important;
+}
+
+/* remove google text highlight */
+.goog-text-highlight {
+    background: transparent !important;
+    box-shadow: none !important;
+    color: inherit !important;
+}
+
+/* prevent google from shifting layout */
+html {
+    margin-top: 0 !important;
+}
+
+body {
+    top: 0 !important;
+    position: static !important;
+}

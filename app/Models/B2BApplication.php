@@ -94,12 +94,12 @@ class B2BApplication extends Model
 
     public function histories(): HasMany
     {
-        return $this->hasMany(B2BApplicationHistory::class)->orderByDesc('created_at')->orderByDesc('id');
+        return $this->hasMany(B2BApplicationHistory::class, 'b2b_application_id')->orderByDesc('created_at')->orderByDesc('id');
     }
 
     public function profile(): HasOne
     {
-        return $this->hasOne(B2BCustomerProfile::class);
+        return $this->hasOne(B2BCustomerProfile::class, 'b2b_application_id');
     }
 
     public function scopeOpen(Builder $query): Builder

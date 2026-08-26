@@ -1,0 +1,41 @@
+{
+    "patch": "Bandara B2B Dedicated Business Registration",
+    "version": "4.0.1-20260824",
+    "project": "/Users/ooglie/Website/ChatGPT/PRODUCTIONFrozen/BandaraFrozen",
+    "installed_at": "2026-08-24T18:57:21+00:00",
+    "status": "installed_and_verified",
+    "package_manifest_hash": "972f95d8a0248a77e1de569282bc3da61ad9e5b2ae776eeb5edfbc4e7ecc384e",
+    "b2c_registration_view": "resources/views/auth/register.blade.php",
+    "b2c_registration_pre_hash": "c7143fdc74a72f3326b8c347cd714e3756f0a69600698c1a0577d06f3349bbcc",
+    "business_view_mode": "extends",
+    "business_view_layout": "layouts.customer",
+    "business_view_section": "content",
+    "backups": {
+        "routes/b2b_application.php": "backups/routes/b2b_application.php",
+        "resources/views/partials/b2b-application/registration-link.blade.php": "backups/resources/views/partials/b2b-application/registration-link.blade.php"
+    },
+    "pre_hashes": {
+        "routes/b2b_application.php": "ca5dc4cbce31dacfbc55df2b439b9ce5343da7bc1ae1376618deaa4c03b5d5ed",
+        "resources/views/partials/b2b-application/registration-link.blade.php": "bb15510700b604527f6eb8d45a4c1c1ed7079070fad78d0d22865a4916bf219c"
+    },
+    "post_hashes": {
+        "routes/b2b_application.php": "94f3191ecfd85691ad2978f8260d58d055d15b0a1a58e8a84df422fbe162685f",
+        "resources/views/partials/b2b-application/registration-link.blade.php": "1454f2bebc3564f5f4134657fa7f8ade6d1fee7e65d3dac4570d321214eb7f73",
+        "app/Http/Controllers/BusinessAccountRegistrationController.php": "dff834b025fc2afeb753d3e41c4b623f89ca2facec80594effcd0eacc1147624",
+        "app/Http/Requests/Auth/RegisterBusinessAccountRequest.php": "0052fb971af3d5fabbebc138a6200ba35b04e6c70ac9f9d762f1682e0ba9d107",
+        "tests/Unit/B2BBusinessRegistrationSourceTest.php": "4b9e783a09e933991bdd7dd7d0c64173ab9cd2c588221b9b8781d8ce3b07b2dd",
+        "resources/views/business-account/register.blade.php": "a609110c6e722e7d186a267e66dec52c90c53446a4a439a04563395bf7b9d680"
+    },
+    "new_files": [
+        "app/Http/Controllers/BusinessAccountRegistrationController.php",
+        "app/Http/Requests/Auth/RegisterBusinessAccountRequest.php",
+        "tests/Unit/B2BBusinessRegistrationSourceTest.php",
+        "resources/views/business-account/register.blade.php"
+    ],
+    "modified_files": [
+        "routes/b2b_application.php",
+        "resources/views/partials/b2b-application/registration-link.blade.php"
+    ],
+    "verified_at": "2026-08-24T18:57:24+00:00",
+    "b2c_registration_post_hash": "c7143fdc74a72f3326b8c347cd714e3756f0a69600698c1a0577d06f3349bbcc"
+}

@@ -1,0 +1,570 @@
+/* Bandara storefront launch refinements. Kept isolated for simple rollback. */
+
+:root {
+    --bandara-sticky-offset: 5.25rem;
+}
+
+.bandara-launch-reward {
+    position: relative;
+    z-index: 45;
+    border-bottom: 1px solid rgb(226 232 240 / 0.85);
+    background: rgb(248 250 252 / 0.96);
+    color: rgb(30 41 59);
+    backdrop-filter: blur(12px);
+}
+
+:is(.dark, [data-theme="dark"]) .bandara-launch-reward {
+    border-bottom-color: rgb(51 65 85 / 0.8);
+    background: rgb(15 23 42 / 0.96);
+    color: rgb(226 232 240);
+}
+
+.bandara-launch-reward[hidden] {
+    display: none !important;
+}
+
+.bandara-launch-reward__inner {
+    position: relative;
+    display: flex;
+    min-height: 2.65rem;
+    max-width: 90rem;
+    align-items: center;
+    justify-content: center;
+    gap: 0.65rem 1rem;
+    margin-inline: auto;
+    padding: 0.55rem 3rem 0.55rem 1rem;
+    font-size: 0.78rem;
+    line-height: 1.35;
+    text-align: center;
+}
+
+.bandara-launch-reward__inner p {
+    margin: 0;
+}
+
+.bandara-launch-reward__inner a {
+    flex: none;
+    border-bottom: 1px solid currentColor;
+    color: inherit;
+    font-weight: 600;
+    text-decoration: none;
+}
+
+.bandara-launch-reward__inner span {
+    color: rgb(100 116 139);
+    font-size: 0.68rem;
+}
+
+:is(.dark, [data-theme="dark"]) .bandara-launch-reward__inner span {
+    color: rgb(148 163 184);
+}
+
+.bandara-launch-reward__inner button {
+    position: absolute;
+    top: 50%;
+    right: 0.85rem;
+    width: 1.8rem;
+    height: 1.8rem;
+    transform: translateY(-50%);
+    border: 0;
+    border-radius: 999px;
+    background: transparent;
+    color: inherit;
+    font-size: 1.1rem;
+    line-height: 1;
+    cursor: pointer;
+}
+
+.bandara-launch-reward__inner button:hover,
+.bandara-launch-reward__inner button:focus-visible {
+    background: rgb(226 232 240 / 0.75);
+    outline: none;
+}
+
+:is(.dark, [data-theme="dark"]) .bandara-launch-reward__inner button:hover,
+:is(.dark, [data-theme="dark"]) .bandara-launch-reward__inner button:focus-visible {
+    background: rgb(51 65 85 / 0.75);
+}
+
+html.bandara-reveal-enabled .bandara-scroll-reveal {
+    opacity: 0;
+    transform: translate3d(0, 0.9rem, 0);
+    transition:
+        opacity 500ms ease var(--bandara-reveal-delay, 0ms),
+        transform 500ms ease var(--bandara-reveal-delay, 0ms);
+    will-change: opacity, transform;
+}
+
+html.bandara-reveal-enabled .bandara-scroll-reveal.is-bandara-visible {
+    opacity: 1;
+    transform: translate3d(0, 0, 0);
+}
+
+.bandara-product-card {
+    transform: translate3d(0, 0, 0);
+    transition:
+        transform 220ms ease,
+        box-shadow 220ms ease,
+        border-color 220ms ease;
+}
+
+@media (hover: hover) and (pointer: fine) {
+    .bandara-product-card:hover,
+    .bandara-product-card:focus-within {
+        z-index: 2;
+        transform: translate3d(0, -0.3rem, 0);
+        border-color: rgb(148 163 184 / 0.55);
+        box-shadow: 0 1.2rem 2.5rem -1.35rem rgb(15 23 42 / 0.38);
+    }
+
+    :is(.dark, [data-theme="dark"]) .bandara-product-card:hover,
+    :is(.dark, [data-theme="dark"]) .bandara-product-card:focus-within {
+        border-color: rgb(100 116 139 / 0.65);
+        box-shadow: 0 1.2rem 2.5rem -1.35rem rgb(0 0 0 / 0.8);
+    }
+
+    .bandara-product-card img {
+        transition: transform 320ms ease;
+    }
+
+    .bandara-product-card:hover img,
+    .bandara-product-card:focus-within img {
+        transform: scale(1.025);
+    }
+}
+
+.bandara-faq-sticky {
+    position: sticky;
+    top: var(--bandara-sticky-offset);
+    z-index: 35;
+    margin-inline: -0.35rem;
+    padding: 0.6rem 0.35rem;
+    border-bottom: 1px solid rgb(226 232 240 / 0.78);
+    background: rgb(255 255 255 / 0.9);
+    backdrop-filter: blur(14px);
+}
+
+:is(.dark, [data-theme="dark"]) .bandara-faq-sticky {
+    border-bottom-color: rgb(51 65 85 / 0.75);
+    background: rgb(2 6 23 / 0.9);
+}
+
+.bandara-faq-sticky a[href*="#"] {
+    scroll-margin-top: calc(var(--bandara-sticky-offset) + 6.5rem);
+}
+
+.bandara-faq-anchor {
+    scroll-margin-top: calc(var(--bandara-sticky-offset) + 7rem);
+}
+
+.bandara-newsletter-confirmation {
+    display: grid;
+    gap: 0.4rem;
+    padding: 0.9rem 1rem;
+    border: 1px solid rgb(203 213 225 / 0.82);
+    border-radius: 0.65rem;
+    background: rgb(248 250 252 / 0.78);
+    color: rgb(51 65 85);
+    font-size: 0.82rem;
+    line-height: 1.5;
+}
+
+:is(.dark, [data-theme="dark"]) .bandara-newsletter-confirmation {
+    border-color: rgb(51 65 85 / 0.9);
+    background: rgb(15 23 42 / 0.7);
+    color: rgb(203 213 225);
+}
+
+.bandara-newsletter-confirmation strong {
+    color: rgb(15 23 42);
+    font-size: 0.9rem;
+}
+
+:is(.dark, [data-theme="dark"]) .bandara-newsletter-confirmation strong {
+    color: rgb(248 250 252);
+}
+
+.bandara-newsletter-confirmation a {
+    width: fit-content;
+    border-bottom: 1px solid currentColor;
+    color: inherit;
+    font-weight: 600;
+    text-decoration: none;
+}
+
+.bandara-founder-section {
+    padding: clamp(3.5rem, 7vw, 6.5rem) 1rem;
+    border-top: 1px solid rgb(226 232 240 / 0.8);
+    background: rgb(248 250 252 / 0.55);
+}
+
+:is(.dark, [data-theme="dark"]) .bandara-founder-section {
+    border-top-color: rgb(51 65 85 / 0.75);
+    background: rgb(15 23 42 / 0.35);
+}
+
+.bandara-founder-section__inner {
+    width: min(72rem, 100%);
+    margin-inline: auto;
+}
+
+.bandara-founder-section__eyebrow {
+    margin: 0 0 0.65rem;
+    color: rgb(100 116 139);
+    font-size: 0.72rem;
+    font-weight: 600;
+    letter-spacing: 0.16em;
+    text-transform: uppercase;
+}
+
+.bandara-founder-section h2 {
+    margin: 0;
+    color: rgb(15 23 42);
+    font-size: clamp(1.65rem, 3vw, 2.4rem);
+    font-weight: 400;
+    letter-spacing: -0.03em;
+}
+
+:is(.dark, [data-theme="dark"]) .bandara-founder-section h2,
+:is(.dark, [data-theme="dark"]) .bandara-founder-card h3 {
+    color: rgb(248 250 252);
+}
+
+.bandara-founder-section__intro {
+    max-width: 50rem;
+    margin: 1rem 0 0;
+    color: rgb(71 85 105);
+    font-size: 0.95rem;
+    line-height: 1.75;
+}
+
+:is(.dark, [data-theme="dark"]) .bandara-founder-section__intro,
+:is(.dark, [data-theme="dark"]) .bandara-founder-card p {
+    color: rgb(203 213 225);
+}
+
+.bandara-founder-grid {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 1rem;
+    margin-top: 2rem;
+}
+
+.bandara-founder-card {
+    display: grid;
+    grid-template-columns: auto minmax(0, 1fr);
+    gap: 1rem;
+    padding: clamp(1.15rem, 2vw, 1.6rem);
+    border: 1px solid rgb(203 213 225 / 0.8);
+    border-radius: 0.85rem;
+    background: rgb(255 255 255 / 0.75);
+}
+
+:is(.dark, [data-theme="dark"]) .bandara-founder-card {
+    border-color: rgb(51 65 85 / 0.85);
+    background: rgb(15 23 42 / 0.6);
+}
+
+.bandara-founder-card__initials {
+    display: grid;
+    width: 3rem;
+    height: 3rem;
+    place-items: center;
+    border: 1px solid rgb(148 163 184 / 0.7);
+    border-radius: 999px;
+    color: rgb(71 85 105);
+    font-size: 0.75rem;
+    font-weight: 600;
+    letter-spacing: 0.08em;
+}
+
+:is(.dark, [data-theme="dark"]) .bandara-founder-card__initials {
+    border-color: rgb(100 116 139 / 0.85);
+    color: rgb(203 213 225);
+}
+
+.bandara-founder-card h3 {
+    margin: 0;
+    color: rgb(15 23 42);
+    font-size: 1rem;
+    font-weight: 600;
+}
+
+.bandara-founder-card__role {
+    margin: 0.18rem 0 0.75rem !important;
+    color: rgb(100 116 139) !important;
+    font-size: 0.75rem;
+    font-weight: 600;
+    letter-spacing: 0.05em;
+    text-transform: uppercase;
+}
+
+.bandara-founder-card p:last-child {
+    margin: 0;
+    color: rgb(71 85 105);
+    font-size: 0.86rem;
+    line-height: 1.7;
+}
+
+@media (max-width: 767px) {
+    .bandara-launch-reward__inner {
+        flex-wrap: wrap;
+        justify-content: flex-start;
+        padding-block: 0.65rem;
+        padding-right: 2.8rem;
+        text-align: left;
+    }
+
+    .bandara-launch-reward__inner span {
+        flex-basis: 100%;
+    }
+
+    .bandara-founder-grid {
+        grid-template-columns: 1fr;
+    }
+
+    .bandara-founder-card {
+        grid-template-columns: 1fr;
+    }
+
+    .bandara-faq-sticky {
+        overflow-x: auto;
+        overscroll-behavior-inline: contain;
+        scrollbar-width: thin;
+    }
+}
+
+@media (prefers-reduced-motion: reduce) {
+    html.bandara-reveal-enabled .bandara-scroll-reveal,
+    .bandara-product-card,
+    .bandara-product-card img {
+        opacity: 1 !important;
+        transform: none !important;
+        transition: none !important;
+    }
+}
+
+/* Bandara launch UI corrective patch v1.3 */
+.bandara-launch-reward {
+    display: block !important;
+    position: relative;
+    width: 100% !important;
+    max-width: none !important;
+    visibility: visible !important;
+    opacity: 1 !important;
+    clear: both;
+    z-index: 46 !important;
+}
+
+.page-body > .bandara-launch-reward,
+[data-page-body] > .bandara-launch-reward,
+main > .bandara-launch-reward,
+[role="main"] > .bandara-launch-reward {
+    margin: 0 !important;
+}
+
+.bandara-launch-reward[hidden] {
+    display: none !important;
+}
+
+.bandara-product-detail-page .bandara-product-card {
+    position: relative;
+    transform: translate3d(0, 0, 0);
+    transition:
+        transform 250ms ease,
+        box-shadow 250ms ease,
+        border-color 250ms ease !important;
+}
+
+@media (hover: hover) and (pointer: fine) {
+    .bandara-product-detail-page .bandara-product-card:hover,
+    .bandara-product-detail-page .bandara-product-card:focus-within {
+        z-index: 3;
+        transform: translate3d(0, -3px, 0) !important;
+        border-color: var(--border-strong, rgb(148 163 184 / 0.55)) !important;
+        box-shadow: var(--shadow-hover, 0 8px 40px rgb(15 23 42 / 0.22)) !important;
+    }
+
+    .bandara-product-detail-page .bandara-product-card img {
+        transition: transform 400ms ease !important;
+    }
+
+    .bandara-product-detail-page .bandara-product-card:hover img,
+    .bandara-product-detail-page .bandara-product-card:focus-within img {
+        transform: scale(1.04) !important;
+    }
+}
+
+.bandara-faq-sticky {
+    position: sticky !important;
+    top: var(--bandara-sticky-offset, 0px) !important;
+    z-index: 45 !important;
+    display: grid;
+    gap: 0.55rem;
+    width: 100%;
+    margin: 0 0 1rem !important;
+    padding: 0.7rem clamp(0.75rem, 2vw, 1.25rem) !important;
+    border: 1px solid rgb(226 232 240 / 0.9);
+    border-radius: 0.7rem;
+    background: rgb(255 255 255 / 0.96) !important;
+    box-shadow: 0 0.4rem 1.2rem -1rem rgb(15 23 42 / 0.35);
+    backdrop-filter: blur(14px);
+    isolation: isolate;
+}
+
+:is(.dark, [data-theme="dark"]) .bandara-faq-sticky {
+    border-color: rgb(51 65 85 / 0.9);
+    background: rgb(15 23 42 / 0.96) !important;
+}
+
+.bandara-faq-sticky form,
+.bandara-faq-sticky [role="search"] {
+    width: 100%;
+    margin: 0 !important;
+}
+
+.bandara-faq-sticky nav,
+.bandara-faq-sticky [role="tablist"],
+.bandara-faq-sticky [data-faq-nav] {
+    display: flex;
+    gap: 0.4rem;
+    overflow-x: auto;
+    overscroll-behavior-inline: contain;
+    padding-bottom: 0.1rem;
+    scrollbar-width: thin;
+}
+
+.bandara-faq-sticky nav a,
+.bandara-faq-sticky [role="tab"],
+.bandara-faq-sticky nav button {
+    flex: none;
+}
+
+.bandara-faq-anchor {
+    scroll-margin-top: calc(var(--bandara-sticky-offset, 0px) + 8rem) !important;
+}
+
+.bandara-newsletter-confirmation {
+    display: inline-flex !important;
+    align-items: center;
+    gap: 0.45rem;
+    width: fit-content;
+    min-height: 2.25rem;
+    padding: 0.45rem 0.75rem !important;
+    border: 1px solid rgb(203 213 225 / 0.82);
+    border-radius: 999px !important;
+    background: rgb(248 250 252 / 0.78);
+    color: rgb(51 65 85);
+    font-size: 0.78rem !important;
+    line-height: 1.2 !important;
+}
+
+.bandara-newsletter-confirmation strong {
+    color: inherit !important;
+    font-size: inherit !important;
+    font-weight: 600;
+}
+
+.bandara-newsletter-confirmation span[aria-hidden="true"] {
+    font-size: 0.75rem;
+}
+
+.bandara-business-access {
+    width: min(72rem, calc(100% - 2rem));
+    margin: 1rem auto 1.5rem;
+    padding: clamp(1rem, 2.5vw, 1.4rem);
+    border: 1px solid rgb(203 213 225 / 0.85);
+    border-radius: 0.8rem;
+    background: rgb(248 250 252 / 0.82);
+    color: rgb(51 65 85);
+}
+
+:is(.dark, [data-theme="dark"]) .bandara-business-access {
+    border-color: rgb(51 65 85 / 0.9);
+    background: rgb(15 23 42 / 0.75);
+    color: rgb(203 213 225);
+}
+
+.bandara-business-access h2,
+.bandara-business-access h3 {
+    margin: 0 0 0.55rem;
+    color: inherit;
+    font-size: clamp(1rem, 2vw, 1.2rem);
+    font-weight: 600;
+}
+
+.bandara-business-access p {
+    max-width: 62rem;
+    margin: 0;
+    font-size: 0.86rem;
+    line-height: 1.65;
+}
+
+.bandara-business-access__reassurance {
+    margin-top: 0.55rem !important;
+    color: rgb(71 85 105);
+}
+
+:is(.dark, [data-theme="dark"]) .bandara-business-access__reassurance {
+    color: rgb(148 163 184);
+}
+
+@media (max-width: 767px) {
+    .bandara-faq-sticky {
+        border-radius: 0;
+        margin-inline: 0 !important;
+    }
+
+    .bandara-business-access {
+        width: calc(100% - 1.25rem);
+        margin-block: 0.65rem 1rem;
+    }
+}
+
+@media (prefers-reduced-motion: reduce) {
+    .bandara-product-detail-page .bandara-product-card,
+    .bandara-product-detail-page .bandara-product-card img {
+        transition: none !important;
+    }
+}
+
+.bandara-product-detail-visual {
+    position: relative;
+    transform: translate3d(0, 0, 0);
+    transition:
+        transform 250ms ease,
+        box-shadow 250ms ease,
+        border-color 250ms ease !important;
+}
+
+.bandara-product-detail-visual img {
+    transition: transform 400ms ease !important;
+}
+
+@media (hover: hover) and (pointer: fine) {
+    .bandara-product-detail-visual:hover,
+    .bandara-product-detail-visual:focus-within {
+        z-index: 2;
+        transform: translate3d(0, -3px, 0) !important;
+        border-color: var(--border-strong, rgb(148 163 184 / 0.55)) !important;
+        box-shadow: var(--shadow-hover, 0 8px 40px rgb(15 23 42 / 0.22)) !important;
+    }
+
+    .bandara-product-detail-visual:hover img,
+    .bandara-product-detail-visual:focus-within img {
+        transform: scale(1.04) !important;
+    }
+}
+
+.bandara-faq-overflow-host {
+    overflow: visible !important;
+    overflow-y: visible !important;
+}
+
+@media (prefers-reduced-motion: reduce) {
+    .bandara-product-detail-visual,
+    .bandara-product-detail-visual img {
+        transform: none !important;
+        transition: none !important;
+    }
+}

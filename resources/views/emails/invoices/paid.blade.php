@@ -12,4 +12,4 @@ for order <strong>#{{ $order->order_number ?? '—' }}</strong>.</p>
 
 <p>Your tax invoice is attached again for your records. You can also download it anytime from your account.</p>
 
-<p>Thank you for shopping with Frozen - Bandara by Maytira.</p>
+<p>Thank you for shopping with Frozen - Bandara.</p>

@@ -1,71 +1,89 @@
-<x-layouts.business-account title="Business Account" heading="Business customers">
-    <section class="grid gap-10 lg:grid-cols-[1.15fr_0.85fr] lg:items-center">
-        <div>
-            <p class="text-xs font-medium uppercase tracking-[0.22em] text-sky-600 dark:text-sky-300">Wholesale and professional supply</p>
-            <h2 class="mt-4 max-w-3xl text-4xl font-light leading-tight tracking-tight text-slate-950 sm:text-5xl dark:text-white">
-                Better sourcing for restaurants, hotels, retailers and food businesses.
-            </h2>
-            <p class="mt-5 max-w-2xl text-lg leading-8 text-slate-600 dark:text-slate-300">
-                Apply for a Bandara Business Account to access eligible business pricing, commercial pack sizes, GST invoices, business quantities and approved payment terms.
-            </p>
+@extends('layouts.customer')
 
-            <div class="mt-8 flex flex-wrap gap-3">
+@section('title', 'Business Account')
+
+@section('content')
+@php
+    $ui = (array) config('b2b_application_corrective.ui', []);
+    $heading = $ui['heading'] ?? 'text-2xl font-medium';
+    $subheading = $ui['subheading'] ?? 'text-lg font-medium';
+    $text = $ui['text'] ?? 'text-sm';
+    $muted = $ui['muted'] ?? 'text-sm opacity-75';
+    $primary = $ui['button_primary'] ?? 'inline-flex items-center px-4 py-2';
+    $secondary = $ui['button_secondary'] ?? 'inline-flex items-center px-4 py-2';
+@endphp
+
+<div class="mx-auto w-full max-w-7xl px-4 py-8 sm:px-6 lg:px-8">
+    <div class="max-w-3xl">
+        <p class="{{ $muted }}">Bandara for business</p>
+        <h1 class="mt-2 {{ $heading }}">Business accounts for restaurants, hotels, retailers and professional kitchens</h1>
+        <p class="mt-4 {{ $text }}">
+            Apply for eligible business pricing, commercial quantities, GST invoices and approved payment terms. Every application is reviewed before B2B access is enabled.
+        </p>
+
+        <div class="mt-6 flex flex-wrap gap-3">
+            @auth
                 @if ($isB2B)
-                    <a href="{{ route('account.business-application.show') }}" class="rounded-xl bg-slate-950 px-5 py-3 text-sm font-medium text-white shadow-sm hover:bg-slate-800 dark:bg-white dark:text-slate-950 dark:hover:bg-slate-200">View business account</a>
+                    <a href="{{ route('account.business-application.show') }}" class="{{ $primary }}">View business account</a>
                 @elseif ($application)
-                    <a href="{{ route('account.business-application.show') }}" class="rounded-xl bg-slate-950 px-5 py-3 text-sm font-medium text-white shadow-sm hover:bg-slate-800 dark:bg-white dark:text-slate-950 dark:hover:bg-slate-200">View application status</a>
+                    <a href="{{ route('business-account.continue') }}" class="{{ $primary }}">
+                        {{ $application->status->customerCanEdit() ? 'Continue business application' : 'View application status' }}
+                    </a>
                 @else
-                    <a href="{{ route('account.business-application.step-one') }}" class="rounded-xl bg-slate-950 px-5 py-3 text-sm font-medium text-white shadow-sm hover:bg-slate-800 dark:bg-white dark:text-slate-950 dark:hover:bg-slate-200">Apply for business pricing</a>
+                    <a href="{{ route('business-account.continue') }}" class="{{ $primary }}">Apply using my existing account</a>
                 @endif
-                <a href="mailto:{{ config('mail.from.address') }}" class="rounded-xl border border-slate-300 bg-white px-5 py-3 text-sm font-medium text-slate-700 hover:border-slate-400 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-200">Contact our team</a>
-            </div>
-
-            @if ($application)
-                <div class="mt-7 flex flex-wrap items-center gap-3 rounded-xl border border-slate-200 bg-white p-4 dark:border-slate-800 dark:bg-slate-900">
-                    <x-b2b.status-badge :status="$application->status" />
-                    <p class="text-sm text-slate-600 dark:text-slate-300">Application {{ $application->application_number }}</p>
-                </div>
-            @endif
+            @else
+                <a href="{{ route('business-account.register') }}" class="{{ $primary }}">Apply for a Business Account</a>
+                <a href="{{ route('business-account.login') }}" class="{{ $secondary }}">Business Customer Login</a>
+            @endauth
         </div>
+    </div>
 
-        <div class="rounded-2xl border border-slate-200 bg-white p-6 shadow-sm dark:border-slate-800 dark:bg-slate-900">
-            <h3 class="text-lg font-medium text-slate-950 dark:text-white">Designed for professional buyers</h3>
-            <div class="mt-5 space-y-5">
-                @foreach ([
-                    ['Business pricing', 'View approved B2B prices and minimum order quantities after account approval.'],
-                    ['Commercial quantities', 'Order suitable packs and quantities for kitchens, retail and institutional use.'],
-                    ['GST documentation', 'Maintain business details for correct invoices and account records.'],
-                    ['Approved payment terms', 'Eligible customers may receive pay-later access, limits and agreed credit days.'],
-                ] as [$title, $description])
-                    <div class="flex gap-4">
-                        <span class="mt-1 flex h-7 w-7 shrink-0 items-center justify-center rounded-full bg-sky-50 text-sm text-sky-700 dark:bg-sky-950 dark:text-sky-200">✓</span>
-                        <div>
-                            <p class="font-medium text-slate-900 dark:text-white">{{ $title }}</p>
-                            <p class="mt-1 text-sm leading-6 text-slate-600 dark:text-slate-300">{{ $description }}</p>
-                        </div>
-                    </div>
-                @endforeach
+    <div class="mt-12 grid gap-8 md:grid-cols-3">
+        <section>
+            <h2 class="{{ $subheading }}">Who can apply</h2>
+            <p class="mt-2 {{ $text }}">Restaurants, hotels, cafés, caterers, cloud kitchens, retailers, distributors, manufacturers and institutions.</p>
+        </section>
+
+        <section>
+            <h2 class="{{ $subheading }}">What Bandara reviews</h2>
+            <p class="mt-2 {{ $text }}">Business details, delivery location, product interests, expected quantities and purchase frequency.</p>
+        </section>
+
+        <section>
+            <h2 class="{{ $subheading }}">When B2B access begins</h2>
+            <p class="mt-2 {{ $text }}">The account remains a normal customer account until Bandara approves the application. Approval converts the same account to B2B.</p>
+        </section>
+    </div>
+
+    <section class="mt-12 max-w-3xl">
+        <h2 class="{{ $subheading }}">Already shop with Bandara?</h2>
+        <p class="mt-3 {{ $text }}">
+            You can request business access using your existing customer account. Simply sign in and submit your business details for review. Once approved, eligible wholesale pricing and business ordering features will be added to the same account—without creating a new login or losing your saved addresses and order history.
+        </p>
+        @guest
+            <div class="mt-5">
+                <a href="{{ route('business-account.login') }}" class="{{ $secondary }}">Sign in and convert an existing account</a>
+            </div>
+        @endguest
+    </section>
+
+    <section class="mt-12 max-w-4xl">
+        <h2 class="{{ $subheading }}">How the application works</h2>
+        <div class="mt-5 grid gap-6 md:grid-cols-3">
+            <div>
+                <p class="{{ $muted }}">Step 1</p>
+                <p class="mt-1 {{ $text }}">Use a new or existing Bandara customer login.</p>
+            </div>
+            <div>
+                <p class="{{ $muted }}">Step 2</p>
+                <p class="mt-1 {{ $text }}">Submit business details and product requirements.</p>
+            </div>
+            <div>
+                <p class="{{ $muted }}">Step 3</p>
+                <p class="mt-1 {{ $text }}">Bandara reviews the application and enables B2B access after approval.</p>
             </div>
         </div>
     </section>
-
-    <section class="mt-16">
-        <div class="max-w-2xl">
-            <p class="text-xs font-medium uppercase tracking-[0.22em] text-sky-600 dark:text-sky-300">How it works</p>
-            <h2 class="mt-3 text-3xl font-light tracking-tight text-slate-950 dark:text-white">A controlled approval process</h2>
-        </div>
-        <div class="mt-7 grid gap-4 md:grid-cols-3">
-            @foreach ([
-                ['01', 'Tell us about your business', 'Provide contact, registration and delivery-location details.'],
-                ['02', 'Share your purchase needs', 'Select categories, frequency and the expected monthly purchase range.'],
-                ['03', 'Bandara reviews the account', 'Your B2C access remains unchanged until the business account is approved.'],
-            ] as [$number, $title, $description])
-                <article class="rounded-2xl border border-slate-200 bg-white p-6 dark:border-slate-800 dark:bg-slate-900">
-                    <p class="text-xs tracking-[0.2em] text-slate-400">{{ $number }}</p>
-                    <h3 class="mt-4 text-lg font-medium text-slate-950 dark:text-white">{{ $title }}</h3>
-                    <p class="mt-2 text-sm leading-6 text-slate-600 dark:text-slate-300">{{ $description }}</p>
-                </article>
-            @endforeach
-        </div>
-    </section>
-</x-layouts.business-account>
+</div>
+@endsection

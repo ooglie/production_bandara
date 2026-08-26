@@ -7,7 +7,7 @@
 <head>
     <meta charset="utf-8">
     <meta name="viewport" content="width=device-width, initial-scale=1">
-    <title>500 | Bandara Frozen</title>
+    <title>500 | Bandara</title>
     <style>
         :root {
             --bg: #f8f4ee;
@@ -96,7 +96,7 @@
             <a class="secondary" href="{{ $shopUrl }}">Continue shopping</a>
             <a class="secondary" href="{{ $homeUrl }}">Go home</a>
         </div>
-        <p class="footer-note">Bandara Frozen · Quality you can freeze on.</p>
+        <p class="footer-note">Bandara · Quality you can freeze on.</p>
     </main>
 </body>
 </html>
