@@ -1,0 +1,2 @@
+route	routes/web.php
+home	resources/views/home.blade.php

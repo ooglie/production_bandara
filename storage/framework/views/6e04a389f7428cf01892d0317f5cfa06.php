@@ -87,8 +87,6 @@
                         <?php echo $__env->make('home.sections.chef-picks', ['section' => $section], array_diff_key(get_defined_vars(), ['__data' => 1, '__path' => 1]))->render(); ?>
                         <?php break; ?>
 
-                    
-
                     <?php case ('support_cta'): ?>
                         <?php echo $__env->make('home.sections.support-cta', ['section' => $section], array_diff_key(get_defined_vars(), ['__data' => 1, '__path' => 1]))->render(); ?>
                         <?php break; ?>
@@ -101,6 +99,7 @@
 <?php if(Route::has('product.variants.options')): ?>
     <?php echo $__env->make('home.sections.product-card-scripts', array_diff_key(get_defined_vars(), ['__data' => 1, '__path' => 1]))->render(); ?>
 <?php endif; ?>
+
 <?php $__env->stopSection(); ?>
 
 <?php echo $__env->make('layouts.customer', array_diff_key(get_defined_vars(), ['__data' => 1, '__path' => 1]))->render(); ?><?php /**PATH /Users/ooglie/Website/ChatGPT/PRODUCTIONFrozen/BandaraFrozen/resources/views/home.blade.php ENDPATH**/ ?>

@@ -500,6 +500,7 @@ class HomeSectionController extends Controller
                 ])
                 ->all(),
             'collection' => ProductCollection::query()
+                ->where('slug', '!=', 'chef-picks')
                 ->orderBy('name')
                 ->limit(300)
                 ->get(['id', 'name'])

@@ -1,0 +1,140 @@
+{
+    "format": 1,
+    "created_at": "2026-08-26T18:39:33+00:00",
+    "app_realpath": "/Users/ooglie/Website/ChatGPT/PRODUCTIONFrozen/BandaraFrozen",
+    "complete": true,
+    "files": [
+        {
+            "relative": "app/Http/Controllers/Admin/Kitchen/ChefController.php",
+            "existed": false,
+            "sha256": null,
+            "mode": null
+        },
+        {
+            "relative": "app/Http/Controllers/Storefront/ChefController.php",
+            "existed": false,
+            "sha256": null,
+            "mode": null
+        },
+        {
+            "relative": "app/Http/Controllers/Storefront/KitchenController.php",
+            "existed": false,
+            "sha256": null,
+            "mode": null
+        },
+        {
+            "relative": "app/Http/Middleware/BandaraKitchenAdminAccess.php",
+            "existed": false,
+            "sha256": null,
+            "mode": null
+        },
+        {
+            "relative": "app/Models/Chef.php",
+            "existed": false,
+            "sha256": null,
+            "mode": null
+        },
+        {
+            "relative": "app/Support/BandaraKitchen.php",
+            "existed": false,
+            "sha256": null,
+            "mode": null
+        },
+        {
+            "relative": "database/migrations/2026_08_26_000001_create_bandara_kitchen_chefs_tables.php",
+            "existed": false,
+            "sha256": null,
+            "mode": null
+        },
+        {
+            "relative": "resources/views/admin/kitchen/chefs/_form.blade.php",
+            "existed": false,
+            "sha256": null,
+            "mode": null
+        },
+        {
+            "relative": "resources/views/admin/kitchen/chefs/create.blade.php",
+            "existed": false,
+            "sha256": null,
+            "mode": null
+        },
+        {
+            "relative": "resources/views/admin/kitchen/chefs/edit.blade.php",
+            "existed": false,
+            "sha256": null,
+            "mode": null
+        },
+        {
+            "relative": "resources/views/admin/kitchen/chefs/index.blade.php",
+            "existed": false,
+            "sha256": null,
+            "mode": null
+        },
+        {
+            "relative": "resources/views/admin/kitchen/partials/admin-nav-link.blade.php",
+            "existed": false,
+            "sha256": null,
+            "mode": null
+        },
+        {
+            "relative": "resources/views/home.blade.php",
+            "existed": true,
+            "sha256": "71f5e33a3b7479010cb999e06e4797ee9bc085f6f5fc8af8830c60ee6b73f1a2",
+            "mode": 420
+        },
+        {
+            "relative": "resources/views/layouts/company.blade.php",
+            "existed": true,
+            "sha256": "700b2b311f323aaaff0da72cd7bebd74bf8ed96a122f30d10cdae43f2bcb7139",
+            "mode": 420
+        },
+        {
+            "relative": "resources/views/storefront/kitchen/chefs/index.blade.php",
+            "existed": false,
+            "sha256": null,
+            "mode": null
+        },
+        {
+            "relative": "resources/views/storefront/kitchen/chefs/show.blade.php",
+            "existed": false,
+            "sha256": null,
+            "mode": null
+        },
+        {
+            "relative": "resources/views/storefront/kitchen/index.blade.php",
+            "existed": false,
+            "sha256": null,
+            "mode": null
+        },
+        {
+            "relative": "resources/views/storefront/kitchen/partials/chef-card.blade.php",
+            "existed": false,
+            "sha256": null,
+            "mode": null
+        },
+        {
+            "relative": "resources/views/storefront/kitchen/partials/featured-chef.blade.php",
+            "existed": false,
+            "sha256": null,
+            "mode": null
+        },
+        {
+            "relative": "resources/views/storefront/kitchen/partials/recipe-card.blade.php",
+            "existed": false,
+            "sha256": null,
+            "mode": null
+        },
+        {
+            "relative": "routes/bandara-kitchen.php",
+            "existed": false,
+            "sha256": null,
+            "mode": null
+        },
+        {
+            "relative": "routes/web.php",
+            "existed": true,
+            "sha256": "c8ed83a0286311746cf2092e68958bbe4121ddb64c213052c9e069055ee8dca1",
+            "mode": 420
+        }
+    ]
+}

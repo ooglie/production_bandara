@@ -1,5 +1,5 @@
 /*
- * Bandara storefront launch refinements — layout-safe UI correction v1.4.1.
+ * Bandara storefront launch refinements — merge-safe independent Chef/Recipe hover fix v1.4.4.
  *
  * Important design rule:
  * - Existing page elements are never moved out of their original containers.
@@ -9,8 +9,11 @@
 const BandaraLaunchUi = (() => {
     const VERSION = '1.4.1-alignment';
     const BUILD_MARKER = 'BANDARA_UI_ALIGNMENT_FIX_1_4_1';
+    const HOME_HOVER_VERSION = '1.4.4-independent-home-hover';
+    const HOME_HOVER_MARKER = 'BANDARA_HOME_CARD_HOVER_FIX_1_4_4';
     let productObserver = null;
     let revealObserver = null;
+    let homeHoverObserver = null;
 
     const safePath = () => window.location.pathname.replace(/\/+$/, '') || '/';
     const normalizeText = (value) => (value || '').replace(/\s+/g, ' ').trim().toLowerCase();
@@ -283,6 +286,219 @@ const BandaraLaunchUi = (() => {
             window.setTimeout(sync, 40);
             window.setTimeout(sync, 180);
         }));
+    };
+
+    /* ---------------------------------------------------------------------
+     * Homepage Chef / Recipe independent hover
+     *
+     * The original section can use one shared Tailwind `group` or hover
+     * wrapper around both columns. That makes hovering either column trigger
+     * visual states in both. We leave the DOM structure and spacing intact,
+     * remove only shared hover-state classes, and give each visual card its
+     * own group and hover boundary.
+     * ------------------------------------------------------------------ */
+    const homeCardText = (element) => normalizeText(element?.textContent || '');
+
+    const lowestCommonElement = (first, second) => {
+        if (!(first instanceof Element) || !(second instanceof Element)) {
+            return null;
+        }
+
+        const firstAncestors = new Set();
+        let node = first;
+        while (node instanceof Element) {
+            firstAncestors.add(node);
+            node = node.parentElement;
+        }
+
+        node = second;
+        while (node instanceof Element) {
+            if (firstAncestors.has(node)) {
+                return node;
+            }
+            node = node.parentElement;
+        }
+
+        return null;
+    };
+
+    const elementBranchBelow = (element, ancestor) => {
+        if (!(element instanceof Element) || !(ancestor instanceof Element) || !ancestor.contains(element)) {
+            return null;
+        }
+
+        let branch = element;
+        while (branch.parentElement && branch.parentElement !== ancestor) {
+            branch = branch.parentElement;
+        }
+
+        return branch instanceof HTMLElement ? branch : null;
+    };
+
+    const looksLikeHomeFeatureCard = (element) => {
+        if (!(element instanceof HTMLElement)) {
+            return false;
+        }
+
+        const className = typeof element.className === 'string' ? element.className : '';
+        const visualSignal = /(card|tile|panel|feature|recipe|chef|collection|rounded|border|overflow-hidden|shadow)/i.test(className);
+        const semanticSignal = ['ARTICLE', 'A'].includes(element.tagName);
+        const mediaSignal = Boolean(element.querySelector('img, picture'));
+
+        return semanticSignal || visualSignal || mediaSignal;
+    };
+
+    const homeFeatureCardFor = (marker, common, otherMarker) => {
+        if (!(marker instanceof HTMLElement) || !(common instanceof HTMLElement)) {
+            return null;
+        }
+
+        const candidates = [];
+        let node = marker;
+        while (node instanceof HTMLElement && node !== common) {
+            if (!node.contains(otherMarker)) {
+                candidates.push(node);
+            }
+            node = node.parentElement;
+        }
+
+        const strongCandidates = candidates.filter(looksLikeHomeFeatureCard);
+        if (strongCandidates.length) {
+            return strongCandidates[strongCandidates.length - 1];
+        }
+
+        return elementBranchBelow(marker, common);
+    };
+
+    const isSharedHoverUtility = (className) => {
+        if (typeof className !== 'string') {
+            return false;
+        }
+
+        return /(?:^|:)(?:hover|focus-within):(?:-?translate-|scale-|shadow(?:-|$)|drop-shadow-|ring(?:-|$)|bg-|border-|opacity-)/.test(className);
+    };
+
+    const removeSharedHoverState = (element) => {
+        if (!(element instanceof HTMLElement)) {
+            return;
+        }
+
+        if (element.classList.contains('group')) {
+            element.classList.remove('group');
+            element.dataset.bandaraSharedGroupRemoved = '1';
+        }
+
+        Array.from(element.classList).forEach((className) => {
+            if (isSharedHoverUtility(className)) {
+                element.classList.remove(className);
+            }
+        });
+
+        element.classList.add('bandara-home-shared-hover-shell');
+    };
+
+    const findHomeMarker = (root, predicate) => Array.from(root.querySelectorAll('h2, h3, h4, p, a, span, small'))
+        .find((element) => predicate(homeCardText(element), element)) || null;
+
+    const markIndependentHomeCard = (card, type) => {
+        if (!(card instanceof HTMLElement)) {
+            return;
+        }
+
+        card.classList.add('group', 'bandara-home-independent-card', `bandara-home-${type}-card`);
+        card.dataset.bandaraIndependentHover = type;
+        card.querySelectorAll('img, picture').forEach((media) => media.classList.add('bandara-home-independent-media'));
+    };
+
+    const bindHomeChefRecipeHover = () => {
+        if (!['/', '/home'].includes(safePath())) {
+            return false;
+        }
+
+        const root = contentRoot();
+        if (!root) {
+            return false;
+        }
+
+        const chefMarker = findHomeMarker(root, (text, element) => (
+            text === 'bandara kitchen'
+            || text.includes('explore bandara kitchen')
+            || (['H3', 'H4'].includes(element.tagName) && text.includes('chef spotlight'))
+        ));
+
+        if (!chefMarker) {
+            return false;
+        }
+
+        const section = chefMarker.closest('section, [data-home-section], [data-section-key], [class*="home-section" i]')
+            || chefMarker.parentElement;
+        if (!(section instanceof HTMLElement)) {
+            return false;
+        }
+
+        const recipeMarker = findHomeMarker(section, (text, element) => (
+            text === 'recipe inspiration'
+            || text.startsWith('recipe inspiration ')
+            || (['H3', 'H4'].includes(element.tagName) && /recipe|inspiration/.test(text))
+        ));
+
+        if (!recipeMarker || recipeMarker === chefMarker) {
+            return false;
+        }
+
+        const common = lowestCommonElement(chefMarker, recipeMarker);
+        if (!(common instanceof HTMLElement) || common === chefMarker || common === recipeMarker) {
+            return false;
+        }
+
+        const chefCard = homeFeatureCardFor(chefMarker, common, recipeMarker);
+        const recipeCard = homeFeatureCardFor(recipeMarker, common, chefMarker);
+        if (!(chefCard instanceof HTMLElement) || !(recipeCard instanceof HTMLElement) || chefCard === recipeCard) {
+            return false;
+        }
+
+        // Remove shared hover/group states only from ancestors that contain
+        // both cards. No element is moved, wrapped, cloned, or resized.
+        let shared = common;
+        while (shared instanceof HTMLElement && section.contains(shared)) {
+            if (shared.contains(chefCard) && shared.contains(recipeCard)) {
+                removeSharedHoverState(shared);
+            }
+            if (shared === section) {
+                break;
+            }
+            shared = shared.parentElement;
+        }
+
+        markIndependentHomeCard(chefCard, 'chef');
+        markIndependentHomeCard(recipeCard, 'recipe');
+        section.classList.add('bandara-home-chef-recipe-section');
+        section.dataset.bandaraIndependentHoverBound = HOME_HOVER_VERSION;
+
+        homeHoverObserver?.disconnect();
+        homeHoverObserver = null;
+        return true;
+    };
+
+    const initHomeChefRecipeHover = () => {
+        if (bindHomeChefRecipeHover() || !['/', '/home'].includes(safePath())) {
+            return;
+        }
+
+        if (!homeHoverObserver && 'MutationObserver' in window) {
+            homeHoverObserver = new MutationObserver(() => {
+                bindHomeChefRecipeHover();
+            });
+            homeHoverObserver.observe(contentRoot(), { childList: true, subtree: true });
+            window.setTimeout(() => {
+                homeHoverObserver?.disconnect();
+                homeHoverObserver = null;
+            }, 3500);
+        }
+
+        window.setTimeout(bindHomeChefRecipeHover, 120);
+        window.setTimeout(bindHomeChefRecipeHover, 500);
+        window.setTimeout(bindHomeChefRecipeHover, 1200);
     };
 
     /* ---------------------------------------------------------------------
@@ -1304,11 +1520,13 @@ const BandaraLaunchUi = (() => {
         document.documentElement.dataset.bandaraLaunchFixes = VERSION;
         document.documentElement.dataset.bandaraUiSafe = VERSION;
         document.documentElement.dataset.bandaraUiHotfix = BUILD_MARKER;
+        document.documentElement.dataset.bandaraHomeHoverFix = HOME_HOVER_MARKER;
         initRewardBanner();
         initNewsletterState();
         initThemeToggle();
         initHelpFloatingTools();
         initBusinessAccess();
+        initHomeChefRecipeHover();
         initProductDetailCards();
         initScrollReveal();
         window.addEventListener('load', initScrollReveal, { once: true });

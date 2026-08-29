@@ -16,20 +16,35 @@
         $featuredProductGalleryImage,
     ])));
 
-    $chefSpotlightImage = $resolveMediaUrl(array_values(array_filter([
-        $section->image_path ?? null,
-        $section->mobile_image_path ?? null,
-        $chefCollection?->image_path,
-    ])));
+    /*
+     * Chef content comes only from the existing chefs table.
+     * The Recipe card below remains independent and keeps its existing query.
+     */
+    $featuredHomepageChef = \App\Models\Chef::query()
+        ->homepageFeatured()
+        ->orderByDesc('updated_at')
+        ->first();
 
-    $chefSpotlightEyebrow = $section->getSetting('spotlight_eyebrow', $chefCollection?->eyebrow ?: 'Bandara Kitchen');
-    $chefSpotlightTitle = $section->getSetting('spotlight_title', $chefCollection?->name ?: 'Chef notes, serving ideas, and practical cooking tips.');
-    $chefSpotlightDescription = $section->getSetting('spotlight_description', $section->body ?: ($chefCollection?->description ?: 'Use collections and recipes to explain how to finish, plate, or serve your frozen products in a more inspiring way.'));
-    $chefSpotlightCtaText = $section->cta_text ?: ($chefCollection?->cta_text ?: 'Explore Bandara Kitchen');
-    $chefSpotlightCtaUrl = $section->cta_url ?: ($chefCollection ? $collectionUrl($chefCollection) : null);
+    $chefSpotlightImage = $featuredHomepageChef
+        ? ($featuredHomepageChef->portraitUrl() ?: $featuredHomepageChef->heroImageUrl())
+        : null;
 
-    $spotlightTipOne = $section->getSetting('spotlight_tip_one', 'Great for air fryer, pan, or oven-finish cooking');
-    $spotlightTipTwo = $section->getSetting('spotlight_tip_two', 'Useful for weekday meals, platters, and sharing');
+    $chefProfessionalLine = $featuredHomepageChef
+        ? collect([
+            $featuredHomepageChef->professional_title,
+            $featuredHomepageChef->publicOrganisationLine(),
+            $featuredHomepageChef->city,
+        ])->filter(fn ($value) => filled($value))->implode(' · ')
+        : null;
+
+    $chefBrief = $featuredHomepageChef
+        ? trim(strip_tags((string) (
+            $featuredHomepageChef->short_intro
+            ?: $featuredHomepageChef->biography
+            ?: $featuredHomepageChef->quote
+            ?: ''
+        )))
+        : null;
 @endphp
 
 <section class="space-y-4">
@@ -43,64 +58,76 @@
         @endif
     </div>
 
-    <div class="grid gap-4 md:grid-cols-2 items-stretch">
-        <div class="overflow-hidden rounded-lg border border-gray-200 dark:border-gray-800 bg-white dark:bg-gray-900 h-full">
-            <div class="relative h-[230px] overflow-hidden bg-gradient-to-br from-rose-50 via-fuchsia-50 to-white dark:from-rose-950/30 dark:via-fuchsia-950/20 dark:to-gray-900">
-                @if($chefSpotlightImage)
-                    <img
-                        src="{{ $chefSpotlightImage }}"
-                        alt="{{ $chefSpotlightTitle }}"
-                        class="h-full w-full object-cover transition duration-300 hover:scale-105"
-                    >
-                @else
-                    <div class="absolute inset-0 bg-gradient-to-br from-rose-100 via-fuchsia-50 to-white dark:from-rose-950/30 dark:via-fuchsia-950/20 dark:to-gray-900"></div>
-                @endif
-            </div>
-
-            <div class="p-5 space-y-4">
-                <span class="inline-flex items-center rounded-sm border border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-950/40 px-3 py-1 text-[10px] font-medium uppercase tracking-wide text-gray-600 dark:text-gray-300">
-                    {{ $chefSpotlightEyebrow }}
-                </span>
-
-                <div class="space-y-2">
-                    <h3 class="text-2xl font-semibold text-gray-900 dark:text-gray-50">
-                        {{ $chefSpotlightTitle }}
-                    </h3>
-
-                    <p class="text-sm leading-relaxed text-gray-600 dark:text-gray-300">
-                        {{ $chefSpotlightDescription }}
-                    </p>
+    <div class="bandara-home-shared-hover-shell grid gap-4 md:grid-cols-2 items-stretch">
+        @if($featuredHomepageChef)
+            <div class="bandara-home-independent-card bandara-home-chef-card overflow-hidden rounded-lg border border-gray-200 dark:border-gray-800 bg-white dark:bg-gray-900 h-full">
+                <div class="relative h-[230px] overflow-hidden bg-gradient-to-br from-rose-50 via-fuchsia-50 to-white dark:from-rose-950/30 dark:via-fuchsia-950/20 dark:to-gray-900">
+                    @if($chefSpotlightImage)
+                        <img
+                            src="{{ $chefSpotlightImage }}"
+                            alt="{{ $featuredHomepageChef->display_name }}"
+                            class="bandara-home-independent-media h-full w-full object-cover object-top transition duration-300"
+                        >
+                    @else
+                        <div class="absolute inset-0 bg-gradient-to-br from-rose-100 via-fuchsia-50 to-white dark:from-rose-950/30 dark:via-fuchsia-950/20 dark:to-gray-900"></div>
+                    @endif
                 </div>
 
-                <div class="grid gap-3 sm:grid-cols-2">
-                    <div class="rounded-sm border border-gray-200 dark:border-gray-800 bg-gray-50 dark:bg-gray-950/40 px-4 py-3 text-sm text-gray-700 dark:text-gray-200">
-                        {{ $spotlightTipOne }}
-                    </div>
-                    <div class="rounded-sm border border-gray-200 dark:border-gray-800 bg-gray-50 dark:bg-gray-950/40 px-4 py-3 text-sm text-gray-700 dark:text-gray-200">
-                        {{ $spotlightTipTwo }}
-                    </div>
-                </div>
+                <div class="p-5 space-y-4">
+                    <span class="inline-flex items-center rounded-sm border border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-950/40 px-3 py-1 text-[10px] font-medium uppercase tracking-wide text-gray-600 dark:text-gray-300">
+                        Featured Chef
+                    </span>
 
-                @if($chefSpotlightCtaUrl)
+                    <div class="space-y-2">
+                        <h3 class="text-2xl font-semibold text-gray-900 dark:text-gray-50">
+                            {{ $featuredHomepageChef->display_name }}
+                        </h3>
+
+                        @if(filled($chefBrief))
+                            <p class="text-sm leading-relaxed text-gray-600 dark:text-gray-300">
+                                {{ \Illuminate\Support\Str::limit($chefBrief, 180) }}
+                            </p>
+                        @endif
+                    </div>
+
+                    @if(filled($chefProfessionalLine) || filled($featuredHomepageChef->signature_dish_name))
+                        <div @class([
+                            'grid gap-3',
+                            'sm:grid-cols-2' => filled($chefProfessionalLine) && filled($featuredHomepageChef->signature_dish_name),
+                        ])>
+                            @if(filled($chefProfessionalLine))
+                                <div class="rounded-sm border border-gray-200 dark:border-gray-800 bg-gray-50 dark:bg-gray-950/40 px-4 py-3 text-sm text-gray-700 dark:text-gray-200">
+                                    {{ $chefProfessionalLine }}
+                                </div>
+                            @endif
+
+                            @if(filled($featuredHomepageChef->signature_dish_name))
+                                <div class="rounded-sm border border-gray-200 dark:border-gray-800 bg-gray-50 dark:bg-gray-950/40 px-4 py-3 text-sm text-gray-700 dark:text-gray-200">
+                                    Signature dish · {{ $featuredHomepageChef->signature_dish_name }}
+                                </div>
+                            @endif
+                        </div>
+                    @endif
+
                     <div>
-                        <a href="{{ $chefSpotlightCtaUrl }}"
+                        <a href="{{ route('kitchen.chefs.show', $featuredHomepageChef) }}"
                            class="inline-flex items-center justify-center rounded-sm border border-gray-900 dark:border-gray-100 bg-gray-900 text-white dark:bg-gray-100 dark:text-gray-900 px-4 py-2 text-sm font-medium hover:bg-gray-800 dark:hover:bg-gray-200">
-                            {{ $chefSpotlightCtaText }}
+                            Meet the Chef
                         </a>
                     </div>
-                @endif
+                </div>
             </div>
-        </div>
+        @endif
 
         @if($featuredRecipeProduct && $featuredRecipe)
             <a href="{{ $productUrl($featuredRecipeProduct) }}"
-               class="overflow-hidden rounded-lg border border-gray-200 dark:border-gray-800 bg-white dark:bg-gray-900 transition hover:-translate-y-0.5 h-full flex flex-col">
+               class="bandara-home-independent-card bandara-home-recipe-card overflow-hidden rounded-lg border border-gray-200 dark:border-gray-800 bg-white dark:bg-gray-900 transition hover:-translate-y-0.5 h-full flex flex-col">
                 <div class="relative h-[220px] shrink-0 overflow-hidden bg-gray-100 dark:bg-gray-800">
                     @if($featuredRecipeImage)
                         <img
                             src="{{ $featuredRecipeImage }}"
                             alt="{{ $featuredRecipeTitle }}"
-                            class="h-full w-full object-cover"
+                            class="bandara-home-independent-media h-full w-full object-cover"
                         >
                     @else
                         <div class="absolute inset-0 bg-gradient-to-br from-amber-50 to-orange-50 dark:from-amber-950/20 dark:to-orange-950/10"></div>
@@ -195,7 +222,7 @@
                 </div>
             </a>
         @else
-            <div class="rounded-lg border border-dashed border-gray-300 dark:border-gray-700 bg-white dark:bg-gray-900 px-6 py-10 text-center text-sm text-gray-500 dark:text-gray-400">
+            <div class="bandara-home-independent-card bandara-home-recipe-card rounded-lg border border-dashed border-gray-300 dark:border-gray-700 bg-white dark:bg-gray-900 px-6 py-10 text-center text-sm text-gray-500 dark:text-gray-400">
                 Add at least one product with an active recipe to show a rotating recipe card here.
             </div>
         @endif

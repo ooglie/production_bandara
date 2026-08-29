@@ -1,0 +1,6 @@
+Patch: collection-detail-editorial-v1.0.0
+Installed: 2026-08-28 02:19:22 +0530
+Application: /Users/ooglie/Website/ChatGPT/PRODUCTIONFrozen/BandaraFrozen
+Target: resources/views/collections/show.blade.php
+Backup: /Users/ooglie/Website/ChatGPT/PRODUCTIONFrozen/BandaraFrozen/storage/app/bandara-patches/collection-detail-editorial-v1.0.0/backups/20260828_021922/show.blade.php
+Environment file touched: no

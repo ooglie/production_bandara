@@ -324,7 +324,9 @@
         {{-- CONTENT --}}
         @canany(['view content', 'manage content'])
             <div class="mb-4">
-                <p class="text-[11px] uppercase tracking-wide text-gray-400 dark:text-gray-500 mb-1">Content</p>
+                <p class="text-[11px] uppercase tracking-wide text-gray-400 dark:text-gray-500 mb-1">
+                    Content
+                </p>
 
                 @if($has('admin.home-sections.index'))
                     <a
@@ -335,13 +337,21 @@
                     </a>
                 @endif
 
+                @if($has('admin.kitchen.chefs.index'))
+                    <a
+                        href="{{ route('admin.kitchen.chefs.index') }}"
+                        class="block px-2 py-1.5 rounded-md hover:bg-gray-100 dark:hover:bg-gray-800"
+                    >
+                        Chefs
+                    </a>
+                @endif
+
                 <a
                     href="{{ route('admin.announcements.index') }}"
                     class="block px-2 py-1.5 rounded-md hover:bg-gray-100 dark:hover:bg-gray-800"
                 >
                     Announcements
                 </a>
-            
 
                 <a
                     href="{{ route('admin.product-collections.index') }}"

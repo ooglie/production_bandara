@@ -848,3 +848,7 @@ Route::middleware(['auth', 'role:Stores|Admin'])
 // BANDARA_FINANCE_V1_ROUTES_START
 require __DIR__.'/finance.php';
 // BANDARA_FINANCE_V1_ROUTES_END
+
+// BANDARA_KITCHEN_ROUTES_START
+require __DIR__.'/bandara-kitchen.php';
+// BANDARA_KITCHEN_ROUTES_END

@@ -1,0 +1,2 @@
+resources/views/home.blade.php	present
+resources/views/storefront/kitchen/partials/home-featured-chef.blade.php	missing

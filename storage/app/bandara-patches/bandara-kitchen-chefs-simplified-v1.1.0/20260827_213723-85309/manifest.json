@@ -1,0 +1,92 @@
+{
+    "format": 1,
+    "created_at": "2026-08-27T16:07:23+00:00",
+    "app_realpath": "/Users/ooglie/Website/ChatGPT/PRODUCTIONFrozen/BandaraFrozen",
+    "complete": true,
+    "files": [
+        {
+            "relative": "app/Http/Controllers/Admin/Kitchen/ChefController.php",
+            "existed": true,
+            "sha256": "15b4c4d47649152cd44edc0e7f36e7a99aee086921da4f1646773f9c8a3a2bd7",
+            "mode": 420
+        },
+        {
+            "relative": "app/Http/Controllers/Storefront/ChefController.php",
+            "existed": true,
+            "sha256": "23b1fdf5ac12daa3d9433f2a50b843b8b92d6cab8494c01f6924804eafd16487",
+            "mode": 420
+        },
+        {
+            "relative": "app/Http/Controllers/Storefront/KitchenController.php",
+            "existed": true,
+            "sha256": "d37adfa79d6e19ba128eda5102a69cdbc1ca6c3cb1f38253f2febd92560d028c",
+            "mode": 420
+        },
+        {
+            "relative": "app/Models/Chef.php",
+            "existed": true,
+            "sha256": "717e1201ce72f8c30fe7ebb1bf8f8e45b5907469882861538b12cd8975fb3b9e",
+            "mode": 420
+        },
+        {
+            "relative": "database/migrations/2026_08_27_140000_add_signature_dish_fields_to_chefs_table.php",
+            "existed": false,
+            "sha256": null,
+            "mode": null
+        },
+        {
+            "relative": "resources/views/admin/kitchen/chefs/_form.blade.php",
+            "existed": true,
+            "sha256": "da2568a7c63ced406e165e74676dd1215881ee08bc1a8afee4dbb77dc74161a7",
+            "mode": 420
+        },
+        {
+            "relative": "resources/views/admin/kitchen/chefs/create.blade.php",
+            "existed": true,
+            "sha256": "7053d45387ae3fbdb7c161e7faea0d53e6d07a5d2e557498dde628bcfe54974d",
+            "mode": 420
+        },
+        {
+            "relative": "resources/views/admin/kitchen/chefs/edit.blade.php",
+            "existed": true,
+            "sha256": "64889ede162f554a52203d8d7cef3849476a848fadf221d240d462a461faea0e",
+            "mode": 420
+        },
+        {
+            "relative": "resources/views/admin/kitchen/chefs/index.blade.php",
+            "existed": true,
+            "sha256": "cc70c7afcbfd53c21b0d470c4e42dddfe3f88ba4a204913ec0c009029ea5deee",
+            "mode": 420
+        },
+        {
+            "relative": "resources/views/storefront/kitchen/chefs/index.blade.php",
+            "existed": true,
+            "sha256": "bc3e3c772f0015f865e992d7bb0dbf2e197bf4c7a1077db469b52a230622566c",
+            "mode": 420
+        },
+        {
+            "relative": "resources/views/storefront/kitchen/chefs/show.blade.php",
+            "existed": true,
+            "sha256": "dc88931d13cf966f3177c26274d7b63caf60cc302532e52a5db2503d691086b5",
+            "mode": 420
+        },
+        {
+            "relative": "resources/views/storefront/kitchen/index.blade.php",
+            "existed": true,
+            "sha256": "28d1e2ffc8b5655397fe37e0c9e69ed62765ab386bf13a9aa824a31b38d8bfe7",
+            "mode": 420
+        },
+        {
+            "relative": "resources/views/storefront/kitchen/partials/chef-card.blade.php",
+            "existed": true,
+            "sha256": "66d48abb14584c89bc1fe7749f6d0c9e1c872caaadc0e8c068c783f8fbe2c9d2",
+            "mode": 420
+        },
+        {
+            "relative": "resources/views/storefront/kitchen/partials/featured-chef.blade.php",
+            "existed": true,
+            "sha256": "212dfcc0965df115388ce43a879e6047fe1f237267e19f6de692d72e603aad94",
+            "mode": 420
+        }
+    ]
+}

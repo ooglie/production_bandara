@@ -234,6 +234,9 @@
 
     $originCode = $product->country_of_origin ?? null;
 
+    $country_name = $originCode ? \Locale::getDisplayRegion('-' . $originCode, app()->getLocale()) : null;
+
+
     $displayVariantPrice = function ($variant) use ($product, $pricingService, $displayPriceForSellUnit) {
         $unitPrice = round((float) $pricingService->priceFor(auth()->user(), $product, $variant), 2);
         return $displayPriceForSellUnit($unitPrice, $variant);
@@ -971,7 +974,7 @@
                     @if($originCode)
                         <div class="rounded-sm border border-gray-200 dark:border-gray-800 bg-gray-50 dark:bg-gray-950/40 px-4 py-3">
                             <div class="text-[10px] uppercase tracking-wide text-gray-400">Country of origin</div>
-                            <div class="mt-1 text-sm font-semibold text-gray-900 dark:text-gray-50">{{ $originCode }}</div>
+                            <div class="mt-1 text-sm font-semibold text-gray-900 dark:text-gray-50">{{ $country_name }}</div>
                         </div>
                     @endif
 

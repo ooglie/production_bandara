@@ -14,6 +14,8 @@ use Illuminate\Support\Str;
 
 class ProductCollectionController extends Controller
 {
+    private const LEGACY_CHEF_PICKS_SLUG = 'chef-picks';
+
     public function __construct(
         protected MediaPathService $media,
         protected MediaReferenceService $mediaReferences,
@@ -23,6 +25,7 @@ class ProductCollectionController extends Controller
     public function index()
     {
         $collections = ProductCollection::query()
+            ->where('slug', '!=', self::LEGACY_CHEF_PICKS_SLUG)
             ->withCount('products')
             ->orderByDesc('is_active')
             ->orderBy('home_section')
@@ -95,6 +98,10 @@ class ProductCollectionController extends Controller
 
     public function edit(ProductCollection $productCollection)
     {
+        if ($redirect = $this->redirectLegacyChefCollection($productCollection)) {
+            return $redirect;
+        }
+
         $productCollection->load(['products' => function ($q) {
             $q->orderBy('product_collection_product.sort_order');
         }]);
@@ -106,6 +113,10 @@ class ProductCollectionController extends Controller
 
     public function update(ProductCollectionRequest $request, ProductCollection $productCollection)
     {
+        if ($redirect = $this->redirectLegacyChefCollection($productCollection)) {
+            return $redirect;
+        }
+
         $oldPath = $productCollection->image_path;
         $newPath = null;
         $payload = $this->payload($request, $productCollection);
@@ -149,6 +160,10 @@ class ProductCollectionController extends Controller
 
     public function destroy(ProductCollection $productCollection)
     {
+        if ($redirect = $this->redirectLegacyChefCollection($productCollection)) {
+            return $redirect;
+        }
+
         $oldPath = $productCollection->image_path;
         $productCollection->delete();
         $this->deleteImage($oldPath);
@@ -156,6 +171,17 @@ class ProductCollectionController extends Controller
         return redirect()
             ->route('admin.product-collections.index')
             ->with('success', 'Collection deleted successfully.');
+    }
+
+    protected function redirectLegacyChefCollection(ProductCollection $productCollection)
+    {
+        if ($productCollection->slug !== self::LEGACY_CHEF_PICKS_SLUG) {
+            return null;
+        }
+
+        return redirect()
+            ->route('admin.kitchen.chefs.index')
+            ->with('info', 'Chef profiles and homepage Chef selection are managed from Content → Chefs.');
     }
 
     protected function productsForForm(): Collection
