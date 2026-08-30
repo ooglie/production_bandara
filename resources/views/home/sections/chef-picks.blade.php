@@ -45,6 +45,16 @@
             ?: ''
         )))
         : null;
+
+    $otherHomepageChefs = $featuredHomepageChef
+        ? \App\Models\Chef::query()
+            ->published()
+            ->where($featuredHomepageChef->getKeyName(), '!=', $featuredHomepageChef->getKey())
+            ->orderBy('sort_order')
+            ->orderBy('display_name')
+            ->limit(5)
+            ->get()
+        : collect();
 @endphp
 
 <section class="space-y-4">
@@ -60,62 +70,117 @@
 
     <div class="bandara-home-shared-hover-shell grid gap-4 md:grid-cols-2 items-stretch">
         @if($featuredHomepageChef)
-            <div class="bandara-home-independent-card bandara-home-chef-card overflow-hidden rounded-lg border border-gray-200 dark:border-gray-800 bg-white dark:bg-gray-900 h-full">
-                <div class="relative h-[230px] overflow-hidden bg-gradient-to-br from-rose-50 via-fuchsia-50 to-white dark:from-rose-950/30 dark:via-fuchsia-950/20 dark:to-gray-900">
-                    @if($chefSpotlightImage)
-                        <img
-                            src="{{ $chefSpotlightImage }}"
-                            alt="{{ $featuredHomepageChef->display_name }}"
-                            class="bandara-home-independent-media h-full w-full object-cover object-top transition duration-300"
+            <div class="bandara-home-independent-card bandara-home-chef-card overflow-hidden rounded-lg border border-gray-200 dark:border-gray-800 bg-white dark:bg-gray-900 h-full flex flex-col">
+                <div class="grid grid-cols-3 gap-4 p-5 pb-4 items-start">
+                    <a
+                        href="{{ route('kitchen.chefs.show', $featuredHomepageChef) }}"
+                        class="col-span-1 block overflow-hidden rounded-md bg-gray-100 dark:bg-gray-800 aspect-[4/5]"
+                        aria-label="Meet {{ $featuredHomepageChef->display_name }}"
+                    >
+                        @if($chefSpotlightImage)
+                            <img
+                                src="{{ $chefSpotlightImage }}"
+                                alt="{{ $featuredHomepageChef->display_name }}"
+                                class="bandara-home-independent-media h-full w-full object-cover object-top transition duration-300"
+                            >
+                        @else
+                            <span class="flex h-full w-full items-center justify-center text-2xl font-semibold text-gray-400 dark:text-gray-500">
+                                {{ \Illuminate\Support\Str::upper(\Illuminate\Support\Str::substr($featuredHomepageChef->display_name, 0, 1)) }}
+                            </span>
+                        @endif
+                    </a>
+
+                    <div class="col-span-2 min-w-0">
+                        <p class="text-[10px] font-medium uppercase tracking-[0.16em] text-gray-500 dark:text-gray-400">
+                            Featured Chef
+                        </p>
+
+                        <a
+                            href="{{ route('kitchen.chefs.show', $featuredHomepageChef) }}"
+                            class="mt-2 block text-xl sm:text-2xl font-semibold leading-tight text-gray-900 dark:text-gray-50 hover:underline underline-offset-4"
                         >
-                    @else
-                        <div class="absolute inset-0 bg-gradient-to-br from-rose-100 via-fuchsia-50 to-white dark:from-rose-950/30 dark:via-fuchsia-950/20 dark:to-gray-900"></div>
-                    @endif
-                </div>
-
-                <div class="p-5 space-y-4">
-                    <span class="inline-flex items-center rounded-sm border border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-950/40 px-3 py-1 text-[10px] font-medium uppercase tracking-wide text-gray-600 dark:text-gray-300">
-                        Featured Chef
-                    </span>
-
-                    <div class="space-y-2">
-                        <h3 class="text-2xl font-semibold text-gray-900 dark:text-gray-50">
                             {{ $featuredHomepageChef->display_name }}
-                        </h3>
+                        </a>
 
-                        @if(filled($chefBrief))
-                            <p class="text-sm leading-relaxed text-gray-600 dark:text-gray-300">
-                                {{ \Illuminate\Support\Str::limit($chefBrief, 180) }}
+                        @if(filled($chefProfessionalLine))
+                            <p class="mt-2 text-xs sm:text-sm leading-relaxed text-gray-600 dark:text-gray-300">
+                                {{ $chefProfessionalLine }}
                             </p>
                         @endif
-                    </div>
 
-                    @if(filled($chefProfessionalLine) || filled($featuredHomepageChef->signature_dish_name))
-                        <div @class([
-                            'grid gap-3',
-                            'sm:grid-cols-2' => filled($chefProfessionalLine) && filled($featuredHomepageChef->signature_dish_name),
-                        ])>
-                            @if(filled($chefProfessionalLine))
-                                <div class="rounded-sm border border-gray-200 dark:border-gray-800 bg-gray-50 dark:bg-gray-950/40 px-4 py-3 text-sm text-gray-700 dark:text-gray-200">
-                                    {{ $chefProfessionalLine }}
-                                </div>
-                            @endif
-
-                            @if(filled($featuredHomepageChef->signature_dish_name))
-                                <div class="rounded-sm border border-gray-200 dark:border-gray-800 bg-gray-50 dark:bg-gray-950/40 px-4 py-3 text-sm text-gray-700 dark:text-gray-200">
-                                    Signature dish · {{ $featuredHomepageChef->signature_dish_name }}
-                                </div>
-                            @endif
-                        </div>
-                    @endif
-
-                    <div>
-                        <a href="{{ route('kitchen.chefs.show', $featuredHomepageChef) }}"
-                           class="inline-flex items-center justify-center rounded-sm border border-gray-900 dark:border-gray-100 bg-gray-900 text-white dark:bg-gray-100 dark:text-gray-900 px-4 py-2 text-sm font-medium hover:bg-gray-800 dark:hover:bg-gray-200">
-                            Meet the Chef
-                        </a>
+                        @if(filled($featuredHomepageChef->signature_dish_name))
+                            <div class="mt-3 rounded-sm border border-gray-200 dark:border-gray-700 bg-gray-50 dark:bg-gray-950/40 px-3 py-2">
+                                <span class="block text-[9px] font-medium uppercase tracking-[0.14em] text-gray-400 dark:text-gray-500">
+                                    Signature dish
+                                </span>
+                                <span class="mt-0.5 block text-xs sm:text-sm font-medium text-gray-800 dark:text-gray-100">
+                                    {{ $featuredHomepageChef->signature_dish_name }}
+                                </span>
+                            </div>
+                        @endif
                     </div>
                 </div>
+
+                @if(filled($chefBrief))
+                    <p class="px-5 text-sm leading-relaxed text-gray-600 dark:text-gray-300">
+                        {{ \Illuminate\Support\Str::limit($chefBrief, 210) }}
+                    </p>
+                @endif
+
+                <div class="px-5 pt-4">
+                    <a
+                        href="{{ route('kitchen.chefs.show', $featuredHomepageChef) }}"
+                        class="inline-flex items-center justify-center gap-2 rounded-sm border border-gray-900 dark:border-gray-100 bg-gray-900 text-white dark:bg-gray-100 dark:text-gray-900 px-4 py-2 text-sm font-medium hover:bg-gray-800 dark:hover:bg-gray-200"
+                    >
+                        Meet the Chef
+                        <svg xmlns="http://www.w3.org/2000/svg" class="h-3.5 w-3.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" aria-hidden="true">
+                            <path stroke-linecap="round" stroke-linejoin="round" d="M5 12h14m-5-5 5 5-5 5" />
+                        </svg>
+                    </a>
+                </div>
+
+                @if($otherHomepageChefs->isNotEmpty())
+                    <div class="mt-auto border-t border-gray-100 dark:border-gray-800 px-5 py-4">
+                        <div class="space-y-3">
+                            <a
+                                href="{{ route('kitchen.chefs.index') }}"
+                                class="inline-flex items-center gap-2 text-[10px] font-medium uppercase tracking-[0.14em] text-gray-500 dark:text-gray-400 hover:underline underline-offset-4"
+                            >
+                                Meet Other Chefs
+                                <span aria-hidden="true">→</span>
+                            </a>
+
+                            <div class="grid grid-cols-5 gap-2">
+                            @foreach($otherHomepageChefs as $otherChef)
+                                @php
+                                    $otherChefImage = $otherChef->portraitUrl() ?: $otherChef->heroImageUrl();
+                                @endphp
+                                <a
+                                    href="{{ route('kitchen.chefs.show', $otherChef) }}"
+                                    class="aspect-square overflow-hidden rounded-sm bg-gray-100 dark:bg-gray-800"
+                                    aria-label="Meet {{ $otherChef->display_name }}"
+                                    title="{{ $otherChef->display_name }}"
+                                >
+                                    @if($otherChefImage)
+                                        <img
+                                            src="{{ $otherChefImage }}"
+                                            alt="{{ $otherChef->display_name }}"
+                                            class="h-full w-full object-cover"
+                                            loading="lazy"
+                                        >
+                                    @else
+                                        <span class="flex h-full w-full items-center justify-center text-sm font-semibold text-gray-400 dark:text-gray-500">
+                                            {{ \Illuminate\Support\Str::upper(\Illuminate\Support\Str::substr($otherChef->display_name, 0, 1)) }}
+                                        </span>
+                                    @endif
+                                </a>
+                            @endforeach
+                            </div>
+                        </div>
+                    </div>
+                @else
+                    <div class="mt-auto h-5"></div>
+                @endif
             </div>
         @endif
 
