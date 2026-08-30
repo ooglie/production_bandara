@@ -12,7 +12,7 @@
                                 <img src="<?php echo e(asset('storage/images/logo-bandara.png')); ?>" alt="Bandara Logo" class="h-full w-full invert-0 dark:invert">
                             </span>
                             <span class="font-semibold tracking-tight text-gray-900 dark:text-gray-50 text-sm">
-                                Bandara LLP<br>
+                                Bandara<br>
                                 bhāṇḍāra
                             </span>
                         </span>
@@ -83,7 +83,6 @@
                     <?php echo $__env->make('partials.newsletter_form', array_diff_key(get_defined_vars(), ['__data' => 1, '__path' => 1]))->render(); ?>
 
                     <div class="mt-3 text-[11px] text-gray-500 dark:text-gray-400 space-y-1">
-                        <p>Support: support@bandara.in</p>
                         <p>Mon–Sat, 10:00–19:00 IST</p>
                     </div>
                 </div>
@@ -97,8 +96,8 @@
                 </span>
                 <span class="flex flex-wrap gap-3">
                     <span>Made with care by 
-                        <a href="https://dimensions.software" target="_blank" rel="noopener noreferrer">
-                            Dimensions Software Private Limited
+                        <a href="https://dimensions.biz" target="_blank" rel="noopener noreferrer">
+                            Dimensions Software
                         </a></span>
                     
                 </span>
