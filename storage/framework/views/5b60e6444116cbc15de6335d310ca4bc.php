@@ -1,7 +1,0 @@
-<footer class="border-t border-gray-200 dark:border-gray-800">
-    <div class="px-4 sm:px-6 lg:px-8 py-3 text-[11px] text-gray-500 dark:text-gray-400 flex items-center justify-between">
-        <span>Bandara LLP</span>
-        <span>v1.0 · <?php echo e(now()->format('Y-m-d')); ?></span>
-    </div>
-</footer>
-<?php /**PATH /Users/ooglie/Website/ChatGPT/PRODUCTIONFrozen/BandaraFrozen/resources/views/partials/footer/company.blade.php ENDPATH**/ ?>
