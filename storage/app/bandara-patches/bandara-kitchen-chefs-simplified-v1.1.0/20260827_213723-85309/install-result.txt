@@ -1,7 +1,0 @@
-Bandara Kitchen Chefs Simplified Profile v1.1.0
-Installed: 2026-08-27 21:37:26 +0530
-Application: /Users/ooglie/Website/ChatGPT/PRODUCTIONFrozen/BandaraFrozen
-Chef records before: 1
-Chef records after: 1
-Signature migration applied during this run: 1
-Verification: PASS

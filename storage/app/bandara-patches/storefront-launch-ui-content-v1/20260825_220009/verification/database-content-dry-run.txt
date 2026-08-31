@@ -1,9 +1,0 @@
-+---------------------+------------------+
-| Table               | Values to update |
-+---------------------+------------------+
-| home_sections       | 2                |
-| product_collections | 3                |
-| settings            | 1                |
-+---------------------+------------------+
-Total exact value replacements: 6
-Dry run only. No database value was changed.

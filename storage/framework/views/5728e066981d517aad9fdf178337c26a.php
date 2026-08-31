@@ -266,7 +266,7 @@
 ?>
 
 
-<?php if (! $__env->hasRenderedOnce('369d7cd6-5bd9-4b3a-9fd7-3df95bc60f4e')): $__env->markAsRenderedOnce('369d7cd6-5bd9-4b3a-9fd7-3df95bc60f4e'); ?>
+<?php if (! $__env->hasRenderedOnce('144c3864-79b1-4dfb-a1d7-6fd275f3b8b1')): $__env->markAsRenderedOnce('144c3864-79b1-4dfb-a1d7-6fd275f3b8b1'); ?>
 <style>
 
     /* Occasion collection pages: scoped to the three homepage occasion slugs. */

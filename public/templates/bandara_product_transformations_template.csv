@@ -1,7 +1,0 @@
-source_product_sku,target_product_sku,notes
-DIMSUM-MASTER,DIMSUM-CHICKEN,Master box can become 10/20/100 pcs variants
-PB-FULL,PB-CUT,Full belly can become 700-1200g cut pieces
-PB-FULL,PB-SLICE,Full belly can become sliced fixed packs
-PB-CUT,PB-SLICE,Cut/slab stock can become sliced fixed packs
-CHED-BLOCK,CHED-PORTIONS,Cheese block can become smaller portions
-PRAWNS-JUMBO-1KG-SOURCE,PRAWNS,1kg prawn source can become 500g/1kg variants

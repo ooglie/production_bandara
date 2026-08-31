@@ -1,1 +1,0 @@
-No syntax errors detected in /Users/ooglie/Downloads/bandara-storefront-ui-fixes-v1.3/payload/app/Providers/BandaraLaunchUiServiceProvider.php

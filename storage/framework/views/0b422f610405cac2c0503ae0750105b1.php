@@ -1,0 +1,460 @@
+<?php $__env->startSection('title', 'Delivery & Handling Charges'); ?>
+
+<?php $__env->startSection('content'); ?>
+<?php
+    $customerTypes = ['b2c' => 'B2C', 'b2b' => 'B2B', 'guest' => 'Guest', 'all' => 'All'];
+    // Dynamic distance delivery rules are intentionally non-B2B.
+    // B2B checkout keeps delivery fee waived in DeliveryChargeService.
+    $distanceCustomerTypes = ['b2c' => 'B2C', 'guest' => 'Guest', 'all' => 'All non-B2B'];
+    $temperatureModes = ['all' => 'All', 'frozen' => 'Frozen', 'chilled' => 'Chilled', 'ambient' => 'Ambient'];
+    $deliveryTaxSettings = $deliveryTaxSettings ?? ['delivery' => [], 'handling' => []];
+    $currentDeliveryHsnId = (int) (data_get($deliveryTaxSettings, 'delivery.hsn_code_id') ?? 0);
+    $currentHandlingHsnId = (int) (data_get($deliveryTaxSettings, 'handling.hsn_code_id') ?? 0);
+    $hasDeliveryServiceHsn = (bool) data_get($deliveryTaxSettings, 'delivery.code');
+    $hasHandlingServiceHsn = (bool) data_get($deliveryTaxSettings, 'handling.code');
+    $currentDeliverySac = data_get($deliveryTaxSettings, 'delivery.code') ?: 'Not selected';
+    $currentHandlingSac = data_get($deliveryTaxSettings, 'handling.code') ?: 'Not selected';
+    $currentDeliveryGstRate = (float) (data_get($deliveryTaxSettings, 'delivery.gst_rate') ?? 0);
+    $currentHandlingGstRate = (float) (data_get($deliveryTaxSettings, 'handling.gst_rate') ?? 0);
+    $formatPercent = fn ($value) => rtrim(rtrim(number_format((float) $value, 2), '0'), '.') . '%';
+    $formatHsnOption = fn ($hsn) => trim($hsn->code . ($hsn->name ? ' — ' . $hsn->name : '') . ' · GST ' . $formatPercent($hsn->gst_rate));
+?>
+
+<div class="max-w-7xl mx-auto px-4 py-6 space-y-6">
+    <div class="flex flex-col sm:flex-row sm:items-start sm:justify-between gap-3">
+        <div>
+            <h1 class="text-xl font-semibold text-gray-900 dark:text-gray-50">Delivery & handling charges</h1>
+            <p class="mt-1 text-sm text-gray-500 dark:text-gray-400">
+                Configure Pune delivery zones, distance-based fees, pincode fallbacks, and cold-chain handling / packing charges.
+            </p>
+        </div>
+        <div class="rounded-2xl border border-gray-200 bg-white px-4 py-3 text-xs text-gray-600 shadow-sm dark:border-gray-800 dark:bg-gray-900 dark:text-gray-300">
+            Store pincode: <span class="font-semibold text-gray-900 dark:text-gray-50"><?php echo e(config('delivery.store_pincode', '411001')); ?></span><br>
+            <span class="text-[10px] text-gray-500 dark:text-gray-400">Distance mode: <?php echo e(config('delivery.distance_enabled') ? 'Enabled' : 'Disabled'); ?></span><br>
+            <span class="text-[10px] text-gray-500 dark:text-gray-400">Provider: <?php echo e(strtoupper((string) config('delivery.distance_provider', 'google'))); ?></span>
+        </div>
+    </div>
+
+    <?php if(session('success')): ?>
+        <div class="rounded-2xl border border-green-200 bg-green-50 px-4 py-3 text-sm text-green-700 dark:border-green-900/50 dark:bg-green-950/30 dark:text-green-300">
+            <?php echo e(session('success')); ?>
+
+        </div>
+    <?php endif; ?>
+
+    <?php if($errors->any()): ?>
+        <div class="rounded-2xl border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700 dark:border-red-900/50 dark:bg-red-950/30 dark:text-red-300">
+            <div class="font-semibold">Please fix the following:</div>
+            <ul class="mt-1 list-disc pl-5">
+                <?php $__currentLoopData = $errors->all(); $__env->addLoop($__currentLoopData); foreach($__currentLoopData as $error): $__env->incrementLoopIndices(); $loop = $__env->getLastLoop(); ?>
+                    <li><?php echo e($error); ?></li>
+                <?php endforeach; $__env->popLoop(); $loop = $__env->getLastLoop(); ?>
+            </ul>
+        </div>
+    <?php endif; ?>
+
+    <section class="rounded-2xl border border-blue-100 bg-blue-50/80 p-5 dark:border-blue-900/50 dark:bg-blue-950/30">
+        <div class="flex flex-col gap-3 lg:flex-row lg:items-start lg:justify-between">
+            <div>
+                <h2 class="text-sm font-semibold text-blue-950 dark:text-blue-50">Service HSN/SAC & GST defaults</h2>
+                <p class="mt-1 max-w-3xl text-xs text-blue-900/80 dark:text-blue-100/80">
+                    Select the HSN/SAC once here. The GST rate is taken from the selected HSN record and applied automatically to delivery zone rules, distance rules, and cold-chain handling rules. New checkout orders snapshot these codes onto the order and invoice.
+                </p>
+            </div>
+            <a href="<?php echo e(route('admin.hsn-codes.index')); ?>" class="inline-flex items-center justify-center rounded-xl border border-blue-200 bg-white px-3 py-2 text-xs font-medium text-blue-800 hover:bg-blue-50 dark:border-blue-800 dark:bg-blue-950 dark:text-blue-100">
+                Manage HSN codes
+            </a>
+        </div>
+
+        <form method="POST" action="<?php echo e(route('admin.delivery.tax-settings.update')); ?>" class="mt-4 space-y-4">
+            <?php echo csrf_field(); ?>
+            <?php echo method_field('PUT'); ?>
+            <div class="grid gap-4 md:grid-cols-2">
+                <label class="space-y-1 text-[11px] font-medium text-blue-950 dark:text-blue-50">
+                    <span>Delivery fee HSN/SAC</span>
+                    <select name="delivery_hsn_code_id" class="w-full rounded-xl border border-blue-200 bg-white px-3 py-2 text-xs text-gray-900 dark:border-blue-800 dark:bg-gray-950 dark:text-gray-100">
+                        <option value="">No delivery HSN selected</option>
+                        <?php $__currentLoopData = $hsnCodes; $__env->addLoop($__currentLoopData); foreach($__currentLoopData as $hsn): $__env->incrementLoopIndices(); $loop = $__env->getLastLoop(); ?>
+                            <option value="<?php echo e($hsn->id); ?>" <?php if($currentDeliveryHsnId === (int) $hsn->id): echo 'selected'; endif; ?>><?php echo e($formatHsnOption($hsn)); ?></option>
+                        <?php endforeach; $__env->popLoop(); $loop = $__env->getLastLoop(); ?>
+                    </select>
+                    <span class="block text-[10px] font-normal text-blue-900/70 dark:text-blue-100/70">
+                        Current delivery invoice code: <strong><?php echo e($currentDeliverySac); ?></strong> · GST <strong><?php echo e($formatPercent($currentDeliveryGstRate)); ?></strong>
+                    </span>
+                </label>
+
+                <label class="space-y-1 text-[11px] font-medium text-blue-950 dark:text-blue-50">
+                    <span>Cold-chain / handling HSN/SAC</span>
+                    <select name="handling_hsn_code_id" class="w-full rounded-xl border border-blue-200 bg-white px-3 py-2 text-xs text-gray-900 dark:border-blue-800 dark:bg-gray-950 dark:text-gray-100">
+                        <option value="">No cold-chain HSN selected</option>
+                        <?php $__currentLoopData = $hsnCodes; $__env->addLoop($__currentLoopData); foreach($__currentLoopData as $hsn): $__env->incrementLoopIndices(); $loop = $__env->getLastLoop(); ?>
+                            <option value="<?php echo e($hsn->id); ?>" <?php if($currentHandlingHsnId === (int) $hsn->id): echo 'selected'; endif; ?>><?php echo e($formatHsnOption($hsn)); ?></option>
+                        <?php endforeach; $__env->popLoop(); $loop = $__env->getLastLoop(); ?>
+                    </select>
+                    <span class="block text-[10px] font-normal text-blue-900/70 dark:text-blue-100/70">
+                        Current cold-chain invoice code: <strong><?php echo e($currentHandlingSac); ?></strong> · GST <strong><?php echo e($formatPercent($currentHandlingGstRate)); ?></strong>
+                    </span>
+                </label>
+            </div>
+
+            <div class="flex flex-col gap-3 text-[11px] text-blue-900 dark:text-blue-100 sm:flex-row sm:items-center sm:justify-between">
+                <div class="flex flex-col gap-2 sm:flex-row sm:gap-5">
+                    <label class="inline-flex items-center gap-2">
+                        <input type="checkbox" name="sync_delivery_rules" value="1" checked class="rounded border-blue-300 dark:border-blue-700">
+                        Apply delivery GST to all existing delivery rules
+                    </label>
+                    <label class="inline-flex items-center gap-2">
+                        <input type="checkbox" name="sync_handling_rules" value="1" checked class="rounded border-blue-300 dark:border-blue-700">
+                        Apply cold-chain GST to all existing handling rules
+                    </label>
+                </div>
+                <button class="rounded-xl bg-blue-950 px-4 py-2 text-xs font-medium text-white hover:bg-blue-900 dark:bg-blue-100 dark:text-blue-950">
+                    Save HSN/SAC defaults
+                </button>
+            </div>
+        </form>
+    </section>
+
+    <section class="rounded-2xl border border-gray-200 bg-white p-5 dark:border-gray-800 dark:bg-gray-900">
+        <div class="flex flex-col gap-2 sm:flex-row sm:items-start sm:justify-between">
+            <div>
+                <h2 class="text-sm font-semibold text-gray-900 dark:text-gray-50">Distance-based delivery rules</h2>
+                <p class="mt-1 text-xs text-gray-500 dark:text-gray-400">
+                    B2C/guest road-distance fees from the store origin to the customer address. B2B delivery fee is always waived. Use fixed slabs, or one dynamic rule: base fee + fixed fee for each started km after the base distance.
+                </p>
+            </div>
+            <div class="rounded-xl border border-gray-200 px-3 py-2 text-[11px] text-gray-600 dark:border-gray-800 dark:text-gray-300">
+                <div>Provider: <span class="font-medium text-gray-900 dark:text-gray-50"><?php echo e(strtoupper((string) config('delivery.distance_provider', 'google'))); ?></span></div>
+                <div>Google API key: <span class="font-medium text-gray-900 dark:text-gray-50"><?php echo e(config('delivery.google_maps_api_key') ? 'Configured' : 'Not configured'); ?></span></div>
+                <div>Origin: <span class="font-medium text-gray-900 dark:text-gray-50"><?php echo e(config('delivery.store_origin_lat') && config('delivery.store_origin_lng') ? config('delivery.store_origin_lat').', '.config('delivery.store_origin_lng') : (config('delivery.store_origin_address') ?: 'Not configured')); ?></span></div>
+                <div>Fallback to zone: <span class="font-medium text-gray-900 dark:text-gray-50"><?php echo e(config('delivery.distance_fallback_to_zone') ? 'Yes' : 'No'); ?></span></div>
+            </div>
+        </div>
+
+        <div class="mt-4 rounded-2xl border border-blue-100 bg-blue-50/80 p-4 text-xs text-blue-900 dark:border-blue-900/50 dark:bg-blue-950/30 dark:text-blue-100">
+            <div class="font-semibold">Dynamic fee example</div>
+            <div class="mt-1">Set <strong>Customer</strong> to B2C, <strong>Base fee</strong> to ₹49, <strong>Base covers</strong> to 3 km, and <strong>Fee per started km after</strong> to ₹12. A delivery distance of 8.2 km becomes ₹49 + 6 × ₹12 = ₹121.</div>
+            <div class="mt-1 text-[11px] opacity-80">Leave <strong>Fee per started km after</strong> blank/0 to use the row as a fixed slab. B2B checkout ignores these rules and keeps delivery fee at ₹0.</div>
+        </div>
+
+        <div class="mt-4 overflow-x-auto">
+            <table class="min-w-full divide-y divide-gray-100 text-xs dark:divide-gray-800">
+                <thead>
+                    <tr class="text-left text-gray-500">
+                        <th class="py-2">Customer</th>
+                        <th>Distance km</th>
+                        <th>Min order</th>
+                        <th>Base fee</th>
+                        <th>Base covers</th>
+                        <th>Per km after</th>
+                        <th>Free above</th>
+                        <th>GST %<br><span class="font-normal">auto</span></th>
+                        <th>Status</th>
+                        <th></th>
+                        <th></th>
+                    </tr>
+                </thead>
+                <tbody class="divide-y divide-gray-100 dark:divide-gray-800">
+                    <?php $__currentLoopData = $distanceRules; $__env->addLoop($__currentLoopData); foreach($__currentLoopData as $rule): $__env->incrementLoopIndices(); $loop = $__env->getLastLoop(); ?>
+                        <?php ($distanceRuleFormId = 'distance-rule-form-' . $rule->id); ?>
+                        <tr>
+                            <td class="py-2">
+                                <select form="<?php echo e($distanceRuleFormId); ?>" name="customer_type" class="rounded-lg border border-gray-300 bg-white px-2 py-1 dark:border-gray-700 dark:bg-gray-950"><?php $__currentLoopData = $distanceCustomerTypes; $__env->addLoop($__currentLoopData); foreach($__currentLoopData as $key => $label): $__env->incrementLoopIndices(); $loop = $__env->getLastLoop(); ?><option value="<?php echo e($key); ?>" <?php if($rule->customer_type === $key): echo 'selected'; endif; ?>><?php echo e($label); ?></option><?php endforeach; $__env->popLoop(); $loop = $__env->getLastLoop(); ?> <?php if($rule->customer_type === 'b2b'): ?><option value="b2b" selected>B2B (ignored / waived)</option><?php endif; ?></select>
+                            </td>
+                            <td class="whitespace-nowrap">
+                                <input form="<?php echo e($distanceRuleFormId); ?>" name="min_distance_km" type="number" step="0.01" min="0" value="<?php echo e($rule->min_distance_km); ?>" class="w-20 rounded-lg border border-gray-300 bg-white px-2 py-1 dark:border-gray-700 dark:bg-gray-950">
+                                <span class="text-gray-400">to</span>
+                                <input form="<?php echo e($distanceRuleFormId); ?>" name="max_distance_km" type="number" step="0.01" min="0" value="<?php echo e($rule->max_distance_km); ?>" class="w-20 rounded-lg border border-gray-300 bg-white px-2 py-1 dark:border-gray-700 dark:bg-gray-950" placeholder="∞">
+                            </td>
+                            <td><input form="<?php echo e($distanceRuleFormId); ?>" name="min_order_value" type="number" step="0.01" min="0" value="<?php echo e($rule->min_order_value); ?>" class="w-24 rounded-lg border border-gray-300 bg-white px-2 py-1 dark:border-gray-700 dark:bg-gray-950"></td>
+                            <td><input form="<?php echo e($distanceRuleFormId); ?>" name="delivery_fee" type="number" step="0.01" min="0" value="<?php echo e($rule->delivery_fee); ?>" class="w-24 rounded-lg border border-gray-300 bg-white px-2 py-1 dark:border-gray-700 dark:bg-gray-950"></td>
+                            <td><input form="<?php echo e($distanceRuleFormId); ?>" name="included_distance_km" type="number" step="0.01" min="0" value="<?php echo e($rule->included_distance_km ?? 0); ?>" class="w-20 rounded-lg border border-gray-300 bg-white px-2 py-1 dark:border-gray-700 dark:bg-gray-950" placeholder="0"></td>
+                            <td><input form="<?php echo e($distanceRuleFormId); ?>" name="per_km_fee" type="number" step="0.01" min="0" value="<?php echo e($rule->per_km_fee); ?>" class="w-20 rounded-lg border border-gray-300 bg-white px-2 py-1 dark:border-gray-700 dark:bg-gray-950" placeholder="0"></td>
+                            <td><input form="<?php echo e($distanceRuleFormId); ?>" name="free_delivery_above" type="number" step="0.01" min="0" value="<?php echo e($rule->free_delivery_above); ?>" class="w-24 rounded-lg border border-gray-300 bg-white px-2 py-1 dark:border-gray-700 dark:bg-gray-950"></td>
+                            <td class="whitespace-nowrap"><input form="<?php echo e($distanceRuleFormId); ?>" name="tax_rate" type="number" step="0.01" min="0" value="<?php echo e($hasDeliveryServiceHsn ? $currentDeliveryGstRate : $rule->tax_rate); ?>" readonly class="w-20 rounded-lg border border-gray-300 bg-gray-100 px-2 py-1 text-gray-600 dark:border-gray-700 dark:bg-gray-800 dark:text-gray-300"><div class="mt-1 text-[10px] text-gray-400"><?php echo e($hasDeliveryServiceHsn ? $currentDeliverySac : 'Manual / legacy'); ?></div></td>
+                            <td><label class="inline-flex items-center gap-1"><input form="<?php echo e($distanceRuleFormId); ?>" type="checkbox" name="is_active" value="1" <?php if($rule->is_active): echo 'checked'; endif; ?>> Active</label></td>
+                            <td>
+                                <button type="submit" form="<?php echo e($distanceRuleFormId); ?>" class="rounded-lg border px-2 py-1">Save</button>
+                                <form id="<?php echo e($distanceRuleFormId); ?>" method="POST" action="<?php echo e(route('admin.delivery.distance-rules.update', $rule)); ?>" class="hidden">
+                                    <?php echo csrf_field(); ?>
+                                    <?php echo method_field('PUT'); ?>
+                                </form>
+                            </td>
+                            <td><form method="POST" action="<?php echo e(route('admin.delivery.distance-rules.destroy', $rule)); ?>" onsubmit="return confirm('Remove this distance rule?')"><?php echo csrf_field(); ?> <?php echo method_field('DELETE'); ?><button class="text-red-500">Delete</button></form></td>
+                        </tr>
+                    <?php endforeach; $__env->popLoop(); $loop = $__env->getLastLoop(); ?>
+                </tbody>
+            </table>
+        </div>
+
+        <form method="POST" action="<?php echo e(route('admin.delivery.distance-rules.store')); ?>" class="mt-4 rounded-2xl border border-gray-100 bg-gray-50 p-4 dark:border-gray-800 dark:bg-gray-950/40">
+            <?php echo csrf_field(); ?>
+            <div class="grid gap-3 md:grid-cols-3 xl:grid-cols-5">
+                <label class="space-y-1 text-[11px] font-medium text-gray-600 dark:text-gray-300">
+                    <span>Customer</span>
+                    <select name="customer_type" class="w-full rounded-xl border border-gray-300 bg-white px-3 py-2 text-xs dark:border-gray-700 dark:bg-gray-950"><?php $__currentLoopData = $distanceCustomerTypes; $__env->addLoop($__currentLoopData); foreach($__currentLoopData as $key => $label): $__env->incrementLoopIndices(); $loop = $__env->getLastLoop(); ?><option value="<?php echo e($key); ?>"><?php echo e($label); ?></option><?php endforeach; $__env->popLoop(); $loop = $__env->getLastLoop(); ?></select>
+                </label>
+                <label class="space-y-1 text-[11px] font-medium text-gray-600 dark:text-gray-300">
+                    <span>Min distance km</span>
+                    <input name="min_distance_km" type="number" step="0.01" min="0" value="0" class="w-full rounded-xl border border-gray-300 bg-white px-3 py-2 text-xs dark:border-gray-700 dark:bg-gray-950">
+                </label>
+                <label class="space-y-1 text-[11px] font-medium text-gray-600 dark:text-gray-300">
+                    <span>Max distance km</span>
+                    <input name="max_distance_km" type="number" step="0.01" min="0" placeholder="Blank = no max" class="w-full rounded-xl border border-gray-300 bg-white px-3 py-2 text-xs dark:border-gray-700 dark:bg-gray-950">
+                </label>
+                <label class="space-y-1 text-[11px] font-medium text-gray-600 dark:text-gray-300">
+                    <span>Min order value</span>
+                    <input name="min_order_value" type="number" step="0.01" min="0" value="0" class="w-full rounded-xl border border-gray-300 bg-white px-3 py-2 text-xs dark:border-gray-700 dark:bg-gray-950">
+                </label>
+                <label class="space-y-1 text-[11px] font-medium text-gray-600 dark:text-gray-300">
+                    <span>Base fee ₹</span>
+                    <input name="delivery_fee" type="number" step="0.01" min="0" placeholder="49" class="w-full rounded-xl border border-gray-300 bg-white px-3 py-2 text-xs dark:border-gray-700 dark:bg-gray-950">
+                </label>
+                <label class="space-y-1 text-[11px] font-medium text-gray-600 dark:text-gray-300">
+                    <span>Base covers km</span>
+                    <input name="included_distance_km" type="number" step="0.01" min="0" placeholder="3" class="w-full rounded-xl border border-gray-300 bg-white px-3 py-2 text-xs dark:border-gray-700 dark:bg-gray-950">
+                </label>
+                <label class="space-y-1 text-[11px] font-medium text-gray-600 dark:text-gray-300">
+                    <span>Fee per started km after ₹</span>
+                    <input name="per_km_fee" type="number" step="0.01" min="0" placeholder="12" class="w-full rounded-xl border border-gray-300 bg-white px-3 py-2 text-xs dark:border-gray-700 dark:bg-gray-950">
+                </label>
+                <label class="space-y-1 text-[11px] font-medium text-gray-600 dark:text-gray-300">
+                    <span>Free delivery above ₹</span>
+                    <input name="free_delivery_above" type="number" step="0.01" min="0" placeholder="1999" class="w-full rounded-xl border border-gray-300 bg-white px-3 py-2 text-xs dark:border-gray-700 dark:bg-gray-950">
+                </label>
+                <label class="space-y-1 text-[11px] font-medium text-gray-600 dark:text-gray-300">
+                    <span>GST % auto</span>
+                    <input type="hidden" name="tax_rate" value="<?php echo e($currentDeliveryGstRate); ?>">
+                    <div class="w-full rounded-xl border border-gray-200 bg-gray-50 px-3 py-2 text-xs text-gray-600 dark:border-gray-800 dark:bg-gray-950/40 dark:text-gray-300">
+                        GST <?php echo e($formatPercent($currentDeliveryGstRate)); ?><br><span class="text-[10px] text-gray-400"><?php echo e($currentDeliverySac); ?></span>
+                    </div>
+                </label>
+                <div class="flex items-end">
+                    <button class="w-full rounded-xl bg-gray-900 px-4 py-2 text-xs font-medium text-white dark:bg-gray-100 dark:text-gray-900">Add distance rule</button>
+                </div>
+            </div>
+            <input type="hidden" name="is_active" value="1">
+            <p class="mt-3 text-[11px] text-gray-500 dark:text-gray-400">Dynamic formula: base fee + fee per started km after base coverage. Example: ₹49 base covers 3 km, ₹12/km after, 8.2 km distance → ₹49 + 6×₹12 = ₹121.</p>
+        </form>
+    </section>
+
+    <section class="rounded-2xl border border-gray-200 bg-white p-5 dark:border-gray-800 dark:bg-gray-900">
+        <div class="flex flex-col gap-2 sm:flex-row sm:items-start sm:justify-between">
+            <div>
+                <h2 class="text-sm font-semibold text-gray-900 dark:text-gray-50">Cold-chain handling & packing rules</h2>
+                <p class="mt-1 text-xs text-gray-500 dark:text-gray-400">
+                    Use this for small-order frozen packing, gel packs, insulated handling, and special packing fees. The storefront defaults to the
+                    <span class="font-semibold"><?php echo e(ucfirst(config('delivery.default_handling_temperature_mode', 'frozen'))); ?></span>
+                    temperature bucket when calculating handling fees.
+                </p>
+            </div>
+        </div>
+
+        <?php $__currentLoopData = $handlingRules; $__env->addLoop($__currentLoopData); foreach($__currentLoopData as $rule): $__env->incrementLoopIndices(); $loop = $__env->getLastLoop(); ?>
+            <form id="handling-rule-update-<?php echo e($rule->id); ?>" method="POST" action="<?php echo e(route('admin.delivery.handling-rules.update', $rule)); ?>" class="hidden">
+                <?php echo csrf_field(); ?>
+                <?php echo method_field('PUT'); ?>
+            </form>
+        <?php endforeach; $__env->popLoop(); $loop = $__env->getLastLoop(); ?>
+
+        <div class="mt-4 overflow-x-auto">
+            <table class="min-w-full divide-y divide-gray-100 text-xs dark:divide-gray-800">
+                <thead>
+                    <tr class="text-left text-gray-500">
+                        <th class="py-2">Customer</th>
+                        <th>Temp</th>
+                        <th>Min order</th>
+                        <th>Handling fee</th>
+                        <th>Free above</th>
+                        <th>GST %<br><span class="font-normal">auto</span></th>
+                        <th>Status</th>
+                        <th></th>
+                        <th></th>
+                    </tr>
+                </thead>
+                <tbody class="divide-y divide-gray-100 dark:divide-gray-800">
+                    <?php $__empty_1 = true; $__currentLoopData = $handlingRules; $__env->addLoop($__currentLoopData); foreach($__currentLoopData as $rule): $__env->incrementLoopIndices(); $loop = $__env->getLastLoop(); $__empty_1 = false; ?>
+                        <tr>
+                            <td class="py-2">
+                                <select name="customer_type" form="handling-rule-update-<?php echo e($rule->id); ?>" class="rounded-lg border border-gray-300 bg-white px-2 py-1 dark:border-gray-700 dark:bg-gray-950">
+                                    <?php $__currentLoopData = $customerTypes; $__env->addLoop($__currentLoopData); foreach($__currentLoopData as $key => $label): $__env->incrementLoopIndices(); $loop = $__env->getLastLoop(); ?>
+                                        <option value="<?php echo e($key); ?>" <?php if($rule->customer_type === $key): echo 'selected'; endif; ?>><?php echo e($label); ?></option>
+                                    <?php endforeach; $__env->popLoop(); $loop = $__env->getLastLoop(); ?>
+                                </select>
+                            </td>
+                            <td>
+                                <select name="temperature_mode" form="handling-rule-update-<?php echo e($rule->id); ?>" class="rounded-lg border border-gray-300 bg-white px-2 py-1 dark:border-gray-700 dark:bg-gray-950">
+                                    <?php $__currentLoopData = $temperatureModes; $__env->addLoop($__currentLoopData); foreach($__currentLoopData as $key => $label): $__env->incrementLoopIndices(); $loop = $__env->getLastLoop(); ?>
+                                        <option value="<?php echo e($key); ?>" <?php if($rule->temperature_mode === $key): echo 'selected'; endif; ?>><?php echo e($label); ?></option>
+                                    <?php endforeach; $__env->popLoop(); $loop = $__env->getLastLoop(); ?>
+                                </select>
+                            </td>
+                            <td><input name="min_order_value" form="handling-rule-update-<?php echo e($rule->id); ?>" type="number" step="0.01" min="0" value="<?php echo e($rule->min_order_value); ?>" class="w-24 rounded-lg border border-gray-300 bg-white px-2 py-1 dark:border-gray-700 dark:bg-gray-950"></td>
+                            <td><input name="handling_fee" form="handling-rule-update-<?php echo e($rule->id); ?>" type="number" step="0.01" min="0" value="<?php echo e($rule->handling_fee); ?>" class="w-24 rounded-lg border border-gray-300 bg-white px-2 py-1 dark:border-gray-700 dark:bg-gray-950"></td>
+                            <td><input name="free_handling_above" form="handling-rule-update-<?php echo e($rule->id); ?>" type="number" step="0.01" min="0" value="<?php echo e($rule->free_handling_above); ?>" class="w-24 rounded-lg border border-gray-300 bg-white px-2 py-1 dark:border-gray-700 dark:bg-gray-950"></td>
+                            <td class="whitespace-nowrap"><input name="tax_rate" form="handling-rule-update-<?php echo e($rule->id); ?>" type="number" step="0.01" min="0" value="<?php echo e($hasHandlingServiceHsn ? $currentHandlingGstRate : $rule->tax_rate); ?>" readonly class="w-20 rounded-lg border border-gray-300 bg-gray-100 px-2 py-1 text-gray-600 dark:border-gray-700 dark:bg-gray-800 dark:text-gray-300"><div class="mt-1 text-[10px] text-gray-400"><?php echo e($hasHandlingServiceHsn ? $currentHandlingSac : 'Manual / legacy'); ?></div></td>
+                            <td><label class="inline-flex items-center gap-1"><input type="checkbox" name="is_active" form="handling-rule-update-<?php echo e($rule->id); ?>" value="1" <?php if($rule->is_active): echo 'checked'; endif; ?>> Active</label></td>
+                            <td><button type="submit" form="handling-rule-update-<?php echo e($rule->id); ?>" class="rounded-lg border px-2 py-1">Save</button></td>
+                            <td>
+                                <form method="POST" action="<?php echo e(route('admin.delivery.handling-rules.destroy', $rule)); ?>" onsubmit="return confirm('Remove this rule?')">
+                                    <?php echo csrf_field(); ?>
+                                    <?php echo method_field('DELETE'); ?>
+                                    <button class="text-red-500">Delete</button>
+                                </form>
+                            </td>
+                        </tr>
+                    <?php endforeach; $__env->popLoop(); $loop = $__env->getLastLoop(); if ($__empty_1): ?>
+                        <tr>
+                            <td colspan="9" class="py-4 text-center text-gray-500 dark:text-gray-400">No handling rules yet.</td>
+                        </tr>
+                    <?php endif; ?>
+                </tbody>
+            </table>
+        </div>
+
+        <form method="POST" action="<?php echo e(route('admin.delivery.handling-rules.store')); ?>" class="mt-4 grid gap-2 md:grid-cols-8">
+            <?php echo csrf_field(); ?>
+            <select name="customer_type" class="rounded-xl border border-gray-300 bg-white px-3 py-2 text-xs dark:border-gray-700 dark:bg-gray-950">
+                <?php $__currentLoopData = $customerTypes; $__env->addLoop($__currentLoopData); foreach($__currentLoopData as $key => $label): $__env->incrementLoopIndices(); $loop = $__env->getLastLoop(); ?><option value="<?php echo e($key); ?>"><?php echo e($label); ?></option><?php endforeach; $__env->popLoop(); $loop = $__env->getLastLoop(); ?>
+            </select>
+            <select name="temperature_mode" class="rounded-xl border border-gray-300 bg-white px-3 py-2 text-xs dark:border-gray-700 dark:bg-gray-950">
+                <?php $__currentLoopData = $temperatureModes; $__env->addLoop($__currentLoopData); foreach($__currentLoopData as $key => $label): $__env->incrementLoopIndices(); $loop = $__env->getLastLoop(); ?>
+                    <option value="<?php echo e($key); ?>" <?php if($key === config('delivery.default_handling_temperature_mode', 'frozen')): echo 'selected'; endif; ?>><?php echo e($label); ?></option>
+                <?php endforeach; $__env->popLoop(); $loop = $__env->getLastLoop(); ?>
+            </select>
+            <input name="min_order_value" type="number" step="0.01" min="0" placeholder="Min order" class="rounded-xl border border-gray-300 bg-white px-3 py-2 text-xs dark:border-gray-700 dark:bg-gray-950">
+            <input name="handling_fee" type="number" step="0.01" min="0" placeholder="Handling fee" class="rounded-xl border border-gray-300 bg-white px-3 py-2 text-xs dark:border-gray-700 dark:bg-gray-950">
+            <input name="free_handling_above" type="number" step="0.01" min="0" placeholder="Free above" class="rounded-xl border border-gray-300 bg-white px-3 py-2 text-xs dark:border-gray-700 dark:bg-gray-950">
+            <input type="hidden" name="tax_rate" value="<?php echo e($currentHandlingGstRate); ?>">
+            <div class="rounded-xl border border-gray-200 bg-gray-50 px-3 py-2 text-xs text-gray-600 dark:border-gray-800 dark:bg-gray-950/40 dark:text-gray-300">
+                GST <?php echo e($formatPercent($currentHandlingGstRate)); ?><br><span class="text-[10px] text-gray-400"><?php echo e($currentHandlingSac); ?></span>
+            </div>
+            <label class="inline-flex items-center gap-2 rounded-xl border border-gray-200 px-3 py-2 text-xs dark:border-gray-800">
+                <input type="checkbox" name="is_active" value="1" checked>
+                Active
+            </label>
+            <button class="rounded-xl bg-gray-900 px-4 py-2 text-xs font-medium text-white dark:bg-gray-100 dark:text-gray-900">Add handling rule</button>
+        </form>
+    </section>
+
+    <section class="rounded-2xl border border-gray-200 bg-white p-5 dark:border-gray-800 dark:bg-gray-900">
+        <h2 class="text-sm font-semibold text-gray-900 dark:text-gray-50">Create delivery zone</h2>
+        <form method="POST" action="<?php echo e(route('admin.delivery.zones.store')); ?>" class="mt-4 grid gap-3 md:grid-cols-5">
+            <?php echo csrf_field(); ?>
+            <input name="name" placeholder="Zone name" class="rounded-xl border border-gray-300 bg-white px-3 py-2 text-xs dark:border-gray-700 dark:bg-gray-950" required>
+            <input name="code" placeholder="Code, e.g. PUNE_CITY" class="rounded-xl border border-gray-300 bg-white px-3 py-2 text-xs dark:border-gray-700 dark:bg-gray-950" required>
+            <input name="sort_order" type="number" min="0" placeholder="Sort" class="rounded-xl border border-gray-300 bg-white px-3 py-2 text-xs dark:border-gray-700 dark:bg-gray-950">
+            <label class="flex items-center gap-2 text-xs text-gray-600 dark:text-gray-300">
+                <input type="checkbox" name="is_active" value="1" checked class="rounded border-gray-300 dark:border-gray-700"> Active
+            </label>
+            <button class="rounded-xl bg-gray-900 px-4 py-2 text-xs font-medium text-white hover:bg-gray-800 dark:bg-gray-100 dark:text-gray-900">Create zone</button>
+            <textarea name="description" placeholder="Description" class="md:col-span-5 rounded-xl border border-gray-300 bg-white px-3 py-2 text-xs dark:border-gray-700 dark:bg-gray-950"></textarea>
+        </form>
+    </section>
+
+    <div class="space-y-5">
+        <?php $__currentLoopData = $zones; $__env->addLoop($__currentLoopData); foreach($__currentLoopData as $zone): $__env->incrementLoopIndices(); $loop = $__env->getLastLoop(); ?>
+            <section class="overflow-hidden rounded-2xl border border-gray-200 bg-white dark:border-gray-800 dark:bg-gray-900">
+                <div class="border-b border-gray-100 px-5 py-4 dark:border-gray-800">
+                    <form method="POST" action="<?php echo e(route('admin.delivery.zones.update', $zone)); ?>" class="grid gap-3 md:grid-cols-6">
+                        <?php echo csrf_field(); ?>
+                        <?php echo method_field('PUT'); ?>
+                        <div class="md:col-span-2">
+                            <label class="block text-[11px] font-medium text-gray-600 dark:text-gray-300">Zone name</label>
+                            <input name="name" value="<?php echo e(old('name', $zone->name)); ?>" class="mt-1 w-full rounded-xl border border-gray-300 bg-white px-3 py-2 text-xs dark:border-gray-700 dark:bg-gray-950" required>
+                        </div>
+                        <div>
+                            <label class="block text-[11px] font-medium text-gray-600 dark:text-gray-300">Code</label>
+                            <input name="code" value="<?php echo e(old('code', $zone->code)); ?>" class="mt-1 w-full rounded-xl border border-gray-300 bg-white px-3 py-2 text-xs dark:border-gray-700 dark:bg-gray-950" required>
+                        </div>
+                        <div>
+                            <label class="block text-[11px] font-medium text-gray-600 dark:text-gray-300">Sort</label>
+                            <input name="sort_order" type="number" min="0" value="<?php echo e(old('sort_order', $zone->sort_order)); ?>" class="mt-1 w-full rounded-xl border border-gray-300 bg-white px-3 py-2 text-xs dark:border-gray-700 dark:bg-gray-950">
+                        </div>
+                        <label class="mt-6 flex items-center gap-2 text-xs text-gray-600 dark:text-gray-300">
+                            <input type="checkbox" name="is_active" value="1" <?php if($zone->is_active): echo 'checked'; endif; ?> class="rounded border-gray-300 dark:border-gray-700"> Active
+                        </label>
+                        <button class="mt-5 rounded-xl border border-gray-300 px-4 py-2 text-xs font-medium text-gray-700 hover:bg-gray-50 dark:border-gray-700 dark:text-gray-200 dark:hover:bg-gray-800">Save zone</button>
+                        <textarea name="description" class="md:col-span-6 rounded-xl border border-gray-300 bg-white px-3 py-2 text-xs dark:border-gray-700 dark:bg-gray-950"><?php echo e(old('description', $zone->description)); ?></textarea>
+                    </form>
+                </div>
+
+                <div class="grid gap-0 lg:grid-cols-2">
+                    <div class="border-b border-gray-100 p-5 dark:border-gray-800 lg:border-b-0 lg:border-r">
+                        <h3 class="text-xs font-semibold uppercase tracking-wide text-gray-500 dark:text-gray-400">Pincodes</h3>
+                        <div class="mt-3 flex flex-wrap gap-2">
+                            <?php $__empty_1 = true; $__currentLoopData = $zone->pincodes; $__env->addLoop($__currentLoopData); foreach($__currentLoopData as $pin): $__env->incrementLoopIndices(); $loop = $__env->getLastLoop(); $__empty_1 = false; ?>
+                                <span class="inline-flex items-center gap-2 rounded-full border border-gray-200 px-3 py-1 text-xs dark:border-gray-700">
+                                    <?php echo e($pin->pincode); ?>
+
+                                    <?php if($pin->area_name): ?><span class="text-gray-400"><?php echo e($pin->area_name); ?></span><?php endif; ?>
+                                    <form method="POST" action="<?php echo e(route('admin.delivery.pincodes.destroy', $pin)); ?>" onsubmit="return confirm('Remove this pincode?')">
+                                        <?php echo csrf_field(); ?>
+                                        <?php echo method_field('DELETE'); ?>
+                                        <button class="text-red-500">×</button>
+                                    </form>
+                                </span>
+                            <?php endforeach; $__env->popLoop(); $loop = $__env->getLastLoop(); if ($__empty_1): ?>
+                                <p class="text-xs text-gray-500 dark:text-gray-400">No pincodes mapped yet.</p>
+                            <?php endif; ?>
+                        </div>
+                        <form method="POST" action="<?php echo e(route('admin.delivery.zones.pincodes.store', $zone)); ?>" class="mt-4 grid gap-2 sm:grid-cols-4">
+                            <?php echo csrf_field(); ?>
+                            <input name="pincode" placeholder="Pincode" class="rounded-xl border border-gray-300 bg-white px-3 py-2 text-xs dark:border-gray-700 dark:bg-gray-950" required>
+                            <input name="city" placeholder="City" value="Pune" class="rounded-xl border border-gray-300 bg-white px-3 py-2 text-xs dark:border-gray-700 dark:bg-gray-950">
+                            <input name="area_name" placeholder="Area" class="rounded-xl border border-gray-300 bg-white px-3 py-2 text-xs dark:border-gray-700 dark:bg-gray-950">
+                            <button class="rounded-xl bg-gray-900 px-4 py-2 text-xs font-medium text-white dark:bg-gray-100 dark:text-gray-900">Add pincode</button>
+                            <input type="hidden" name="is_active" value="1">
+                        </form>
+                    </div>
+
+                    <div class="p-5">
+                        <h3 class="text-xs font-semibold uppercase tracking-wide text-gray-500 dark:text-gray-400">Delivery fee rules</h3>
+                        <div class="mt-3 overflow-x-auto">
+                            <table class="min-w-full divide-y divide-gray-100 text-xs dark:divide-gray-800">
+                                <thead><tr class="text-left text-gray-500"><th class="py-2">Customer</th><th>Min order</th><th>Fee</th><th>Free above</th><th>GST %<br><span class="font-normal">auto</span></th><th>Status</th><th></th></tr></thead>
+                                <tbody class="divide-y divide-gray-100 dark:divide-gray-800">
+                                    <?php $__currentLoopData = $zone->deliveryChargeRules; $__env->addLoop($__currentLoopData); foreach($__currentLoopData as $rule): $__env->incrementLoopIndices(); $loop = $__env->getLastLoop(); ?>
+                                        <tr>
+                                            <form method="POST" action="<?php echo e(route('admin.delivery.delivery-rules.update', $rule)); ?>">
+                                                <?php echo csrf_field(); ?>
+                                                <?php echo method_field('PUT'); ?>
+                                                <td class="py-2"><select name="customer_type" class="rounded-lg border border-gray-300 bg-white px-2 py-1 dark:border-gray-700 dark:bg-gray-950"><?php $__currentLoopData = $customerTypes; $__env->addLoop($__currentLoopData); foreach($__currentLoopData as $key => $label): $__env->incrementLoopIndices(); $loop = $__env->getLastLoop(); ?><option value="<?php echo e($key); ?>" <?php if($rule->customer_type === $key): echo 'selected'; endif; ?>><?php echo e($label); ?></option><?php endforeach; $__env->popLoop(); $loop = $__env->getLastLoop(); ?></select></td>
+                                                <td><input name="min_order_value" type="number" step="0.01" min="0" value="<?php echo e($rule->min_order_value); ?>" class="w-24 rounded-lg border border-gray-300 bg-white px-2 py-1 dark:border-gray-700 dark:bg-gray-950"></td>
+                                                <td><input name="delivery_fee" type="number" step="0.01" min="0" value="<?php echo e($rule->delivery_fee); ?>" class="w-24 rounded-lg border border-gray-300 bg-white px-2 py-1 dark:border-gray-700 dark:bg-gray-950"></td>
+                                                <td><input name="free_delivery_above" type="number" step="0.01" min="0" value="<?php echo e($rule->free_delivery_above); ?>" class="w-24 rounded-lg border border-gray-300 bg-white px-2 py-1 dark:border-gray-700 dark:bg-gray-950"></td>
+                                                <td class="whitespace-nowrap"><input name="tax_rate" type="number" step="0.01" min="0" value="<?php echo e($hasDeliveryServiceHsn ? $currentDeliveryGstRate : $rule->tax_rate); ?>" readonly class="w-20 rounded-lg border border-gray-300 bg-gray-100 px-2 py-1 text-gray-600 dark:border-gray-700 dark:bg-gray-800 dark:text-gray-300"><div class="mt-1 text-[10px] text-gray-400"><?php echo e($hasDeliveryServiceHsn ? $currentDeliverySac : 'Manual / legacy'); ?></div></td>
+                                                <td><label class="inline-flex items-center gap-1"><input type="checkbox" name="is_active" value="1" <?php if($rule->is_active): echo 'checked'; endif; ?>> Active</label></td>
+                                                <td class="text-right"><button class="rounded-lg border px-2 py-1">Save</button></td>
+                                            </form>
+                                            <td><form method="POST" action="<?php echo e(route('admin.delivery.delivery-rules.destroy', $rule)); ?>" onsubmit="return confirm('Remove this rule?')"><?php echo csrf_field(); ?> <?php echo method_field('DELETE'); ?><button class="text-red-500">Delete</button></form></td>
+                                        </tr>
+                                    <?php endforeach; $__env->popLoop(); $loop = $__env->getLastLoop(); ?>
+                                </tbody>
+                            </table>
+                        </div>
+                        <form method="POST" action="<?php echo e(route('admin.delivery.zones.delivery-rules.store', $zone)); ?>" class="mt-4 grid gap-2 sm:grid-cols-6">
+                            <?php echo csrf_field(); ?>
+                            <select name="customer_type" class="rounded-xl border border-gray-300 bg-white px-3 py-2 text-xs dark:border-gray-700 dark:bg-gray-950"><?php $__currentLoopData = $customerTypes; $__env->addLoop($__currentLoopData); foreach($__currentLoopData as $key => $label): $__env->incrementLoopIndices(); $loop = $__env->getLastLoop(); ?><option value="<?php echo e($key); ?>"><?php echo e($label); ?></option><?php endforeach; $__env->popLoop(); $loop = $__env->getLastLoop(); ?></select>
+                            <input name="min_order_value" type="number" step="0.01" min="0" placeholder="Min order" class="rounded-xl border border-gray-300 bg-white px-3 py-2 text-xs dark:border-gray-700 dark:bg-gray-950">
+                            <input name="delivery_fee" type="number" step="0.01" min="0" placeholder="Fee" class="rounded-xl border border-gray-300 bg-white px-3 py-2 text-xs dark:border-gray-700 dark:bg-gray-950">
+                            <input name="free_delivery_above" type="number" step="0.01" min="0" placeholder="Free above" class="rounded-xl border border-gray-300 bg-white px-3 py-2 text-xs dark:border-gray-700 dark:bg-gray-950">
+                            <input type="hidden" name="tax_rate" value="<?php echo e($currentDeliveryGstRate); ?>">
+                            <div class="rounded-xl border border-gray-200 bg-gray-50 px-3 py-2 text-xs text-gray-600 dark:border-gray-800 dark:bg-gray-950/40 dark:text-gray-300">
+                                GST <?php echo e($formatPercent($currentDeliveryGstRate)); ?><br><span class="text-[10px] text-gray-400"><?php echo e($currentDeliverySac); ?></span>
+                            </div>
+                            <button class="rounded-xl bg-gray-900 px-4 py-2 text-xs font-medium text-white dark:bg-gray-100 dark:text-gray-900">Add rule</button>
+                            <input type="hidden" name="is_active" value="1">
+                        </form>
+                    </div>
+                </div>
+            </section>
+        <?php endforeach; $__env->popLoop(); $loop = $__env->getLastLoop(); ?>
+    </div>
+
+
+    
+</div>
+<?php $__env->stopSection(); ?>
+
+<?php echo $__env->make('layouts.company', array_diff_key(get_defined_vars(), ['__data' => 1, '__path' => 1]))->render(); ?><?php /**PATH /Users/ooglie/Website/ChatGPT/PRODUCTIONFrozen/BandaraFrozen/resources/views/admin/delivery/index.blade.php ENDPATH**/ ?>

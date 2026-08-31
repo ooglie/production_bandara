@@ -81,7 +81,7 @@
                     <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"
                          class="w-5 h-5" fill="none" stroke="currentColor" stroke-width="1.5">
                         <path stroke-linecap="round" stroke-linejoin="round"
-                              d="M5.25 6.75h.008v.008H5.25V6.75Zm0 4.5h.008v.008H5.25v-.008Zm0 4.5h.008v.008H5.25v-.008ZM8.25 6.75h7.5M8.25 11.25h5.25M8.25 15.75h4.5M17.25 13.5v6M14.25 16.5h6" />
+                              d="M4.5 7.5h15M6 12h12M8.25 16.5h7.5" />
                     </svg>
                 </summary>
 
@@ -181,7 +181,7 @@
                 <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"
                      class="w-5 h-5" fill="none" stroke="currentColor" stroke-width="1.5">
                     <path stroke-linecap="round" stroke-linejoin="round"
-                          d="M5.25 6.75h.008v.008H5.25V6.75Zm0 4.5h.008v.008H5.25v-.008Zm0 4.5h.008v.008H5.25v-.008ZM8.25 6.75h7.5M8.25 11.25h5.25M8.25 15.75h4.5M17.25 13.5v6M14.25 16.5h6" />
+                          d="M4.5 7.5h15M6 12h12M8.25 16.5h7.5" />
                 </svg>
             </a>
         @endif
@@ -198,7 +198,7 @@
             <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"
                  class="w-5 h-5" fill="none" stroke="currentColor" stroke-width="1.5">
                 <path stroke-linecap="round" stroke-linejoin="round"
-                      d="M5.25 6.75h.008v.008H5.25V6.75Zm0 4.5h.008v.008H5.25v-.008Zm0 4.5h.008v.008H5.25v-.008ZM8.25 6.75h7.5M8.25 11.25h5.25M8.25 15.75h4.5M17.25 13.5v6M14.25 16.5h6" />
+                      d="M4.5 7.5h15M6 12h12M8.25 16.5h7.5" />
             </svg>
         </button>
     @endif
@@ -346,3 +346,4 @@
         </script>
     @endpush
 @endonce
+

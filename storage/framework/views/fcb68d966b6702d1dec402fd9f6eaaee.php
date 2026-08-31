@@ -81,7 +81,7 @@
                     <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"
                          class="w-5 h-5" fill="none" stroke="currentColor" stroke-width="1.5">
                         <path stroke-linecap="round" stroke-linejoin="round"
-                              d="M4.5 7.5h15M6 12h12M8.25 16.5h7.5" />
+                              d="M5.25 6.75h.008v.008H5.25V6.75Zm0 4.5h.008v.008H5.25v-.008Zm0 4.5h.008v.008H5.25v-.008ZM8.25 6.75h7.5M8.25 11.25h5.25M8.25 15.75h4.5M17.25 13.5v6M14.25 16.5h6" />
                     </svg>
                 </summary>
 
@@ -188,7 +188,7 @@
                 <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"
                      class="w-5 h-5" fill="none" stroke="currentColor" stroke-width="1.5">
                     <path stroke-linecap="round" stroke-linejoin="round"
-                          d="M4.5 7.5h15M6 12h12M8.25 16.5h7.5" />
+                          d="M5.25 6.75h.008v.008H5.25V6.75Zm0 4.5h.008v.008H5.25v-.008Zm0 4.5h.008v.008H5.25v-.008ZM8.25 6.75h7.5M8.25 11.25h5.25M8.25 15.75h4.5M17.25 13.5v6M14.25 16.5h6" />
                 </svg>
             </a>
         <?php endif; ?>
@@ -205,7 +205,7 @@
             <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"
                  class="w-5 h-5" fill="none" stroke="currentColor" stroke-width="1.5">
                 <path stroke-linecap="round" stroke-linejoin="round"
-                      d="M4.5 7.5h15M6 12h12M8.25 16.5h7.5" />
+                      d="M5.25 6.75h.008v.008H5.25V6.75Zm0 4.5h.008v.008H5.25v-.008Zm0 4.5h.008v.008H5.25v-.008ZM8.25 6.75h7.5M8.25 11.25h5.25M8.25 15.75h4.5M17.25 13.5v6M14.25 16.5h6" />
             </svg>
         </button>
     <?php endif; ?>
@@ -304,7 +304,7 @@
     </svg>
 </a>
 
-<?php if (! $__env->hasRenderedOnce('a45253cf-98e2-4732-9a7e-4ea114011f61')): $__env->markAsRenderedOnce('a45253cf-98e2-4732-9a7e-4ea114011f61'); ?>
+<?php if (! $__env->hasRenderedOnce('1c7a3e32-0592-4152-a8d5-e2f7263620a6')): $__env->markAsRenderedOnce('1c7a3e32-0592-4152-a8d5-e2f7263620a6'); ?>
     <?php $__env->startPush('scripts'); ?>
         <script>
         (function () {
@@ -353,5 +353,4 @@
         </script>
     <?php $__env->stopPush(); ?>
 <?php endif; ?>
-
 <?php /**PATH /Users/ooglie/Website/ChatGPT/PRODUCTIONFrozen/BandaraFrozen/resources/views/partials/home_cards/wishlist_cart_view.blade.php ENDPATH**/ ?>

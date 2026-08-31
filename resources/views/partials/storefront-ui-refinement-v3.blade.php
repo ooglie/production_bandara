@@ -7,11 +7,95 @@
          * - No new brand colours
          */
 
+        /*
+         * Product-card hover
+         *
+         * Phase-1 product cards have a transparent grid wrapper around a
+         * separate rounded card surface. Move the wrapper by only 3px and
+         * apply the shadow to the rounded surface. The surface itself is not
+         * transformed: this avoids Safari paint/compositing bands and keeps
+         * the slab/variant menu aligned with the card.
+         */
+        [data-bandara-phase1-product-card] {
+            position: relative !important;
+            top: 0;
+            z-index: 0;
+            overflow: visible !important;
+            contain: none !important;
+            isolation: auto !important;
+            background: transparent !important;
+            translate: none !important;
+            transform: none !important;
+            filter: none !important;
+            box-shadow: none !important;
+            transition: top 220ms cubic-bezier(.2, .75, .25, 1) !important;
+            will-change: auto !important;
+        }
+
+        [data-bandara-phase1-product-card]::before,
+        [data-bandara-phase1-product-card]::after {
+            filter: none !important;
+            box-shadow: none !important;
+        }
+
+        [data-bandara-phase1-product-card] > .bandara-product-card-surface {
+            position: relative !important;
+            overflow: visible !important;
+            translate: none !important;
+            transform: none !important;
+            filter: none !important;
+            box-shadow: none;
+            transition:
+                box-shadow 220ms ease,
+                border-color 220ms ease !important;
+            will-change: auto !important;
+        }
+
+        [data-bandara-phase1-product-card] .bandara-product-card-content,
+        [data-bandara-phase1-product-card] .bandara-product-card-price-row {
+            overflow: visible !important;
+        }
+
+        :is(
+            [data-bandara-storefront-product-image],
+            [data-bandara-phase1-product-image]
+        ) {
+            transform: scale(1);
+            transform-origin: center;
+            transition: transform 340ms cubic-bezier(.2, .75, .25, 1) !important;
+            will-change: auto !important;
+        }
+
+        [data-bandara-phase1-product-card]:focus-within {
+            top: -3px;
+            z-index: 60 !important;
+            translate: none !important;
+            transform: none !important;
+            filter: none !important;
+            box-shadow: none !important;
+        }
+
+        [data-bandara-phase1-product-card]:focus-within > .bandara-product-card-surface {
+            translate: none !important;
+            transform: none !important;
+            border-color: rgb(203 213 225 / .96) !important;
+            box-shadow:
+                0 14px 30px -18px rgb(15 23 42 / .34),
+                0 4px 10px -6px rgb(15 23 42 / .16) !important;
+        }
+
+        .dark [data-bandara-phase1-product-card]:focus-within > .bandara-product-card-surface {
+            border-color: rgb(71 85 105 / .96) !important;
+            box-shadow:
+                0 16px 34px -18px rgb(0 0 0 / .72),
+                0 5px 12px -6px rgb(0 0 0 / .44) !important;
+        }
+
+        /* Preserve the previously approved hover for other card structures. */
         :is(
             [data-bandara-storefront-product-card],
-            [data-bandara-phase1-product-card],
             .product-card
-        ) {
+        ):not([data-bandara-phase1-product-card]):not(.bandara-product-card-surface) {
             position: relative !important;
             isolation: isolate;
             translate: 0 0;
@@ -22,20 +106,9 @@
         }
 
         :is(
-            [data-bandara-storefront-product-image],
-            [data-bandara-phase1-product-image]
-        ) {
-            transform: scale(1);
-            transform-origin: center;
-            transition: transform 360ms cubic-bezier(.2, .75, .25, 1) !important;
-            will-change: transform;
-        }
-
-        :is(
             [data-bandara-storefront-product-card],
-            [data-bandara-phase1-product-card],
             .product-card
-        ):focus-within {
+        ):not([data-bandara-phase1-product-card]):not(.bandara-product-card-surface):focus-within {
             z-index: 8 !important;
             translate: 0 -3px !important;
             box-shadow:
@@ -45,20 +118,50 @@
 
         .dark :is(
             [data-bandara-storefront-product-card],
-            [data-bandara-phase1-product-card],
             .product-card
-        ):focus-within {
+        ):not([data-bandara-phase1-product-card]):not(.bandara-product-card-surface):focus-within {
             box-shadow:
                 0 26px 52px -22px rgb(0 0 0 / .72),
                 0 10px 24px -15px rgb(0 0 0 / .58) !important;
         }
 
         @media (hover: hover) and (pointer: fine) {
+            [data-bandara-phase1-product-card]:hover {
+                top: -3px;
+                z-index: 60 !important;
+                translate: none !important;
+                transform: none !important;
+                filter: none !important;
+                box-shadow: none !important;
+            }
+
+            [data-bandara-phase1-product-card]:hover > .bandara-product-card-surface {
+                translate: none !important;
+                transform: none !important;
+                border-color: rgb(203 213 225 / .96) !important;
+                box-shadow:
+                    0 14px 30px -18px rgb(15 23 42 / .34),
+                    0 4px 10px -6px rgb(15 23 42 / .16) !important;
+            }
+
+            .dark [data-bandara-phase1-product-card]:hover > .bandara-product-card-surface {
+                border-color: rgb(71 85 105 / .96) !important;
+                box-shadow:
+                    0 16px 34px -18px rgb(0 0 0 / .72),
+                    0 5px 12px -6px rgb(0 0 0 / .44) !important;
+            }
+
+            [data-bandara-phase1-product-card]:hover :is(
+                [data-bandara-storefront-product-image],
+                [data-bandara-phase1-product-image]
+            ) {
+                transform: scale(1.02) !important;
+            }
+
             :is(
                 [data-bandara-storefront-product-card],
-                [data-bandara-phase1-product-card],
                 .product-card
-            ):hover {
+            ):not([data-bandara-phase1-product-card]):not(.bandara-product-card-surface):hover {
                 z-index: 10 !important;
                 translate: 0 -7px !important;
                 box-shadow:
@@ -68,9 +171,8 @@
 
             .dark :is(
                 [data-bandara-storefront-product-card],
-                [data-bandara-phase1-product-card],
                 .product-card
-            ):hover {
+            ):not([data-bandara-phase1-product-card]):not(.bandara-product-card-surface):hover {
                 box-shadow:
                     0 34px 68px -24px rgb(0 0 0 / .90),
                     0 16px 34px -17px rgb(0 0 0 / .76) !important;
@@ -78,9 +180,8 @@
 
             :is(
                 [data-bandara-storefront-product-card],
-                [data-bandara-phase1-product-card],
                 .product-card
-            ):hover :is(
+            ):not([data-bandara-phase1-product-card]):not(.bandara-product-card-surface):hover :is(
                 [data-bandara-storefront-product-image],
                 [data-bandara-phase1-product-image]
             ) {
@@ -91,18 +192,16 @@
         @supports not (translate: 0 -1px) {
             :is(
                 [data-bandara-storefront-product-card],
-                [data-bandara-phase1-product-card],
                 .product-card
-            ):focus-within {
+            ):not([data-bandara-phase1-product-card]):not(.bandara-product-card-surface):focus-within {
                 transform: translateY(-3px) !important;
             }
 
             @media (hover: hover) and (pointer: fine) {
                 :is(
                     [data-bandara-storefront-product-card],
-                    [data-bandara-phase1-product-card],
                     .product-card
-                ):hover {
+                ):not([data-bandara-phase1-product-card]):not(.bandara-product-card-surface):hover {
                     transform: translateY(-7px) !important;
                 }
             }
@@ -199,17 +298,19 @@
         }
 
         @media (prefers-reduced-motion: reduce) {
+            [data-bandara-phase1-product-card],
+            [data-bandara-phase1-product-card] > .bandara-product-card-surface,
             :is(
                 [data-bandara-storefront-product-card],
-                [data-bandara-phase1-product-card],
                 .product-card
             ),
             :is(
                 [data-bandara-storefront-product-image],
                 [data-bandara-phase1-product-image]
             ) {
-                transition-duration: .01ms !important;
-                translate: 0 0 !important;
+                top: 0 !important;
+                transition: none !important;
+                translate: none !important;
                 transform: none !important;
             }
         }
@@ -221,6 +322,11 @@
 
             const CARD_ATTRIBUTE = 'data-bandara-storefront-product-card';
             const IMAGE_ATTRIBUTE = 'data-bandara-storefront-product-image';
+            const DECLARED_CARD_SELECTOR = [
+                '[data-bandara-phase1-product-card]',
+                '[data-product-card]',
+                '.product-card',
+            ].join(',');
 
             const isVisible = (element) => {
                 if (!(element instanceof HTMLElement)) {
@@ -508,11 +614,7 @@
             };
 
             const markProductCards = (root = document) => {
-                root.querySelectorAll([
-                    '[data-bandara-phase1-product-card]',
-                    '[data-product-card]',
-                    '.product-card',
-                ].join(',')).forEach((card) => {
+                root.querySelectorAll(DECLARED_CARD_SELECTOR).forEach((card) => {
                     card.setAttribute(CARD_ATTRIBUTE, '');
                     markProductImage(card);
                 });
@@ -528,7 +630,13 @@
                 ].join(','));
 
                 seeds.forEach((seed) => {
-                    const card = findCardForSeed(seed);
+                    /*
+                     * A declared card always wins. Otherwise the heuristic can
+                     * mark the inner visual surface as a second card, stacking
+                     * two hover transforms and two shadows on the same tile.
+                     */
+                    const card = seed.closest(DECLARED_CARD_SELECTOR) || findCardForSeed(seed);
+
                     if (!card) {
                         return;
                     }

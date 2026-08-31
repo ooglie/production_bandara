@@ -1,3 +1,0 @@
-PHPUnit 11.5.55 by Sebastian Bergmann and contributors.
-
-Could not read XML from file "/Users/ooglie/Website/ChatGPT/PRODUCTIONFrozen/BandaraFrozen/phpunit.xml.dist"

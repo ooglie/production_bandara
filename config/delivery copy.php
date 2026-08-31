@@ -56,26 +56,20 @@ return [
     |
     */
 
-    'customer_schedule_timezone' => 'Asia/Kolkata',
-
     'customer_schedule' => [
         [
-            'cutoff' => '07:00',
             'order_time' => 'Up to 7:00 AM',
             'delivery_window' => 'Same day, 9:00 AM–1:00 PM',
         ],
         [
-            'cutoff' => '13:00',
             'order_time' => 'After 7:00 AM and up to 1:00 PM',
             'delivery_window' => 'Same day, 4:00 PM–7:00 PM',
         ],
         [
-            'cutoff' => '17:00',
             'order_time' => 'After 1:00 PM and up to 5:00 PM',
             'delivery_window' => 'Same day, 8:00 PM–10:00 PM',
         ],
         [
-            'cutoff' => null,
             'order_time' => 'After 5:00 PM',
             'delivery_window' => 'Next day, 9:00 AM–1:00 PM',
         ],

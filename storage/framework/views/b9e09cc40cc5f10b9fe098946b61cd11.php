@@ -1,9 +1,7 @@
-@extends('layouts.customer')
+<?php $__env->startSection('title', config('app.name') . ' - Shop'); ?>
 
-@section('title', config('app.name') . ' - Shop')
-
-@section('content')
-@php
+<?php $__env->startSection('content'); ?>
+<?php
     use Illuminate\Support\Facades\Storage;
     use Illuminate\Support\Facades\Route;
 
@@ -88,61 +86,58 @@
 
         return mb_convert_encoding("&#{$a};&#{$b};", 'UTF-8', 'HTML-ENTITIES');
     };
-@endphp
+?>
 
 <div class="max-w-6xl mx-auto px-4 py-6 space-y-4">
 
-    {{-- Header --}}
+    
     <div class="flex flex-col sm:flex-row sm:items-end sm:justify-between gap-3">
         <div>
             <h1 class="text-lg font-semibold text-gray-900 dark:text-gray-50">
-                {{ filled($q) ? 'Search results' : 'Shop' }}
+                <?php echo e(filled($q) ? 'Search results' : 'Shop'); ?>
+
             </h1>
 
-            @if(filled($q))
+            <?php if(filled($q)): ?>
                 <p class="mt-1 text-[11px] text-gray-500 dark:text-gray-400">
-                    Results for <span class="font-medium text-gray-800 dark:text-gray-200">“{{ $q }}”</span>
+                    Results for <span class="font-medium text-gray-800 dark:text-gray-200">“<?php echo e($q); ?>”</span>
                 </p>
-            @endif
+            <?php endif; ?>
             <div>
-                {{-- <div class="text-[11px] font-medium text-gray-900 dark:text-gray-50">
-                    Product results
-                </div> --}}
-                {{-- <div class="text-[10px] text-gray-500 dark:text-gray-400">
-                    {{ $shown }} item(s) on this page
-                </div> --}}
+                
+                
             </div>
             <p class="text-[11px] text-gray-500 dark:text-gray-400">
-                {{-- Browse all available frozen products. --}}
-                @if($total > 0)
-                    <span class="ml-1">Showing products {{ $shown }} of {{ $total }}.</span>
-                @endif
+                
+                <?php if($total > 0): ?>
+                    <span class="ml-1">Showing products <?php echo e($shown); ?> of <?php echo e($total); ?>.</span>
+                <?php endif; ?>
             </p>
         </div>
 
-        @if($total > 0)
+        <?php if($total > 0): ?>
             <div class="inline-flex items-center rounded-sm border border-gray-200 dark:border-gray-800 bg-white dark:bg-gray-900 px-3 py-1.5 text-[11px]">
                 <span class="text-gray-500 dark:text-gray-400">Sorted by</span>
-                <span class="ml-2 font-medium text-gray-900 dark:text-gray-50">{{ $sortLabel }}</span>
+                <span class="ml-2 font-medium text-gray-900 dark:text-gray-50"><?php echo e($sortLabel); ?></span>
             </div>
-        @endif
+        <?php endif; ?>
     </div>
 
-    {{-- Controls --}}
+    
     <div class="rounded-sm border border-gray-200 dark:border-gray-800 bg-white dark:bg-gray-900 px-3 py-3 space-y-3">
 
-        {{-- Category chips --}}
+        
         <div class="flex items-center gap-2 overflow-x-auto pb-1">
-            <a href="{{ $link(['category' => null]) }}"
+            <a href="<?php echo e($link(['category' => null])); ?>"
                class="shrink-0 inline-flex items-center rounded-sm border px-3 py-1 text-[11px]
-                      {{ empty($selectedCategoryIds)
+                      <?php echo e(empty($selectedCategoryIds)
                             ? 'border-gray-900 bg-gray-900 text-white dark:border-gray-100 dark:bg-gray-100 dark:text-gray-900'
-                            : 'border-gray-300 text-gray-700 hover:bg-gray-50 dark:border-gray-700 dark:text-gray-200 dark:hover:bg-gray-800' }}">
+                            : 'border-gray-300 text-gray-700 hover:bg-gray-50 dark:border-gray-700 dark:text-gray-200 dark:hover:bg-gray-800'); ?>">
                 All
             </a>
 
-            @foreach($categories as $category)
-                @php
+            <?php $__currentLoopData = $categories; $__env->addLoop($__currentLoopData); foreach($__currentLoopData as $category): $__env->incrementLoopIndices(); $loop = $__env->getLastLoop(); ?>
+                <?php
                     $id = (string) $category->id;
                     $active = in_array($id, $selectedCategoryIds, true);
 
@@ -156,58 +151,59 @@
                     } else {
                         $nextCategories[] = $id;
                     }
-                @endphp
+                ?>
 
-                <a href="{{ $link(['category' => $nextCategories]) }}"
+                <a href="<?php echo e($link(['category' => $nextCategories])); ?>"
                    class="shrink-0 inline-flex items-center rounded-sm border px-3 py-1 text-[11px]
-                          {{ $active
+                          <?php echo e($active
                                 ? 'border-gray-900 bg-gray-900 text-white dark:border-gray-100 dark:bg-gray-100 dark:text-gray-900'
-                                : 'border-gray-300 text-gray-700 hover:bg-gray-50 dark:border-gray-700 dark:text-gray-200 dark:hover:bg-gray-800' }}">
-                    {{ $category->name }}
+                                : 'border-gray-300 text-gray-700 hover:bg-gray-50 dark:border-gray-700 dark:text-gray-200 dark:hover:bg-gray-800'); ?>">
+                    <?php echo e($category->name); ?>
+
                 </a>
-            @endforeach
+            <?php endforeach; $__env->popLoop(); $loop = $__env->getLastLoop(); ?>
         </div>
 
-        {{-- Search + sort --}}
+        
         <div class="flex flex-col lg:flex-row lg:items-center lg:justify-between gap-2">
 
-            {{-- Search --}}
-            <form method="GET" action="{{ url()->current() }}" class="w-full lg:max-w-md">
-                @foreach($selectedCategoryIds as $selectedCategoryId)
-                    <input type="hidden" name="category[]" value="{{ $selectedCategoryId }}">
-                @endforeach
+            
+            <form method="GET" action="<?php echo e(url()->current()); ?>" class="w-full lg:max-w-md">
+                <?php $__currentLoopData = $selectedCategoryIds; $__env->addLoop($__currentLoopData); foreach($__currentLoopData as $selectedCategoryId): $__env->incrementLoopIndices(); $loop = $__env->getLastLoop(); ?>
+                    <input type="hidden" name="category[]" value="<?php echo e($selectedCategoryId); ?>">
+                <?php endforeach; $__env->popLoop(); $loop = $__env->getLastLoop(); ?>
 
-                @if(!empty($sort))
-                    <input type="hidden" name="sort" value="{{ $sort }}">
-                @endif
+                <?php if(!empty($sort)): ?>
+                    <input type="hidden" name="sort" value="<?php echo e($sort); ?>">
+                <?php endif; ?>
 
-                @if($inStockOnly)
+                <?php if($inStockOnly): ?>
                     <input type="hidden" name="in_stock" value="1">
-                @endif
+                <?php endif; ?>
 
                 <div class="relative">
                     <input
                         type="search"
                         name="q"
-                        value="{{ $q }}"
+                        value="<?php echo e($q); ?>"
                         placeholder="Search products…"
                         class="w-full rounded-sm border border-gray-300 dark:border-gray-700 bg-white dark:bg-gray-950 px-4 py-2 pr-10 text-[12px] focus:outline-none focus:ring-1 focus:ring-gray-400 dark:focus:ring-gray-500"
                     >
 
-                    @if(!empty($q))
-                        <a href="{{ $link(['q' => null]) }}"
+                    <?php if(!empty($q)): ?>
+                        <a href="<?php echo e($link(['q' => null])); ?>"
                            class="absolute right-3 top-1/2 -translate-y-1/2 text-gray-400 hover:text-gray-700 dark:hover:text-gray-200"
                            title="Clear search"
                            aria-label="Clear search">
                             ✕
                         </a>
-                    @endif
+                    <?php endif; ?>
                 </div>
 
                 <button type="submit" class="sr-only">Search</button>
             </form>
 
-            {{-- Availability filter + sort buttons --}}
+            
             <div class="flex flex-wrap items-center gap-2">
                 
 
@@ -217,120 +213,123 @@
                     Sort:
                 </span>
 
-                <a href="{{ $link(['sort' => null]) }}"
+                <a href="<?php echo e($link(['sort' => null])); ?>"
                    class="inline-flex items-center rounded-sm border px-3 py-2 text-[11px]
-                          {{ empty($sort)
+                          <?php echo e(empty($sort)
                                 ? 'border-gray-900 bg-gray-900 text-white dark:border-gray-100 dark:bg-gray-100 dark:text-gray-900'
-                                : 'border-gray-300 text-gray-700 hover:bg-gray-50 dark:border-gray-700 dark:text-gray-200 dark:hover:bg-gray-800' }}">
+                                : 'border-gray-300 text-gray-700 hover:bg-gray-50 dark:border-gray-700 dark:text-gray-200 dark:hover:bg-gray-800'); ?>">
                     Newest
                 </a>
 
-                <a href="{{ $link(['sort' => 'price_asc']) }}"
+                <a href="<?php echo e($link(['sort' => 'price_asc'])); ?>"
                    class="inline-flex items-center rounded-sm border px-3 py-2 text-[11px]
-                          {{ $sort === 'price_asc'
+                          <?php echo e($sort === 'price_asc'
                                 ? 'border-gray-900 bg-gray-900 text-white dark:border-gray-100 dark:bg-gray-100 dark:text-gray-900'
-                                : 'border-gray-300 text-gray-700 hover:bg-gray-50 dark:border-gray-700 dark:text-gray-200 dark:hover:bg-gray-800' }}">
+                                : 'border-gray-300 text-gray-700 hover:bg-gray-50 dark:border-gray-700 dark:text-gray-200 dark:hover:bg-gray-800'); ?>">
                     Lowest price
                 </a>
 
-                <a href="{{ $link(['sort' => 'price_desc']) }}"
+                <a href="<?php echo e($link(['sort' => 'price_desc'])); ?>"
                    class="inline-flex items-center rounded-sm border px-3 py-2 text-[11px]
-                          {{ $sort === 'price_desc'
+                          <?php echo e($sort === 'price_desc'
                                 ? 'border-gray-900 bg-gray-900 text-white dark:border-gray-100 dark:bg-gray-100 dark:text-gray-900'
-                                : 'border-gray-300 text-gray-700 hover:bg-gray-50 dark:border-gray-700 dark:text-gray-200 dark:hover:bg-gray-800' }}">
+                                : 'border-gray-300 text-gray-700 hover:bg-gray-50 dark:border-gray-700 dark:text-gray-200 dark:hover:bg-gray-800'); ?>">
                     Highest price
                 </a>
 
-                <a href="{{ $link(['in_stock' => $inStockOnly ? null : 1]) }}"
-                   aria-pressed="{{ $inStockOnly ? 'true' : 'false' }}"
+                <a href="<?php echo e($link(['in_stock' => $inStockOnly ? null : 1])); ?>"
+                   aria-pressed="<?php echo e($inStockOnly ? 'true' : 'false'); ?>"
                    class="inline-flex items-center gap-2 rounded-sm border px-3 py-2 text-[11px]
-                          {{ $inStockOnly
+                          <?php echo e($inStockOnly
                                 ? 'border-gray-900 text-gray-900 dark:border-gray-100 dark:text-gray-50'
-                                : 'border-gray-300 text-gray-700 hover:bg-gray-50 dark:border-gray-700 dark:text-gray-200 dark:hover:bg-gray-800' }}">
+                                : 'border-gray-300 text-gray-700 hover:bg-gray-50 dark:border-gray-700 dark:text-gray-200 dark:hover:bg-gray-800'); ?>">
                     <span class="inline-flex h-3.5 w-3.5 items-center justify-center rounded-[2px] border
-                                 {{ $inStockOnly
+                                 <?php echo e($inStockOnly
                                        ? 'border-gray-900 bg-gray-900 text-white dark:border-gray-100 dark:bg-gray-100 dark:text-gray-900'
-                                       : 'border-gray-400 dark:border-gray-600' }}"
+                                       : 'border-gray-400 dark:border-gray-600'); ?>"
                           aria-hidden="true">
-                        @if($inStockOnly)
+                        <?php if($inStockOnly): ?>
                             <svg viewBox="0 0 12 12" class="h-2.5 w-2.5" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
                                 <path d="M2.25 6.25 4.75 8.5 9.75 3.5" />
                             </svg>
-                        @endif
+                        <?php endif; ?>
                     </span>
                     In stock only
                 </a>
                 
-                @if(!empty($q) || !empty($selectedCategoryIds) || !empty($sort) || $inStockOnly)
-                    <a href="{{ $link([], ['q','category','sort','in_stock']) }}"
+                <?php if(!empty($q) || !empty($selectedCategoryIds) || !empty($sort) || $inStockOnly): ?>
+                    <a href="<?php echo e($link([], ['q','category','sort','in_stock'])); ?>"
                        class="inline-flex items-center rounded-sm border border-gray-300 dark:border-gray-700 px-3 py-2 text-[11px] text-gray-700 dark:text-gray-200 hover:bg-gray-50 dark:hover:bg-gray-800">
                         Clear
                     </a>
-                @endif
+                <?php endif; ?>
             </div>
         </div>
 
-        {{-- Active filters --}}
-        @if(!empty($q) || !empty($selectedCategoryIds) || !empty($sort) || $inStockOnly)
+        
+        <?php if(!empty($q) || !empty($selectedCategoryIds) || !empty($sort) || $inStockOnly): ?>
             <div class="flex flex-wrap items-center gap-2 pt-1 border-t border-gray-100 dark:border-gray-800">
                 <span class="text-[11px] text-gray-500 dark:text-gray-400">
                     Active filters:
                 </span>
 
-                @if(!empty($q))
-                    <a href="{{ $link(['q' => null]) }}"
+                <?php if(!empty($q)): ?>
+                    <a href="<?php echo e($link(['q' => null])); ?>"
                        class="inline-flex items-center gap-2 rounded-sm border border-gray-300 dark:border-gray-700 px-3 py-1 text-[11px] text-gray-700 dark:text-gray-200 hover:bg-gray-50 dark:hover:bg-gray-800">
-                        Search: {{ $q }}
+                        Search: <?php echo e($q); ?>
+
                         <span class="text-gray-400">✕</span>
                     </a>
-                @endif
+                <?php endif; ?>
 
-                @foreach($selectedCategories as $selectedCategory)
-                    @php
+                <?php $__currentLoopData = $selectedCategories; $__env->addLoop($__currentLoopData); foreach($__currentLoopData as $selectedCategory): $__env->incrementLoopIndices(); $loop = $__env->getLastLoop(); ?>
+                    <?php
                         $removeCategoryIds = array_values(array_filter(
                             $selectedCategoryIds,
                             fn ($id) => (string) $id !== (string) $selectedCategory->id
                         ));
-                    @endphp
+                    ?>
 
-                    <a href="{{ $link(['category' => $removeCategoryIds]) }}"
+                    <a href="<?php echo e($link(['category' => $removeCategoryIds])); ?>"
                        class="inline-flex items-center gap-2 rounded-sm border border-gray-300 dark:border-gray-700 px-3 py-1 text-[11px] text-gray-700 dark:text-gray-200 hover:bg-gray-50 dark:hover:bg-gray-800">
-                        {{ $selectedCategory->name }}
+                        <?php echo e($selectedCategory->name); ?>
+
                         <span class="text-gray-400">✕</span>
                     </a>
-                @endforeach
+                <?php endforeach; $__env->popLoop(); $loop = $__env->getLastLoop(); ?>
 
-                @if($inStockOnly)
-                    <a href="{{ $link(['in_stock' => null]) }}"
+                <?php if($inStockOnly): ?>
+                    <a href="<?php echo e($link(['in_stock' => null])); ?>"
                        class="inline-flex items-center gap-2 rounded-sm border border-gray-300 dark:border-gray-700 px-3 py-1 text-[11px] text-gray-700 dark:text-gray-200 hover:bg-gray-50 dark:hover:bg-gray-800">
                         In stock only
                         <span class="text-gray-400">✕</span>
                     </a>
-                @endif
+                <?php endif; ?>
 
-                @if(!empty($sort))
-                    <a href="{{ $link(['sort' => null]) }}"
+                <?php if(!empty($sort)): ?>
+                    <a href="<?php echo e($link(['sort' => null])); ?>"
                        class="inline-flex items-center gap-2 rounded-sm border border-gray-300 dark:border-gray-700 px-3 py-1 text-[11px] text-gray-700 dark:text-gray-200 hover:bg-gray-50 dark:hover:bg-gray-800">
-                        Sort: {{ $sortLabel }}
+                        Sort: <?php echo e($sortLabel); ?>
+
                         <span class="text-gray-400">✕</span>
                     </a>
-                @endif
+                <?php endif; ?>
             </div>
-        @endif
+        <?php endif; ?>
     </div>
 
-    {{-- Results --}}
     
-    @if($products->isEmpty())
+    
+    <?php if($products->isEmpty()): ?>
         <div class="rounded-sm border border-gray-200 dark:border-gray-800 bg-white dark:bg-gray-900 px-4 py-6">
             <p class="text-xs text-gray-500 dark:text-gray-400">
                 No products found. Try changing categories, clearing filters, or add products in admin.
             </p>
         </div>
-    @else
-        <div class="grid gap-3 sm:grid-cols-2 lg:grid-cols-4 {{ $singleCard ? 'justify-items-start' : '' }}">
-            @foreach($products as $product)
-                @include('partials.home_cards.product_card', [
+    <?php else: ?>
+        <div class="grid gap-3 sm:grid-cols-2 lg:grid-cols-4 <?php echo e($singleCard ? 'justify-items-start' : ''); ?>">
+            <?php $__currentLoopData = $products; $__env->addLoop($__currentLoopData); foreach($__currentLoopData as $product): $__env->incrementLoopIndices(); $loop = $__env->getLastLoop(); ?>
+                <?php echo $__env->make('partials.home_cards.product_card', [
                     'product' => $product,
                     'cartAddUrl' => $cartAddUrl,
                     'wishlistToggleUrl' => $wishlistToggleUrl,
@@ -338,18 +337,20 @@
                     'loginUrl' => $loginUrl,
                     'singleCard' => $singleCard,
                     'flagEmoji' => $flagEmoji,
-                ])
-            @endforeach
+                ], array_diff_key(get_defined_vars(), ['__data' => 1, '__path' => 1]))->render(); ?>
+            <?php endforeach; $__env->popLoop(); $loop = $__env->getLastLoop(); ?>
         </div>
 
         <div class="mt-4">
-            {{ $products->links() }}
+            <?php echo e($products->links()); ?>
+
         </div>
-    @endif
+    <?php endif; ?>
 
 </div>
 
-@if(\Illuminate\Support\Facades\Route::has('product.variants.options'))
-    @include('home.sections.product-card-scripts')
-@endif
-@endsection
+<?php if(\Illuminate\Support\Facades\Route::has('product.variants.options')): ?>
+    <?php echo $__env->make('home.sections.product-card-scripts', array_diff_key(get_defined_vars(), ['__data' => 1, '__path' => 1]))->render(); ?>
+<?php endif; ?>
+<?php $__env->stopSection(); ?>
+<?php echo $__env->make('layouts.customer', array_diff_key(get_defined_vars(), ['__data' => 1, '__path' => 1]))->render(); ?><?php /**PATH /Users/ooglie/Website/ChatGPT/PRODUCTIONFrozen/BandaraFrozen/resources/views/shop/index.blade.php ENDPATH**/ ?>

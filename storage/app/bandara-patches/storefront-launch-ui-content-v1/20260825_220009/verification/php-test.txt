@@ -1,1 +1,0 @@
-No syntax errors detected in /Users/ooglie/Website/ChatGPT/PRODUCTIONFrozen/BandaraFrozen/tests/Unit/BandaraLaunchUiPackageTest.php

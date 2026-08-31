@@ -1,3 +1,0 @@
-route	routes/web.php
-home	resources/views/home.blade.php
-nav	resources/views/layouts/company.blade.php

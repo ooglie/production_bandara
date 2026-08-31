@@ -1,6 +1,0 @@
-product_sku,variant_name,option_1_group,option_1_value,option_2_group,option_2_value,sku,pack_type,pieces_per_pack,product_weight_kg,mrp,selling_price,visibility,manage_stock,stock_quantity
-DIMSUM-CHICKEN,10 pcs Pack,Pack Size,10 pcs,,,DIMSUM-10,fixed_piece_pack,10,,250,225,B2C+B2B,Yes,0
-DIMSUM-CHICKEN,20 pcs Pack,Pack Size,20 pcs,,,DIMSUM-20,fixed_piece_pack,20,,450,420,B2C+B2B,Yes,0
-DIMSUM-CHICKEN,100 pcs Pack,Pack Size,100 pcs,,,DIMSUM-100,fixed_piece_pack,100,,2000,1900,B2B only,Yes,0
-PRAWNS,Jumbo 500g,Size,Jumbo,Pack Size,500g,PRAWNS-JUMBO-500,fixed_weight_pack,,0.500,900,850,B2C+B2B,Yes,0
-PRAWNS,Jumbo 1kg,Size,Jumbo,Pack Size,1kg,PRAWNS-JUMBO-1KG,fixed_weight_pack,,1.000,1700,1600,B2C+B2B,Yes,0
