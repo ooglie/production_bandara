@@ -5,25 +5,24 @@ namespace App\Http\Middleware;
 use Closure;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Auth;
+use Symfony\Component\HttpFoundation\Response;
 
 class EnsureUserIsActive
 {
-    public function handle(Request $request, Closure $next)
+    /**
+     * @param  \Closure(\Illuminate\Http\Request): \Symfony\Component\HttpFoundation\Response  $next
+     */
+    public function handle(Request $request, Closure $next): Response
     {
-        if (Auth::check()) {
-            $user = Auth::user();
+        if (Auth::check() && ! (bool) Auth::user()?->is_active) {
+            Auth::logout();
 
-            // If we are NOT impersonating and user is inactive -> kick them out
-            if (!$user->is_active && ! $request->session()->has('impersonator_id')) {
-                Auth::logout();
+            $request->session()->invalidate();
+            $request->session()->regenerateToken();
 
-                $request->session()->invalidate();
-                $request->session()->regenerateToken();
-
-                return redirect()->route('login')->withErrors([
-                    'email' => 'Your account has been suspended. Please contact support.',
-                ]);
-            }
+            return redirect()->route('login')->withErrors([
+                'email' => 'Your account has been suspended. Please contact support.',
+            ]);
         }
 
         return $next($request);

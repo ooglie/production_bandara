@@ -5,14 +5,21 @@ namespace App\Http\Controllers\Admin;
 use App\Http\Controllers\Controller;
 use App\Models\Product;
 use App\Models\Recipe;
+use App\Services\MediaPathService;
+use App\Services\MediaReferenceService;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
-use Illuminate\Support\Facades\Storage;
 use Illuminate\Support\Str;
 use Illuminate\Validation\ValidationException;
 
 class RecipeController extends Controller
 {
+    public function __construct(
+        protected MediaPathService $media,
+        protected MediaReferenceService $mediaReferences,
+    ) {
+    }
+
     public function index(Request $request)
     {
         $query = Recipe::query()->withCount('products');
@@ -77,18 +84,35 @@ class RecipeController extends Controller
     public function store(Request $request)
     {
         $data = $this->validatedData($request);
-        $media = $this->handleUploads($request);
-
-        $payload = $this->preparePayload(array_merge($data, $media['data']));
+        $payload = $this->preparePayload($data);
         $payload['created_by_id'] = $request->user()?->id;
 
+        $media = ['data' => [], 'new_files' => [], 'old_files' => []];
+        $recipe = null;
+
         try {
-            DB::transaction(function () use ($payload, $data) {
-                $recipe = Recipe::create($payload);
+            $recipe = Recipe::create($payload);
+            $media = $this->handleUploads($request, $recipe);
+
+            DB::transaction(function () use ($recipe, $media, $data): void {
+                if ($media['data'] !== []) {
+                    $recipe->update($media['data']);
+                }
+
                 $recipe->products()->sync($data['product_ids'] ?? []);
             });
         } catch (\Throwable $e) {
             $this->deleteStoredFiles($media['new_files']);
+
+            if ($recipe?->exists) {
+                try {
+                    $recipe->products()->detach();
+                    $recipe->forceDelete();
+                } catch (\Throwable) {
+                    // Preserve the original upload/create exception.
+                }
+            }
+
             throw $e;
         }
 
@@ -119,7 +143,7 @@ class RecipeController extends Controller
         $payload['updated_by_id'] = $request->user()?->id;
 
         try {
-            DB::transaction(function () use ($recipe, $payload, $data) {
+            DB::transaction(function () use ($recipe, $payload, $data): void {
                 $recipe->update($payload);
                 $recipe->products()->sync($data['product_ids'] ?? []);
             });
@@ -128,7 +152,7 @@ class RecipeController extends Controller
             throw $e;
         }
 
-        $this->deleteStoredFiles($media['old_files']);
+        $this->deleteStoredFilesIfUnreferenced($media['old_files']);
 
         return redirect()
             ->route('admin.recipes.index')
@@ -272,81 +296,70 @@ class RecipeController extends Controller
         return $lines;
     }
 
-    protected function handleUploads(Request $request, ?Recipe $existingRecipe = null): array
+    protected function handleUploads(Request $request, Recipe $recipe): array
     {
         $data = [];
         $newFiles = [];
         $oldFiles = [];
 
         if ($request->hasFile('image')) {
-            $path = $request->file('image')->store(config('media.recipes.images_dir'));
+            $path = $this->media->storePublic(
+                $request->file('image'),
+                $this->media->recipeImagesDirectory($recipe),
+                'cover'
+            );
 
             $data['image_path'] = $path;
             $newFiles[] = $path;
 
-            if ($existingRecipe && $this->isLocalStoragePath($existingRecipe->image_path)) {
-                $oldFiles[] = $this->normalizeStoragePath($existingRecipe->image_path);
+            if ($this->isLocalStoragePath($recipe->image_path)) {
+                $oldFiles[] = $recipe->image_path;
             }
         }
 
         if ($request->hasFile('video')) {
-            $path = $request->file('video')->store(config('media.recipes.videos_dir'));
+            $path = $this->media->storePublic(
+                $request->file('video'),
+                $this->media->recipeVideosDirectory($recipe),
+                'video'
+            );
 
             $data['video_url'] = $path;
             $newFiles[] = $path;
 
-            if ($existingRecipe && $this->isLocalStoragePath($existingRecipe->video_url)) {
-                $oldFiles[] = $this->normalizeStoragePath($existingRecipe->video_url);
+            if ($this->isLocalStoragePath($recipe->video_url)) {
+                $oldFiles[] = $recipe->video_url;
             }
         }
 
         return [
             'data' => $data,
             'new_files' => $newFiles,
-            'old_files' => $oldFiles,
+            'old_files' => array_values(array_unique(array_filter($oldFiles))),
         ];
     }
 
     protected function deleteStoredFiles(array $paths): void
     {
-        foreach ($paths as $path) {
-            $this->deleteStoredFileIfLocal($path);
+        foreach (array_values(array_unique(array_filter($paths))) as $path) {
+            $this->media->deleteFromDisks($path, [
+                $this->media->publicDisk(),
+                $this->media->privateDisk(),
+            ]);
         }
     }
 
-    protected function deleteStoredFileIfLocal(?string $path): void
+
+    protected function deleteStoredFilesIfUnreferenced(array $paths): void
     {
-        if (! $this->isLocalStoragePath($path)) {
-            return;
-        }
-
-        $normalizedPath = $this->normalizeStoragePath($path);
-
-        if ($normalizedPath !== '' && Storage::exists($normalizedPath)) {
-            Storage::delete($normalizedPath);
+        foreach (array_values(array_unique(array_filter($paths))) as $path) {
+            $this->mediaReferences->deletePublicFileIfUnreferenced($path);
         }
     }
 
     protected function isLocalStoragePath(?string $path): bool
     {
-        $path = trim((string) $path);
-
-        if ($path === '') {
-            return false;
-        }
-
-        return ! Str::startsWith($path, ['http://', 'https://', '//', 'data:']);
-    }
-
-    protected function normalizeStoragePath(?string $path): string
-    {
-        $path = ltrim((string) $path, '/');
-
-        if (Str::startsWith($path, 'storage/')) {
-            $path = Str::after($path, 'storage/');
-        }
-
-        return $path;
+        return filled($path) && ! $this->media->isExternalReference($path);
     }
 
     protected function usesSoftDeletes(object|string $model): bool

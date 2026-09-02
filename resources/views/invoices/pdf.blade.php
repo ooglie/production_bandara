@@ -268,8 +268,13 @@
     $shippingAddress = $shipping ?: $billing;
     $billingName = strtoupper((string) ($billingAddress->full_name ?? $customer->business_name ?? $customer->name ?? 'Customer'));
     $shippingName = strtoupper((string) ($shippingAddress->full_name ?? $billingName));
-    $customerGstin = $billingAddress->gstin ?? $customer->gst_number ?? $customer->gstin ?? null;
+    $customerGstin = $billingAddress->gstin ?? $invoice->bill_to_gstin ?? $order->bill_to_gstin ?? $customer->gst_number ?? $customer->gstin ?? null;
     $customerFssai = $customer->fssai_number ?? null;
+    $placeOfSupplyCode = $invoice->place_of_supply_gst_state_code ?? $order->place_of_supply_gst_state_code ?? null;
+    $placeOfSupplyState = $placeOfSupplyCode
+        ? app(\App\Services\GstPlaceOfSupplyService::class)->stateByGstCode((string) $placeOfSupplyCode)
+        : null;
+    $isBillToShipTo = (bool) ($invoice->is_bill_to_ship_to ?? $order->is_bill_to_ship_to ?? false);
 
     $qrPng = null;
     if ($qrPayload !== '' && class_exists(\Milon\Barcode\DNS2D::class)) {
@@ -312,6 +317,22 @@
                     <td class="label">Order No</td>
                     <td>{{ $order->order_number ?? '-' }}</td>
                 </tr>
+                @if($placeOfSupplyCode)
+                    <tr>
+                        <td class="label">Place of Supply</td>
+                        <td>{{ $placeOfSupplyState['name'] ?? '-' }} ({{ $placeOfSupplyCode }})</td>
+                    </tr>
+                @endif
+                <tr>
+                    <td class="label">Tax Mode</td>
+                    <td>{{ $gstType === 'intra_state' ? 'CGST + SGST' : 'IGST' }}</td>
+                </tr>
+                @if($isBillToShipTo)
+                    <tr>
+                        <td class="label">Supply</td>
+                        <td>Bill-To / Ship-To</td>
+                    </tr>
+                @endif
                 @if($invoice->due_date)
                     <tr>
                         <td class="label">Due Dt</td>
@@ -604,12 +625,12 @@
 
 <div class="signoff">
     Sincerely,<br><br>
-    <strong>{{ $seller['signature_name'] ?? 'For Bandara by Maytira' }}</strong>
+    <strong>{{ $seller['signature_name'] ?? 'For Bandara' }}</strong>
 </div>
 
 <div class="company-footer">
     FSSAI No: {{ $seller['fssai_no'] ?? '21526079001348' }}<br>
-    GSTIN No: {{ $seller['gstin_no'] ?? '27ABEFB320N1ZE' }}
+    GSTIN No: {{ $seller['gstin_no'] ?? '27ABEFB3240N1ZE' }}
 </div>
 
 <div class="company-address">

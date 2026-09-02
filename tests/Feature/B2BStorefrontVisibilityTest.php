@@ -122,7 +122,6 @@ class B2BStorefrontVisibilityTest extends TestCase
             'standard_b2b_price' => $b2bPrice,
             'sell_unit' => 'pack',
             'pack_type' => 'quantity',
-            'pricing_unit' => 'pack',
             'is_active' => true,
             'manage_stock' => false,
         ]);

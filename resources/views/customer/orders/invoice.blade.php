@@ -11,7 +11,7 @@
                     Tax Invoice
                 </h1>
                 <p class="text-[11px] text-gray-500 dark:text-gray-400">
-                    Frozen – Bandara by Maytira
+                    Frozen – Bandara
                 </p>
             </div>
             <div class="text-right text-[11px] text-gray-700 dark:text-gray-300">

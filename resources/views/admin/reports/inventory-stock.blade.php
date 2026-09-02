@@ -43,9 +43,9 @@
             <div>
                 <label class="block text-[11px] font-medium text-gray-600 dark:text-gray-300">Status</label>
                 <select name="status" class="mt-1 w-full rounded-lg border border-gray-300 bg-white px-3 py-2 text-[12px] dark:border-gray-700 dark:bg-gray-900">
+                    <option value="all" @selected(($filters['status'] ?? 'all') === 'all')>All</option>
                     <option value="available" @selected(($filters['status'] ?? '') === 'available')>Available only</option>
                     <option value="zero" @selected(($filters['status'] ?? '') === 'zero')>Zero / depleted</option>
-                    <option value="all" @selected(($filters['status'] ?? '') === 'all')>All</option>
                 </select>
             </div>
             <div>
@@ -144,10 +144,10 @@
                         <td class="px-4 py-3 text-gray-600 dark:text-gray-300">{{ $row['reference'] ?: '—' }}</td>
                         <td class="px-4 py-3 text-gray-500 dark:text-gray-400">{{ $row['batch'] ?: '—' }}</td>
                         <td class="px-4 py-3 text-gray-500 dark:text-gray-400">{{ $row['status'] ?: '—' }}</td>
-                        <td class="px-4 py-3 text-right text-gray-700 dark:text-gray-200">{{ $row['quantity'] ?: '—' }}</td>
-                        <td class="px-4 py-3 text-right text-gray-700 dark:text-gray-200">{{ $row['weight_kg'] ?: '—' }}</td>
-                        <td class="px-4 py-3 text-right text-gray-700 dark:text-gray-200">{{ $row['pieces'] ?: '—' }}</td>
-                        <td class="px-4 py-3 text-right text-gray-700 dark:text-gray-200">{{ $row['packs'] ?: '—' }}</td>
+                        <td class="px-4 py-3 text-right text-gray-700 dark:text-gray-200">{{ $row['quantity'] !== '' ? $row['quantity'] : '—' }}</td>
+                        <td class="px-4 py-3 text-right text-gray-700 dark:text-gray-200">{{ $row['weight_kg'] !== '' ? $row['weight_kg'] : '—' }}</td>
+                        <td class="px-4 py-3 text-right text-gray-700 dark:text-gray-200">{{ $row['pieces'] !== '' ? $row['pieces'] : '—' }}</td>
+                        <td class="px-4 py-3 text-right text-gray-700 dark:text-gray-200">{{ $row['packs'] !== '' ? $row['packs'] : '—' }}</td>
                         <td class="px-4 py-3 text-gray-600 dark:text-gray-300">{{ $row['expiry_date'] ?: '—' }}</td>
                         <td class="px-4 py-3 text-gray-500 dark:text-gray-400">{{ $row['source'] ?: '—' }}</td>
                     </tr>

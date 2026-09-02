@@ -23,4 +23,4 @@
 </p>
 
 <p>Warm regards,<br>
-Frozen - Bandara by Maytira</p>
+Frozen - Bandara</p>

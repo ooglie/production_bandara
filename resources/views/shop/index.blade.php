@@ -9,8 +9,9 @@
 
     $has = fn(string $r) => Route::has($r);
 
-    $q    = request('q', '');
-    $sort = request('sort', '');
+    $q           = request('q', '');
+    $sort        = request('sort', '');
+    $inStockOnly = request()->boolean('in_stock');
 
     $rawCategories = request()->input('category', []);
     if (!is_array($rawCategories)) {
@@ -180,6 +181,10 @@
                     <input type="hidden" name="sort" value="{{ $sort }}">
                 @endif
 
+                @if($inStockOnly)
+                    <input type="hidden" name="in_stock" value="1">
+                @endif
+
                 <div class="relative">
                     <input
                         type="search"
@@ -202,8 +207,12 @@
                 <button type="submit" class="sr-only">Search</button>
             </form>
 
-            {{-- Sort buttons --}}
+            {{-- Availability filter + sort buttons --}}
             <div class="flex flex-wrap items-center gap-2">
+                
+
+                <span class="hidden lg:block h-5 border-l border-gray-200 dark:border-gray-800" aria-hidden="true"></span>
+
                 <span class="text-[11px] text-gray-500 dark:text-gray-400 hidden lg:inline">
                     Sort:
                 </span>
@@ -232,8 +241,28 @@
                     Highest price
                 </a>
 
-                @if(!empty($q) || !empty($selectedCategoryIds) || !empty($sort))
-                    <a href="{{ $link([], ['q','category','sort']) }}"
+                <a href="{{ $link(['in_stock' => $inStockOnly ? null : 1]) }}"
+                   aria-pressed="{{ $inStockOnly ? 'true' : 'false' }}"
+                   class="inline-flex items-center gap-2 rounded-sm border px-3 py-2 text-[11px]
+                          {{ $inStockOnly
+                                ? 'border-gray-900 text-gray-900 dark:border-gray-100 dark:text-gray-50'
+                                : 'border-gray-300 text-gray-700 hover:bg-gray-50 dark:border-gray-700 dark:text-gray-200 dark:hover:bg-gray-800' }}">
+                    <span class="inline-flex h-3.5 w-3.5 items-center justify-center rounded-[2px] border
+                                 {{ $inStockOnly
+                                       ? 'border-gray-900 bg-gray-900 text-white dark:border-gray-100 dark:bg-gray-100 dark:text-gray-900'
+                                       : 'border-gray-400 dark:border-gray-600' }}"
+                          aria-hidden="true">
+                        @if($inStockOnly)
+                            <svg viewBox="0 0 12 12" class="h-2.5 w-2.5" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                                <path d="M2.25 6.25 4.75 8.5 9.75 3.5" />
+                            </svg>
+                        @endif
+                    </span>
+                    In stock only
+                </a>
+                
+                @if(!empty($q) || !empty($selectedCategoryIds) || !empty($sort) || $inStockOnly)
+                    <a href="{{ $link([], ['q','category','sort','in_stock']) }}"
                        class="inline-flex items-center rounded-sm border border-gray-300 dark:border-gray-700 px-3 py-2 text-[11px] text-gray-700 dark:text-gray-200 hover:bg-gray-50 dark:hover:bg-gray-800">
                         Clear
                     </a>
@@ -242,10 +271,10 @@
         </div>
 
         {{-- Active filters --}}
-        @if(!empty($q) || !empty($selectedCategoryIds) || !empty($sort))
+        @if(!empty($q) || !empty($selectedCategoryIds) || !empty($sort) || $inStockOnly)
             <div class="flex flex-wrap items-center gap-2 pt-1 border-t border-gray-100 dark:border-gray-800">
                 <span class="text-[11px] text-gray-500 dark:text-gray-400">
-                    Active Category:
+                    Active filters:
                 </span>
 
                 @if(!empty($q))
@@ -270,6 +299,14 @@
                         <span class="text-gray-400">✕</span>
                     </a>
                 @endforeach
+
+                @if($inStockOnly)
+                    <a href="{{ $link(['in_stock' => null]) }}"
+                       class="inline-flex items-center gap-2 rounded-sm border border-gray-300 dark:border-gray-700 px-3 py-1 text-[11px] text-gray-700 dark:text-gray-200 hover:bg-gray-50 dark:hover:bg-gray-800">
+                        In stock only
+                        <span class="text-gray-400">✕</span>
+                    </a>
+                @endif
 
                 @if(!empty($sort))
                     <a href="{{ $link(['sort' => null]) }}"

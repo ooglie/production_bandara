@@ -196,7 +196,7 @@
                                             $fileName = $att->original_name ?? basename((string)$filePath);
                                         @endphp
                                         @if($filePath)
-                                            <a href="{{ asset('storage/' . $filePath) }}" target="_blank"
+                                            <a href="{{ route('ticket-attachments.download', $att) }}"
                                             class="inline-flex items-center rounded-full border border-gray-200 dark:border-gray-700 px-3 py-1 text-[11px] text-gray-700 dark:text-gray-200 hover:bg-gray-100 dark:hover:bg-gray-800">
                                                 {{ $fileName }}
                                             </a>

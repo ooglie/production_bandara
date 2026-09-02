@@ -1,0 +1,43 @@
+@php
+    $financeUser = auth()->user();
+    $financeLinks = [];
+
+    if (\App\Support\FinanceAccess::allows($financeUser, \App\Support\FinanceAccess::SUMMARY) && \Illuminate\Support\Facades\Route::has('admin.finance.index')) {
+        $financeLinks[] = ['label' => 'Operating summary', 'route' => 'admin.finance.index', 'pattern' => 'admin.finance.index'];
+    }
+
+    if (\App\Support\FinanceAccess::allows($financeUser, \App\Support\FinanceAccess::EXPENSES_VIEW)) {
+        if (\Illuminate\Support\Facades\Route::has('admin.finance.expenses.index')) {
+            $financeLinks[] = ['label' => 'Business expenses', 'route' => 'admin.finance.expenses.index', 'pattern' => 'admin.finance.expenses.*'];
+        }
+        if (\Illuminate\Support\Facades\Route::has('admin.finance.recurring-expenses.index')) {
+            $financeLinks[] = ['label' => 'Recurring expenses', 'route' => 'admin.finance.recurring-expenses.index', 'pattern' => 'admin.finance.recurring-expenses.*'];
+        }
+    }
+
+    if (\App\Support\FinanceAccess::allows($financeUser, \App\Support\FinanceAccess::EXPENSE_SETTINGS_MANAGE)
+        && \Illuminate\Support\Facades\Route::has('admin.finance.expense-categories.index')) {
+        $financeLinks[] = ['label' => 'Expense categories', 'route' => 'admin.finance.expense-categories.index', 'pattern' => 'admin.finance.expense-categories.*'];
+    }
+
+    if (\App\Support\FinanceAccess::allows($financeUser, \App\Support\FinanceAccess::SALARY_VIEW)) {
+        if (\Illuminate\Support\Facades\Route::has('admin.finance.salary-entries.index')) {
+            $financeLinks[] = ['label' => 'Monthly salaries', 'route' => 'admin.finance.salary-entries.index', 'pattern' => 'admin.finance.salary-entries.*'];
+        }
+        if (\Illuminate\Support\Facades\Route::has('admin.finance.salary-profiles.index')) {
+            $financeLinks[] = ['label' => 'Salary profiles', 'route' => 'admin.finance.salary-profiles.index', 'pattern' => 'admin.finance.salary-profiles.*'];
+        }
+    }
+@endphp
+
+@if ($financeLinks !== [])
+    <nav class="flex flex-wrap gap-2 border-b border-gray-200 pb-3 text-xs dark:border-gray-800" aria-label="Finance navigation">
+        @foreach ($financeLinks as $link)
+            @php($financeLinkActive = request()->routeIs($link['pattern']))
+            <a href="{{ route($link['route']) }}"
+               class="rounded border px-3 py-1.5 {{ $financeLinkActive ? 'border-gray-900 bg-gray-900 text-white dark:border-gray-100 dark:bg-gray-100 dark:text-gray-900' : 'border-gray-300 text-gray-700 hover:bg-gray-50 dark:border-gray-700 dark:text-gray-300 dark:hover:bg-gray-900' }}">
+                {{ $link['label'] }}
+            </a>
+        @endforeach
+    </nav>
+@endif

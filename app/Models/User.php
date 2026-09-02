@@ -3,6 +3,7 @@
 namespace App\Models;
 
 // use Illuminate\Contracts\Auth\MustVerifyEmail;
+use Illuminate\Database\Eloquent\Casts\Attribute;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Foundation\Auth\User as Authenticatable;
 use Illuminate\Notifications\Notifiable;
@@ -18,6 +19,17 @@ class User extends Authenticatable implements MustVerifyEmail
     use HasRoles, HasFactory, Notifiable;
 
     /**
+     * Bandara's existing Spatie roles and permissions are stored under the
+     * `web` guard. Staff may authenticate through Laravel's separate `staff`
+     * guard, but role and permission resolution must continue using `web`.
+     *
+     * Without this explicit authorization guard, Spatie follows Laravel's
+     * request-default guard and incorrectly searches for roles such as
+     * Customer and Admin under `staff`.
+     */
+    protected string $guard_name = 'web';
+
+    /**
      * The attributes that are mass assignable.
      *
      * @var list<string>
@@ -26,6 +38,7 @@ class User extends Authenticatable implements MustVerifyEmail
         'name',
         'email',
         'phone',
+        'date_of_birth',
         'password',
         'gst_number',
         'fssai_number',
@@ -54,10 +67,30 @@ class User extends Authenticatable implements MustVerifyEmail
     {
         return [
             'email_verified_at' => 'datetime',
+            'is_active' => 'boolean',
+            'allow_unpaid_checkout' => 'boolean',
+            'date_of_birth' => 'date',
             'password' => 'hashed',
             'gst_number' => 'string',
             'fssai_number' => 'string',
         ];
+    }
+
+    public function canCheckoutWithoutOnlinePayment(): bool
+    {
+        return $this->customer_type === 'b2c'
+            && (bool) ($this->allow_unpaid_checkout ?? false);
+    }
+
+    protected function gstNumber(): Attribute
+    {
+        return Attribute::make(
+            set: static function ($value): ?string {
+                $normalized = strtoupper((string) preg_replace('/[\s-]+/', '', trim((string) $value)));
+
+                return $normalized !== '' ? $normalized : null;
+            },
+        );
     }
 
     public function customerAddresses()

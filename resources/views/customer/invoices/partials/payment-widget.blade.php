@@ -14,13 +14,19 @@
         : 0.0;
     $paymentWidgetOfflineLimit = max(0, $paymentWidgetBalance - $paymentWidgetPendingAmount);
 
+    $paymentWidgetAdminRecordedOnly = $paymentWidgetInvoice
+        && (($paymentWidgetInvoice->order?->payment_method ?? 'razorpay') === 'pay_later')
+        && ((auth()->user()?->customer_type ?? 'b2c') === 'b2c');
+
     $paymentWidgetRazorpayEnabled = $paymentWidgetInvoice
+        && ! $paymentWidgetAdminRecordedOnly
         && $paymentWidgetBalance > 0.00001
         && Route::has('invoices.pay.razorpay')
         && config('services.razorpay.key')
         && config('services.razorpay.secret');
 
     $paymentWidgetOfflineEnabled = $paymentWidgetInvoice
+        && ! $paymentWidgetAdminRecordedOnly
         && $paymentWidgetBalance > 0.00001
         && $paymentWidgetOfflineLimit > 0.00001
         && Route::has('invoices.offline-payment.store');

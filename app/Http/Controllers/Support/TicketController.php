@@ -4,8 +4,8 @@ namespace App\Http\Controllers\Support;
 
 use App\Http\Controllers\Controller;
 use App\Models\Ticket;
-use App\Models\TicketAttachment;
 use App\Models\TicketMessage;
+use App\Services\TicketAttachmentService;
 use App\Models\TicketTag;
 use App\Models\User;
 use Illuminate\Http\Request;
@@ -78,6 +78,7 @@ class TicketController extends Controller
 
     public function show(Ticket $ticket)
     {
+        $this->authorizeTicketAccess($ticket);
         $ticket->load([
             'customer',
             'assignee',
@@ -95,6 +96,7 @@ class TicketController extends Controller
 
     public function assignToMe(Ticket $ticket)
     {
+        $this->authorizeTicketAccess($ticket);
         if ($ticket->assigned_to_id && $ticket->assigned_to_id !== Auth::id()) {
             // already assigned to someone else
             return back()->with('error', 'Ticket is already assigned to another agent.');
@@ -126,11 +128,13 @@ class TicketController extends Controller
      * Public reply visible to the customer.
      * Shows as "Support Team" from customer point of view.
      */
-   public function reply(Request $request, Ticket $ticket)
+    public function reply(Request $request, Ticket $ticket)
     {
+        $this->authorizeTicketAccess($ticket);
+
         $data = $request->validate([
             'message'       => ['required', 'string', 'max:5000'],
-            'attachments.*' => ['sometimes', 'file', 'max:5120'],
+            ...app(TicketAttachmentService::class)->validationRules(),
         ]);
 
         DB::transaction(function () use ($request, $ticket, $data) {
@@ -155,39 +159,7 @@ class TicketController extends Controller
             // Attachments (optional) — supports both "path" and "file_path" column styles
             if ($request->hasFile('attachments')) {
                 foreach ($request->file('attachments') as $file) {
-                    $path = $file->store('tickets/attachments', 'public');
-
-                    $att = new TicketAttachment();
-
-                    // Some schemas store ticket_id; keep it if present
-                    if (Schema::hasColumn('ticket_attachments', 'ticket_id')) {
-                        $att->ticket_id = $ticket->id;
-                    }
-
-                    // Some schemas store ticket_message_id; keep it if present
-                    if (Schema::hasColumn('ticket_attachments', 'ticket_message_id')) {
-                        $att->ticket_message_id = $msg->id;
-                    }
-
-                    if (Schema::hasColumn('ticket_attachments', 'file_path')) {
-                        $att->file_path = $path;
-                    } elseif (Schema::hasColumn('ticket_attachments', 'path')) {
-                        $att->path = $path;
-                    }
-
-                    if (Schema::hasColumn('ticket_attachments', 'original_name')) {
-                        $att->original_name = $file->getClientOriginalName();
-                    }
-
-                    if (Schema::hasColumn('ticket_attachments', 'mime_type')) {
-                        $att->mime_type = $file->getClientMimeType();
-                    }
-
-                    if (Schema::hasColumn('ticket_attachments', 'size')) {
-                        $att->size = $file->getSize();
-                    }
-
-                    $att->save();
+                    app(TicketAttachmentService::class)->store($file, $msg, $ticket);
                 }
             }
 
@@ -216,6 +188,7 @@ class TicketController extends Controller
      */
     public function addInternalNote(Request $request, Ticket $ticket)
     {
+        $this->authorizeTicketAccess($ticket);
         $data = $request->validate([
             'message' => ['required', 'string', 'max:4000'],
         ]);
@@ -248,6 +221,7 @@ class TicketController extends Controller
 
     public function updateStatus(Request $request, Ticket $ticket)
     {
+        $this->authorizeTicketAccess($ticket);
         $data = $request->validate([
             'status' => ['required', 'in:open,awaiting_customer,awaiting_agent,resolved,closed'],
         ]);
@@ -267,6 +241,7 @@ class TicketController extends Controller
 
     public function updateTags(Request $request, Ticket $ticket)
     {
+        $this->authorizeTicketAccess($ticket);
         $data = $request->validate([
             'tags'   => ['nullable', 'array'],
             'tags.*' => ['integer', 'exists:ticket_tags,id'],
@@ -275,6 +250,21 @@ class TicketController extends Controller
         $ticket->tags()->sync($data['tags'] ?? []);
 
         return back()->with('status', 'Ticket tags updated.');
+    }
+
+    protected function authorizeTicketAccess(Ticket $ticket): void
+    {
+        $user = Auth::user();
+
+        if (! $user || ! $user->can('view tickets')) {
+            abort(403);
+        }
+
+        if ($user->hasRole('Support')) {
+            if ($ticket->assigned_to_id !== null && (int) $ticket->assigned_to_id !== (int) $user->id) {
+                abort(403);
+            }
+        }
     }
 
     protected function authorizeManagerOrAdmin(): void

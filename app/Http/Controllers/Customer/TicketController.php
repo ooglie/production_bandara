@@ -4,9 +4,9 @@ namespace App\Http\Controllers\Customer;
 
 use App\Http\Controllers\Controller;
 use App\Models\Ticket;
-use App\Models\TicketAttachment;
 use App\Models\TicketCategory;
 use App\Models\TicketMessage;
+use App\Services\TicketAttachmentService;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Facades\DB;
@@ -51,7 +51,7 @@ class TicketController extends Controller
             'message'        => ['nullable', 'string', 'max:5000', 'required_without:description'],
             'description'    => ['nullable', 'string', 'max:5000', 'required_without:message'],
 
-            'attachments.*'  => ['sometimes', 'file', 'max:5120'], // 5 MB each
+            ...app(TicketAttachmentService::class)->validationRules(),
         ]);
 
         // Use both fields if present: description for ticket summary, message for first message body.
@@ -101,15 +101,7 @@ class TicketController extends Controller
 
              if ($request->hasFile('attachments')) {
                 foreach ($request->file('attachments') as $file) {
-                    $path = $file->store('tickets/attachments', 'public');
-
-                    $att = new TicketAttachment();
-                    $att->ticket_message_id = $message->id;
-                    $att->file_path              = $path;
-                    $att->original_name     = $file->getClientOriginalName();
-                    $att->mime_type         = $file->getClientMimeType();
-                    $att->size              = $file->getSize();
-                    $att->save();
+                    app(TicketAttachmentService::class)->store($file, $message, $ticket);
                 }
              }
 
@@ -149,7 +141,7 @@ class TicketController extends Controller
 
         $data = $request->validate([
             'message'       => ['required', 'string', 'max:4000'],
-            'attachments.*' => ['sometimes', 'file', 'max:5120'],
+            ...app(TicketAttachmentService::class)->validationRules(),
         ]);
 
         $user = Auth::user();
@@ -167,16 +159,7 @@ class TicketController extends Controller
             // Attachments (optional)
             if ($request->hasFile('attachments')) {
                 foreach ($request->file('attachments') as $file) {
-                    $path = $file->store('tickets/attachments', 'public');
-
-                    $att = new TicketAttachment();
-                    // $att->ticket_message_id         = $ticket->id;
-                    $att->ticket_message_id = $msg->id;
-                    $att->file_path              = $path;
-                    $att->original_name     = $file->getClientOriginalName();
-                    $att->mime_type         = $file->getClientMimeType();
-                    $att->size              = $file->getSize();
-                    $att->save();
+                    app(TicketAttachmentService::class)->store($file, $msg, $ticket);
                 }
             }
 

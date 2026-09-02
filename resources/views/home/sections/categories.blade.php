@@ -1,4 +1,4 @@
-<section id="categories" class="space-y-3">
+<section id="home-categories" id="categories" class="space-y-3">
     <div class="flex items-center justify-between">
         <h2 class="text-sm font-semibold text-gray-900 dark:text-gray-50">{{ $section->title ?: 'Browse by category' }}</h2>
         @if($section->cta_text && $section->cta_url)

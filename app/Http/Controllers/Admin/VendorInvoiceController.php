@@ -12,6 +12,7 @@ use App\Models\ProductVariant;
 use App\Models\StockMovement;
 use App\Models\Vendor;
 use App\Models\VendorInvoice;
+use App\Models\VendorInvoiceAdjustment;
 use App\Models\VendorInvoiceItem;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Http\Request;
@@ -20,6 +21,8 @@ use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Schema;
 use Illuminate\Validation\Rule;
 use Illuminate\Validation\ValidationException;
+use App\Services\VendorInvoiceBalanceService;
+use App\Services\VendorReturnService;
 
 class VendorInvoiceController extends Controller
 {
@@ -28,7 +31,11 @@ class VendorInvoiceController extends Controller
 
     public function index(Request $request)
     {
-        $query = VendorInvoice::with(['vendor', 'payments'])
+        $query = VendorInvoice::with(['vendor'])
+            ->withSum('payments as paid_total', 'amount')
+            ->withSum([
+                'adjustments as posted_adjustment_total' => fn ($adjustments) => $adjustments->where('status', VendorInvoiceAdjustment::STATUS_POSTED),
+            ], 'total_delta')
             ->when($request->filled('vendor_id'), function ($q) use ($request) {
                 $q->where('vendor_id', $request->vendor_id);
             })
@@ -287,14 +294,27 @@ class VendorInvoiceController extends Controller
             ->with('status', 'Vendor invoice created. Inward stock, lots, and individual piece weights were recorded.');
     }
 
-    public function show(VendorInvoice $vendorInvoice)
-    {
+    public function show(
+        VendorInvoice $vendorInvoice,
+        VendorInvoiceBalanceService $balances,
+        VendorReturnService $returns,
+    ) {
         $vendorInvoice->load([
             'vendor',
             'items.product',
             'items.productVariant',
             'items.hsnCode',
             'payments',
+            'adjustments.items.invoiceItem.product',
+            'adjustments.items.invoiceItem.productVariant',
+            'adjustments.creator',
+            'adjustments.postedBy',
+            'adjustments.reversal',
+            'vendorReturns.items.invoiceItem.product',
+            'vendorReturns.items.invoiceItem.productVariant',
+            'vendorReturns.supplierCreditAdjustment',
+            'vendorReturns.creator',
+            'vendorReturns.postedBy',
         ]);
 
         $lots = InventoryLot::query()
@@ -323,44 +343,80 @@ class VendorInvoiceController extends Controller
         return view('admin.vendor_invoices.show', [
             'invoice' => $vendorInvoice,
             'itemLotMap' => $directMap,
+            'balanceSummary' => $balances->summary($vendorInvoice),
+            'reversalAssessment' => $returns->assessFullReversal($vendorInvoice),
         ]);
     }
 
     public function outstandingSummary(Request $request)
     {
-        $invoiceAgg = \App\Models\VendorInvoice::query()
-            ->selectRaw('vendor_id, COUNT(*) as inv_count, SUM(total_amount) as inv_total')
-            ->whereNotIn('status', ['cancelled'])
+        $adjustmentAgg = VendorInvoiceAdjustment::query()
+            ->selectRaw('vendor_invoice_id, SUM(total_delta) as adjustment_total')
+            ->where('status', VendorInvoiceAdjustment::STATUS_POSTED)
+            ->groupBy('vendor_invoice_id');
+
+        $paymentByInvoice = \App\Models\VendorPayment::query()
+            ->selectRaw('vendor_invoice_id, SUM(amount) as paid_total')
+            ->whereNotNull('vendor_invoice_id')
+            ->groupBy('vendor_invoice_id');
+
+        $adjustedExpression = '(CASE '
+            . 'WHEN vendor_invoices.total_amount + COALESCE(vaa.adjustment_total, 0) > 0 '
+            . 'THEN vendor_invoices.total_amount + COALESCE(vaa.adjustment_total, 0) '
+            . 'ELSE 0 END)';
+        $paidExpression = 'COALESCE(vpa.paid_total, 0)';
+
+        $invoicePositions = VendorInvoice::query()
+            ->leftJoinSub($adjustmentAgg, 'vaa', function ($join) {
+                $join->on('vendor_invoices.id', '=', 'vaa.vendor_invoice_id');
+            })
+            ->leftJoinSub($paymentByInvoice, 'vpa', function ($join) {
+                $join->on('vendor_invoices.id', '=', 'vpa.vendor_invoice_id');
+            })
+            ->whereNotIn('vendor_invoices.status', ['cancelled'])
+            ->selectRaw('vendor_invoices.id, vendor_invoices.vendor_id')
+            ->selectRaw("{$adjustedExpression} as adjusted_total")
+            ->selectRaw("{$paidExpression} as paid_total")
+            ->selectRaw("CASE WHEN {$adjustedExpression} > {$paidExpression} THEN {$adjustedExpression} - {$paidExpression} ELSE 0 END as outstanding_total")
+            ->selectRaw("CASE WHEN {$paidExpression} > {$adjustedExpression} THEN {$paidExpression} - {$adjustedExpression} ELSE 0 END as vendor_credit_due");
+
+        $vendorPositions = DB::query()
+            ->fromSub($invoicePositions, 'vip')
+            ->selectRaw('vendor_id, COUNT(*) as inv_count')
+            ->selectRaw('SUM(adjusted_total) as inv_total')
+            ->selectRaw('SUM(paid_total) as paid_total')
+            ->selectRaw('SUM(outstanding_total) as outstanding_total')
+            ->selectRaw('SUM(vendor_credit_due) as vendor_credit_due')
             ->groupBy('vendor_id');
 
-        $paymentAgg = \App\Models\VendorPayment::query()
-            ->join('vendor_invoices', 'vendor_invoices.id', '=', 'vendor_payments.vendor_invoice_id')
-            ->selectRaw('vendor_invoices.vendor_id as vendor_id, SUM(vendor_payments.amount) as paid_total')
-            ->whereNotIn('vendor_invoices.status', ['cancelled'])
-            ->groupBy('vendor_invoices.vendor_id');
-
         $rows = \App\Models\Vendor::query()
-            ->leftJoinSub($invoiceAgg, 'ia', function ($join) {
-                $join->on('vendors.id', '=', 'ia.vendor_id');
+            ->leftJoinSub($vendorPositions, 'vp', function ($join) {
+                $join->on('vendors.id', '=', 'vp.vendor_id');
             })
-            ->leftJoinSub($paymentAgg, 'pa', function ($join) {
-                $join->on('vendors.id', '=', 'pa.vendor_id');
+            ->selectRaw(''
+                . 'vendors.id as vendor_id, '
+                . 'vendors.name as vendor_name, '
+                . 'COALESCE(vp.inv_count, 0) as inv_count, '
+                . 'COALESCE(vp.inv_total, 0) as inv_total, '
+                . 'COALESCE(vp.paid_total, 0) as paid_total, '
+                . 'COALESCE(vp.outstanding_total, 0) as outstanding_total, '
+                . 'COALESCE(vp.vendor_credit_due, 0) as vendor_credit_due')
+            ->where(function ($query) {
+                $query->whereRaw('COALESCE(vp.outstanding_total, 0) > 0')
+                    ->orWhereRaw('COALESCE(vp.vendor_credit_due, 0) > 0');
             })
-            ->selectRaw('
-                vendors.id as vendor_id,
-                vendors.name as vendor_name,
-                COALESCE(ia.inv_count, 0) as inv_count,
-                COALESCE(ia.inv_total, 0) as inv_total,
-                COALESCE(pa.paid_total, 0) as paid_total,
-                GREATEST(COALESCE(ia.inv_total, 0) - COALESCE(pa.paid_total, 0), 0) as outstanding_total
-            ')
-            ->whereRaw('COALESCE(ia.inv_total, 0) > 0')
             ->orderByDesc('outstanding_total')
+            ->orderByDesc('vendor_credit_due')
             ->get();
 
         $totalOutstandingAllVendors = (float) $rows->sum('outstanding_total');
+        $totalVendorCreditDue = (float) $rows->sum('vendor_credit_due');
 
-        return view('admin.vendor_invoices.outstanding', compact('rows', 'totalOutstandingAllVendors'));
+        return view('admin.vendor_invoices.outstanding', compact(
+            'rows',
+            'totalOutstandingAllVendors',
+            'totalVendorCreditDue'
+        ));
     }
 
     private function normalizeInvoiceItems(array $items): array

@@ -163,8 +163,8 @@
                     <label class="block text-[10px] text-gray-500 dark:text-gray-400">
                         GSTIN (optional)
                     </label>
-                    <input type="text" name="gstin" id="addr_gstin" value="{{ old('gstin') }}"
-                           class="w-full rounded border border-gray-300 dark:border-gray-700 bg-white dark:bg-gray-950 px-2 py-1 text-[11px] text-gray-700 dark:text-gray-200 focus:outline-none focus:ring-1 focus:ring-gray-400 dark:focus:ring-gray-500">
+                    <input type="text" name="gstin" id="addr_gstin" value="{{ old('gstin') }}" maxlength="15" autocomplete="off"
+                           class="w-full uppercase rounded border border-gray-300 dark:border-gray-700 bg-white dark:bg-gray-950 px-2 py-1 text-[11px] text-gray-700 dark:text-gray-200 focus:outline-none focus:ring-1 focus:ring-gray-400 dark:focus:ring-gray-500">
                 </div>
             </div>
         </div>
@@ -292,7 +292,7 @@
 
             <div class="flex items-center justify-between">
                 <p class="text-[10px] text-gray-500 dark:text-gray-400">
-                    GST will be calculated automatically based on state (Maharashtra vs other states).
+                    With a GSTIN, GST follows its state code. Without a GSTIN, GST follows this order address. Customer checkout supports separate Bill-To and Ship-To addresses.
                 </p>
                 <button type="submit"
                         class="inline-flex items-center rounded-full border border-gray-900 dark:border-gray-100 bg-gray-900 text-white dark:bg-gray-100 dark:text-gray-900 px-3 py-1.5 text-[11px] font-medium hover:bg-gray-800 dark:hover:bg-gray-200">

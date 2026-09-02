@@ -1,0 +1,715 @@
+/*
+ * Bandara storefront layout-safe UI hotfix v1.4.1
+ *
+ * The Help & FAQ page keeps its original Blade layout. This stylesheet only
+ * styles a separate floating clone after the original controls leave view.
+ */
+
+:root {
+    --bandara-ui-alignment-marker: "BANDARA_UI_ALIGNMENT_FIX_1_4_1";
+    --bandara-faq-floating-top: 0px;
+    --bandara-faq-floating-left: 1rem;
+    --bandara-faq-floating-width: calc(100vw - 2rem);
+    --bandara-faq-floating-z: 45;
+}
+
+/* -------------------------------------------------------------------------
+ * Welcome credit banner
+ * ---------------------------------------------------------------------- */
+.bandara-launch-reward {
+    position: relative;
+    z-index: 45;
+    display: block !important;
+    width: 100% !important;
+    max-width: none !important;
+    clear: both;
+    border-bottom: 1px solid rgb(226 232 240 / 0.85);
+    background: rgb(248 250 252 / 0.96);
+    color: rgb(30 41 59);
+    visibility: visible !important;
+    opacity: 1 !important;
+    backdrop-filter: blur(12px);
+}
+
+:is(html.dark, html[data-theme="dark"], body.dark, body[data-theme="dark"]) .bandara-launch-reward {
+    border-bottom-color: rgb(51 65 85 / 0.8);
+    background: rgb(15 23 42 / 0.96);
+    color: rgb(226 232 240);
+}
+
+.bandara-launch-reward[hidden] {
+    display: none !important;
+}
+
+.page-body > .bandara-launch-reward,
+[data-page-body] > .bandara-launch-reward,
+main > .bandara-launch-reward,
+[role="main"] > .bandara-launch-reward {
+    margin: 0 !important;
+}
+
+.bandara-launch-reward__inner {
+    position: relative;
+    display: flex;
+    min-height: 2.65rem;
+    max-width: 90rem;
+    align-items: center;
+    justify-content: center;
+    gap: 0.65rem 1rem;
+    margin-inline: auto;
+    padding: 0.55rem 3rem 0.55rem 1rem;
+    font-size: 0.78rem;
+    line-height: 1.35;
+    text-align: center;
+}
+
+.bandara-launch-reward__inner p {
+    margin: 0;
+}
+
+.bandara-launch-reward__inner a {
+    flex: none;
+    border-bottom: 1px solid currentColor;
+    color: inherit;
+    font-weight: 600;
+    text-decoration: none;
+}
+
+.bandara-launch-reward__inner span {
+    color: rgb(100 116 139);
+    font-size: 0.68rem;
+}
+
+:is(html.dark, html[data-theme="dark"], body.dark, body[data-theme="dark"]) .bandara-launch-reward__inner span {
+    color: rgb(148 163 184);
+}
+
+.bandara-launch-reward__inner button {
+    position: absolute;
+    top: 50%;
+    right: 0.85rem;
+    width: 1.8rem;
+    height: 1.8rem;
+    transform: translateY(-50%);
+    border: 0;
+    border-radius: 999px;
+    background: transparent;
+    color: inherit;
+    font-size: 1.1rem;
+    line-height: 1;
+    cursor: pointer;
+}
+
+.bandara-launch-reward__inner button:hover,
+.bandara-launch-reward__inner button:focus-visible {
+    background: rgb(226 232 240 / 0.75);
+    outline: none;
+}
+
+:is(html.dark, html[data-theme="dark"], body.dark, body[data-theme="dark"]) .bandara-launch-reward__inner button:hover,
+:is(html.dark, html[data-theme="dark"], body.dark, body[data-theme="dark"]) .bandara-launch-reward__inner button:focus-visible {
+    background: rgb(51 65 85 / 0.75);
+}
+
+/* -------------------------------------------------------------------------
+ * Theme toggle. The custom icon shows the action available to the customer:
+ * moon in light mode, sun in dark mode.
+ * ---------------------------------------------------------------------- */
+.bandara-theme-source-icon {
+    display: none !important;
+}
+
+.bandara-theme-action-icons {
+    display: inline-grid;
+    width: 1.2rem;
+    height: 1.2rem;
+    flex: none;
+    place-items: center;
+    color: currentColor;
+    line-height: 0;
+    pointer-events: none;
+}
+
+.bandara-theme-action-icon {
+    grid-area: 1 / 1;
+    display: block;
+    width: 1.2rem;
+    height: 1.2rem;
+}
+
+.bandara-theme-action-icon--sun {
+    display: none;
+}
+
+.bandara-theme-action-icons.is-dark .bandara-theme-action-icon--moon {
+    display: none;
+}
+
+.bandara-theme-action-icons.is-dark .bandara-theme-action-icon--sun {
+    display: block;
+}
+
+/* -------------------------------------------------------------------------
+ * Scroll reveal. Uses the independent translate property so approved
+ * component transforms and widths are not overwritten.
+ * ---------------------------------------------------------------------- */
+html.bandara-reveal-enabled .bandara-scroll-reveal {
+    opacity: 0 !important;
+    translate: 0 18px !important;
+    filter: blur(1.5px) !important;
+    transition:
+        opacity 600ms cubic-bezier(0.22, 1, 0.36, 1) var(--bandara-reveal-delay, 0ms),
+        translate 600ms cubic-bezier(0.22, 1, 0.36, 1) var(--bandara-reveal-delay, 0ms),
+        filter 600ms cubic-bezier(0.22, 1, 0.36, 1) var(--bandara-reveal-delay, 0ms) !important;
+    will-change: opacity, translate, filter;
+}
+
+html.bandara-reveal-enabled .bandara-scroll-reveal.is-bandara-visible {
+    opacity: 1 !important;
+    translate: 0 0 !important;
+    filter: blur(0) !important;
+}
+
+/* -------------------------------------------------------------------------
+ * Product-detail hover. These selectors mirror the already approved
+ * homepage/shop card interaction: soft shadow, 3px lift and restrained image
+ * scale. Only JavaScript-marked product-detail elements are affected.
+ * ---------------------------------------------------------------------- */
+.bandara-product-detail-page .bandara-product-related-card,
+.bandara-product-detail-page :is([data-product-card], .product-card, [class*="product-card" i], [class*="product-tile" i]),
+.bandara-product-detail-page .bandara-product-detail-visual {
+    position: relative;
+    transform: translateY(0);
+    transition:
+        transform 250ms ease,
+        box-shadow 250ms ease,
+        border-color 250ms ease !important;
+}
+
+.bandara-product-detail-page .bandara-product-related-card {
+    overflow: hidden;
+}
+
+.bandara-product-detail-page .bandara-product-related-card img,
+.bandara-product-detail-page :is([data-product-card], .product-card, [class*="product-card" i], [class*="product-tile" i]) img,
+.bandara-product-detail-page .bandara-product-detail-visual .bandara-product-primary-image {
+    transform: scale(1);
+    transform-origin: center;
+    transition: transform 400ms ease, filter 400ms ease !important;
+}
+
+.bandara-product-detail-page .bandara-product-detail-visual {
+    display: block;
+    overflow: hidden;
+    isolation: isolate;
+}
+
+@media (hover: hover) and (pointer: fine) {
+    .bandara-product-detail-page .bandara-product-related-card:hover,
+    .bandara-product-detail-page .bandara-product-related-card:focus-within,
+    .bandara-product-detail-page :is([data-product-card], .product-card, [class*="product-card" i], [class*="product-tile" i]):hover,
+    .bandara-product-detail-page :is([data-product-card], .product-card, [class*="product-card" i], [class*="product-tile" i]):focus-within,
+    .bandara-product-detail-page .bandara-product-detail-visual:hover,
+    .bandara-product-detail-page .bandara-product-detail-visual:focus-within {
+        z-index: 3;
+        transform: translateY(-3px) !important;
+        border-color: var(--border-strong, rgb(148 163 184 / 0.55)) !important;
+        box-shadow: var(--shadow-hover, 0 14px 34px rgb(15 23 42 / 0.18)) !important;
+    }
+
+    .bandara-product-detail-page .bandara-product-related-card:hover img,
+    .bandara-product-detail-page .bandara-product-related-card:focus-within img,
+    .bandara-product-detail-page :is([data-product-card], .product-card, [class*="product-card" i], [class*="product-tile" i]):hover img,
+    .bandara-product-detail-page :is([data-product-card], .product-card, [class*="product-card" i], [class*="product-tile" i]):focus-within img,
+    .bandara-product-detail-page .bandara-product-detail-visual:hover .bandara-product-primary-image,
+    .bandara-product-detail-page .bandara-product-detail-visual:focus-within .bandara-product-primary-image {
+        transform: scale(1.035) !important;
+        filter: drop-shadow(0 8px 16px rgb(15 23 42 / 0.12));
+    }
+}
+
+/* -------------------------------------------------------------------------
+ * Help & FAQ. No selector below changes the original search, hero or category
+ * navigation. A separate compact clone appears only after they scroll away.
+ * ---------------------------------------------------------------------- */
+.bandara-faq-floating {
+    position: fixed;
+    top: var(--bandara-faq-floating-top, 0px);
+    left: var(--bandara-faq-floating-left, 1rem);
+    right: auto;
+    z-index: var(--bandara-faq-floating-z, 45);
+    box-sizing: border-box;
+    width: var(--bandara-faq-floating-width, calc(100vw - 2rem));
+    max-width: calc(100vw - 20px);
+    max-height: calc(100vh - var(--bandara-faq-floating-top, 0px) - 10px);
+    overflow: hidden;
+    visibility: hidden;
+    opacity: 0;
+    translate: 0 -8px;
+    pointer-events: none;
+    border: 1px solid rgb(203 213 225 / 0.92);
+    border-radius: 12px;
+    background: rgb(255 255 255 / 0.97);
+    box-shadow: 0 14px 34px -24px rgb(15 23 42 / 0.62);
+    backdrop-filter: blur(16px);
+    transition:
+        opacity 180ms ease,
+        translate 180ms ease,
+        visibility 0s linear 180ms;
+}
+
+.bandara-faq-floating.is-visible {
+    visibility: visible;
+    opacity: 1;
+    translate: 0 0;
+    pointer-events: auto;
+    transition-delay: 0s;
+}
+
+:is(html.dark, html[data-theme="dark"], body.dark, body[data-theme="dark"]) .bandara-faq-floating {
+    border-color: rgb(51 65 85 / 0.95);
+    background: rgb(15 23 42 / 0.97);
+    box-shadow: 0 16px 36px -24px rgb(0 0 0 / 0.95);
+}
+
+.bandara-faq-floating__inner {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr);
+    gap: 9px;
+    width: 100%;
+    min-width: 0;
+    margin: 0;
+    padding: 11px 12px 12px;
+}
+
+.bandara-faq-floating__search {
+    position: relative;
+    display: block;
+    width: 100%;
+}
+
+.bandara-faq-floating__search-icon {
+    position: absolute;
+    top: 50%;
+    left: 16px;
+    width: 14px;
+    height: 14px;
+    translate: 0 -50%;
+    border: 1.4px solid rgb(148 163 184);
+    border-radius: 999px;
+    pointer-events: none;
+}
+
+.bandara-faq-floating__search-icon::after {
+    content: "";
+    position: absolute;
+    right: -4px;
+    bottom: -3px;
+    width: 5px;
+    height: 1.4px;
+    rotate: 45deg;
+    border-radius: 999px;
+    background: rgb(148 163 184);
+}
+
+.bandara-faq-floating__input {
+    box-sizing: border-box;
+    width: 100%;
+    min-height: 40px;
+    padding: 9px 14px 9px 42px;
+    border: 1px solid rgb(203 213 225);
+    border-radius: 8px;
+    outline: none;
+    background: transparent;
+    color: rgb(30 41 59);
+    font: inherit;
+    font-size: 0.8rem;
+    line-height: 1.3;
+}
+
+.bandara-faq-floating__input::placeholder {
+    color: rgb(148 163 184);
+}
+
+.bandara-faq-floating__input:focus {
+    border-color: rgb(100 116 139);
+    box-shadow: 0 0 0 2px rgb(148 163 184 / 0.16);
+}
+
+:is(html.dark, html[data-theme="dark"], body.dark, body[data-theme="dark"]) .bandara-faq-floating__input {
+    border-color: rgb(71 85 105);
+    color: rgb(226 232 240);
+}
+
+.bandara-faq-floating__links {
+    display: flex;
+    box-sizing: border-box;
+    min-width: 0;
+    align-items: center;
+    gap: 7px;
+    overflow-x: auto;
+    overscroll-behavior-inline: contain;
+    flex-wrap: wrap;
+    overflow-x: visible;
+    overflow-y: visible;
+    padding: 1px 0 2px;
+    scrollbar-width: thin;
+}
+
+.bandara-faq-floating__link {
+    flex: none;
+    display: inline-flex;
+    min-height: 32px;
+    align-items: center;
+    justify-content: center;
+    padding: 6px 13px;
+    border: 1px solid rgb(203 213 225);
+    border-radius: 999px;
+    background: transparent;
+    color: rgb(71 85 105);
+    font: inherit;
+    font-size: 0.72rem;
+    line-height: 1.2;
+    text-decoration: none;
+    white-space: nowrap;
+    cursor: pointer;
+}
+
+.bandara-faq-floating__link:hover,
+.bandara-faq-floating__link:focus-visible {
+    border-color: rgb(100 116 139);
+    color: rgb(15 23 42);
+    outline: none;
+}
+
+.bandara-faq-floating__link.is-active,
+.bandara-faq-floating__link[aria-current="true"] {
+    border-color: rgb(71 85 105);
+    background: rgb(241 245 249);
+    color: rgb(15 23 42);
+}
+
+:is(html.dark, html[data-theme="dark"], body.dark, body[data-theme="dark"]) .bandara-faq-floating__link {
+    border-color: rgb(71 85 105);
+    color: rgb(203 213 225);
+}
+
+:is(html.dark, html[data-theme="dark"], body.dark, body[data-theme="dark"]) .bandara-faq-floating__link:hover,
+:is(html.dark, html[data-theme="dark"], body.dark, body[data-theme="dark"]) .bandara-faq-floating__link:focus-visible {
+    border-color: rgb(148 163 184);
+    color: rgb(248 250 252);
+}
+
+.bandara-faq-anchor {
+    scroll-margin-top: calc(var(--bandara-faq-floating-top, 0px) + 6.75rem) !important;
+}
+
+/* -------------------------------------------------------------------------
+ * Compact newsletter state
+ * ---------------------------------------------------------------------- */
+.bandara-newsletter-confirmation {
+    display: inline-flex !important;
+    width: fit-content;
+    min-height: 2.25rem;
+    align-items: center;
+    gap: 0.45rem;
+    padding: 0.45rem 0.75rem !important;
+    border: 1px solid rgb(203 213 225 / 0.82);
+    border-radius: 999px !important;
+    background: rgb(248 250 252 / 0.78);
+    color: rgb(51 65 85);
+    font-size: 0.78rem !important;
+    line-height: 1.2 !important;
+}
+
+:is(html.dark, html[data-theme="dark"], body.dark, body[data-theme="dark"]) .bandara-newsletter-confirmation {
+    border-color: rgb(51 65 85 / 0.9);
+    background: rgb(15 23 42 / 0.7);
+    color: rgb(203 213 225);
+}
+
+.bandara-newsletter-confirmation strong {
+    color: inherit !important;
+    font-size: inherit !important;
+    font-weight: 600;
+}
+
+.bandara-newsletter-confirmation span[aria-hidden="true"] {
+    font-size: 0.75rem;
+}
+
+/* -------------------------------------------------------------------------
+ * Founder content retained from the launch content package
+ * ---------------------------------------------------------------------- */
+.bandara-founder-section {
+    padding: clamp(3.5rem, 7vw, 6.5rem) 1rem;
+    border-top: 1px solid rgb(226 232 240 / 0.8);
+    background: rgb(248 250 252 / 0.55);
+}
+
+:is(html.dark, html[data-theme="dark"], body.dark, body[data-theme="dark"]) .bandara-founder-section {
+    border-top-color: rgb(51 65 85 / 0.75);
+    background: rgb(15 23 42 / 0.35);
+}
+
+.bandara-founder-section__inner {
+    width: min(72rem, 100%);
+    margin-inline: auto;
+}
+
+.bandara-founder-section__eyebrow {
+    margin: 0 0 0.65rem;
+    color: rgb(100 116 139);
+    font-size: 0.72rem;
+    font-weight: 600;
+    letter-spacing: 0.16em;
+    text-transform: uppercase;
+}
+
+.bandara-founder-section h2 {
+    margin: 0;
+    color: rgb(15 23 42);
+    font-size: clamp(1.65rem, 3vw, 2.4rem);
+    font-weight: 400;
+    letter-spacing: -0.03em;
+}
+
+:is(html.dark, html[data-theme="dark"], body.dark, body[data-theme="dark"]) .bandara-founder-section h2,
+:is(html.dark, html[data-theme="dark"], body.dark, body[data-theme="dark"]) .bandara-founder-card h3 {
+    color: rgb(248 250 252);
+}
+
+.bandara-founder-section__intro {
+    max-width: 50rem;
+    margin: 1rem 0 0;
+    color: rgb(71 85 105);
+    font-size: 0.95rem;
+    line-height: 1.75;
+}
+
+:is(html.dark, html[data-theme="dark"], body.dark, body[data-theme="dark"]) .bandara-founder-section__intro,
+:is(html.dark, html[data-theme="dark"], body.dark, body[data-theme="dark"]) .bandara-founder-card p {
+    color: rgb(203 213 225);
+}
+
+.bandara-founder-grid {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 1rem;
+    margin-top: 2rem;
+}
+
+.bandara-founder-card {
+    display: grid;
+    grid-template-columns: auto minmax(0, 1fr);
+    gap: 1rem;
+    padding: clamp(1.15rem, 2vw, 1.6rem);
+    border: 1px solid rgb(203 213 225 / 0.8);
+    border-radius: 0.85rem;
+    background: rgb(255 255 255 / 0.75);
+}
+
+:is(html.dark, html[data-theme="dark"], body.dark, body[data-theme="dark"]) .bandara-founder-card {
+    border-color: rgb(51 65 85 / 0.85);
+    background: rgb(15 23 42 / 0.6);
+}
+
+.bandara-founder-card__initials {
+    display: grid;
+    width: 3rem;
+    height: 3rem;
+    place-items: center;
+    border: 1px solid rgb(148 163 184 / 0.7);
+    border-radius: 999px;
+    color: rgb(71 85 105);
+    font-size: 0.75rem;
+    font-weight: 600;
+    letter-spacing: 0.08em;
+}
+
+:is(html.dark, html[data-theme="dark"], body.dark, body[data-theme="dark"]) .bandara-founder-card__initials {
+    border-color: rgb(100 116 139 / 0.85);
+    color: rgb(203 213 225);
+}
+
+.bandara-founder-card h3 {
+    margin: 0;
+    color: rgb(15 23 42);
+    font-size: 1rem;
+    font-weight: 600;
+}
+
+.bandara-founder-card__role {
+    margin: 0.18rem 0 0.75rem !important;
+    color: rgb(100 116 139) !important;
+    font-size: 0.75rem;
+    font-weight: 600;
+    letter-spacing: 0.05em;
+    text-transform: uppercase;
+}
+
+.bandara-founder-card p:last-child {
+    margin: 0;
+    color: rgb(71 85 105);
+    font-size: 0.86rem;
+    line-height: 1.7;
+}
+
+/* -------------------------------------------------------------------------
+ * Existing customer business access message
+ * ---------------------------------------------------------------------- */
+.bandara-business-access {
+    width: min(72rem, calc(100% - 2rem));
+    margin: 1rem auto 1.5rem;
+    padding: clamp(1rem, 2.5vw, 1.4rem);
+    border: 1px solid rgb(203 213 225 / 0.85);
+    border-radius: 0.8rem;
+    background: rgb(248 250 252 / 0.82);
+    color: rgb(51 65 85);
+}
+
+:is(html.dark, html[data-theme="dark"], body.dark, body[data-theme="dark"]) .bandara-business-access {
+    border-color: rgb(51 65 85 / 0.9);
+    background: rgb(15 23 42 / 0.75);
+    color: rgb(203 213 225);
+}
+
+.bandara-business-access h2,
+.bandara-business-access h3 {
+    margin: 0 0 0.55rem;
+    color: inherit;
+    font-size: clamp(1rem, 2vw, 1.2rem);
+    font-weight: 600;
+}
+
+.bandara-business-access p {
+    max-width: 62rem;
+    margin: 0;
+    font-size: 0.86rem;
+    line-height: 1.65;
+}
+
+.bandara-business-access__reassurance {
+    margin-top: 0.55rem !important;
+    color: rgb(71 85 105);
+}
+
+:is(html.dark, html[data-theme="dark"], body.dark, body[data-theme="dark"]) .bandara-business-access__reassurance {
+    color: rgb(148 163 184);
+}
+
+@media (max-width: 900px) {
+    .bandara-faq-floating {
+        max-width: calc(100vw - 16px);
+        border-radius: 10px;
+    }
+
+    .bandara-faq-floating__inner {
+        grid-template-columns: 1fr;
+        gap: 8px;
+        padding: 9px 10px 10px;
+    }
+
+    .bandara-faq-floating__input {
+        min-height: 40px;
+    }
+
+    .bandara-faq-floating__link {
+        padding-inline: 13px;
+        font-size: 0.72rem;
+    }
+}
+
+@media (max-width: 767px) {
+    .bandara-launch-reward__inner {
+        flex-wrap: wrap;
+        justify-content: flex-start;
+        padding-block: 0.65rem;
+        padding-right: 2.8rem;
+        text-align: left;
+    }
+
+    .bandara-launch-reward__inner span {
+        flex-basis: 100%;
+    }
+
+    .bandara-founder-grid,
+    .bandara-founder-card {
+        grid-template-columns: 1fr;
+    }
+
+    .bandara-business-access {
+        width: calc(100% - 1.25rem);
+        margin-block: 0.65rem 1rem;
+    }
+}
+
+@media (prefers-reduced-motion: reduce) {
+    html.bandara-reveal-enabled .bandara-scroll-reveal,
+    html.bandara-reveal-enabled .bandara-scroll-reveal.is-bandara-visible,
+    .bandara-faq-floating,
+    .bandara-product-detail-page .bandara-product-related-card,
+    .bandara-product-detail-page .bandara-product-detail-visual,
+    .bandara-product-detail-page .bandara-product-related-card img,
+    .bandara-product-detail-page .bandara-product-detail-visual .bandara-product-primary-image {
+        opacity: 1 !important;
+        translate: none !important;
+        transform: none !important;
+        filter: none !important;
+        transition: none !important;
+    }
+}
+
+/* BANDARA_HOME_CARD_HOVER_FIX_1_4_4_START
+ * Merge-safe independent hover for the adjacent Bandara Kitchen and Recipe
+ * cards. This block is appended to the existing approved stylesheet so later
+ * FAQ/layout edits remain untouched.
+ */
+:root {
+    --bandara-home-hover-marker: "BANDARA_HOME_CARD_HOVER_FIX_1_4_4";
+}
+
+.bandara-home-shared-hover-shell {
+    will-change: auto !important;
+}
+
+.bandara-home-independent-card {
+    position: relative;
+    transform: translateY(0);
+    transition:
+        transform 250ms ease,
+        box-shadow 250ms ease,
+        border-color 250ms ease !important;
+}
+
+.bandara-home-independent-card .bandara-home-independent-media,
+.bandara-home-independent-card img {
+    transform-origin: center;
+    transition: transform 400ms ease, filter 400ms ease !important;
+}
+
+@media (hover: hover) and (pointer: fine) {
+    .bandara-home-independent-card:hover,
+    .bandara-home-independent-card:focus-within {
+        z-index: 3;
+        transform: translateY(-3px) !important;
+        border-color: var(--border-strong, rgb(148 163 184 / 0.55)) !important;
+        box-shadow: var(--shadow-hover, 0 14px 34px rgb(15 23 42 / 0.18)) !important;
+    }
+
+    .bandara-home-independent-card:hover img,
+    .bandara-home-independent-card:focus-within img {
+        transform: scale(1.035) !important;
+        filter: drop-shadow(0 8px 16px rgb(15 23 42 / 0.12));
+    }
+}
+
+@media (prefers-reduced-motion: reduce) {
+    .bandara-home-independent-card,
+    .bandara-home-independent-card img {
+        transform: none !important;
+        transition: none !important;
+        animation: none !important;
+    }
+}
+/* BANDARA_HOME_CARD_HOVER_FIX_1_4_4_END */

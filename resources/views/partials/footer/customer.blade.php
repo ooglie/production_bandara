@@ -7,21 +7,25 @@
                 {{-- Column 1: Brand / About --}}
                 <div class="space-y-2">
                     <div class="flex items-center gap-2">
-                        <span class="inline-block h-10 w-10 border-gray-300 dark:border-gray-700">
-                            <img src="{{ asset('storage/images/logo-bandara.png') }}" alt="Bandara Logo" class="h-full w-full invert-0 dark:invert">
-                        </span>
-                        <span class="font-semibold tracking-tight text-gray-900 dark:text-gray-50 text-sm">
-                            Bandara LLP
+                        <span class="hidden sm:flex items-center gap-2 min-w-0">
+                            <span class="inline-block h-12 w-12 border-gray-300 dark:border-gray-700">
+                                <img src="{{ asset('storage/images/logo-bandara.png') }}" alt="Bandara Logo" class="h-full w-full invert-0 dark:invert">
+                            </span>
+                            <span class="font-semibold tracking-tight text-gray-900 dark:text-gray-50 text-sm">
+                                Bandara<br>
+                                bhāṇḍāra
+                            </span>
                         </span>
                     </div>
                     <p class="text-[11px] text-gray-500 dark:text-gray-400">
-                        Quality frozen products, GST‑ready invoicing, and a mobile‑first shopping experience powered by Frozen by Bandara.
+                        Premium meats, seafood, cheese and speciality foods for homes, chefs and businesses—with GST-ready invoicing and a seamless mobile-first shopping experience from Bandara.
                     </p>
                     <br>
                     <span class="space-y-2 text-[11px] text-gray-600 dark:text-gray-300">
-                        <a href="#" class="hover:text-gray-900 dark:hover:text-gray-100">About Us</a> | 
-                        <a href="#" class="hover:text-gray-900 dark:hover:text-gray-100">Terms & Conditions</a> | 
-                        <a href="#" class="hover:text-gray-900 dark:hover:text-gray-100">Privacy Policy</a>
+                        <a href="{{ route('content.about') }}" class="hover:text-gray-900 dark:hover:text-gray-100">About Us</a> | 
+                        <a href="{{ route('content.terms') }}" class="hover:text-gray-900 dark:hover:text-gray-100">Terms &amp; Conditions</a> | 
+                        <a href="{{ route('content.privacy') }}" class="hover:text-gray-900 dark:hover:text-gray-100">Privacy Policy</a> | 
+                        <a href="{{ route('content.help') }}" class="hover:text-gray-900 dark:hover:text-gray-100">Help &amp; FAQs</a>
                     </span>
                     
                 </div>
@@ -47,6 +51,10 @@
                         Customer
                     </h3>
                     <ul class="space-y-2 text-[11px] text-gray-600 dark:text-gray-300">
+{{-- BANDARA-B2B-UI-V3:FOOTER:START --}}
+<li><a href="{{ route('business-account.index') }}" class="hover:text-gray-900 dark:hover:text-gray-100">Business Accounts</a></li>
+{{-- BANDARA-B2B-UI-V3:FOOTER:END --}}
+
                         @if(Route::has('orders.index'))
                             <li><a href="{{ route('orders.index') }}" class="hover:text-gray-900 dark:hover:text-gray-100">My orders</a></li>
                         @endif
@@ -75,7 +83,6 @@
                     @include('partials.newsletter_form')
 
                     <div class="mt-3 text-[11px] text-gray-500 dark:text-gray-400 space-y-1">
-                        <p>Support: support@bandara.in</p>
                         <p>Mon–Sat, 10:00–19:00 IST</p>
                     </div>
                 </div>
@@ -85,16 +92,16 @@
 
             <div class="border-t border-gray-200 dark:border-gray-800 pt-3 flex flex-col sm:flex-row items-center justify-between gap-2 text-[11px] text-gray-500 dark:text-gray-400">
                 <span>
-                    &copy; {{ date('Y') }} Frozen - Bandara. All rights reserved.
+                    &copy; {{ date('Y') }} - {{ date('Y')+1 }} Bandara LLP (bhāṇḍāra). All rights reserved.
                 </span>
                 <span class="flex flex-wrap gap-3">
                     <span>Made with care by 
-                        <a href="https://dimensions.software" target="_blank" rel="noopener noreferrer">
-                            Dimensions Software Private Limited
+                        <a href="https://dimensions.biz" target="_blank" rel="noopener noreferrer">
+                            Dimensions Software
                         </a></span>
                     {{-- <span class="hidden sm:inline">·</span>
                     <span>GST compliant · Razorpay ready · PWA capable</span> --}}
                 </span>
             </div>
         </div>
-    </footer>
+</footer>

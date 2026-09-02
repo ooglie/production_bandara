@@ -35,7 +35,7 @@ class ReleaseExpiredStockReservationsCommand extends Command
             return self::SUCCESS;
         }
 
-        $released = $reservations->expireOldReservations();
+        $released = $reservations->releaseExpired();
         $this->info("Released {$released} expired stock reservation(s).");
 
         return self::SUCCESS;

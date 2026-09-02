@@ -12,7 +12,19 @@ class Ticket extends Model
     // ✅ IMPORTANT: make sure Ticket points to tickets table (not ticket_tags)
     protected $table = 'tickets';
 
-    protected $guarded = [];
+    protected $fillable = [
+        'ticket_number',
+        'user_id',
+        'category_id',
+        'subject',
+        'description',
+        'status',
+        'priority',
+        'assigned_to_id',
+        'last_reply_at',
+        'resolved_at',
+        'closed_at',
+    ];
 
     protected $casts = [
         'created_at' => 'datetime',

@@ -5,24 +5,39 @@
 @section('content')
 @php
     $lotMeta = $inputLots->mapWithKeys(function ($lot) {
+        $normalizedInwardMode = strtolower(trim((string) ($lot->inward_mode ?? 'qty')));
+        $availablePieces = ($lot->pieces ?? collect())->values();
+        $trackedPieceRecordCount = (int) ($lot->tracked_piece_record_count ?? $availablePieces->count());
+        $hasAvailableTrackedPieces = $availablePieces->isNotEmpty();
+        $canConsumeEntirePieceLot = ! $hasAvailableTrackedPieces
+            && $trackedPieceRecordCount === 0
+            && in_array($normalizedInwardMode, ['pieces', 'pieces_weight'], true)
+            && (int) ($lot->available_piece_count ?? 0) > 0
+            && (float) ($lot->available_weight_kg ?? 0) > 0;
+
         return [$lot->id => [
             'id' => (int) $lot->id,
             'product_id' => (int) $lot->product_id,
             'product_name' => (string) ($lot->product->name ?? '—'),
             'lot_code' => (string) ($lot->lot_code ?: ('LOT-' . $lot->id)),
             'lot_stage' => (string) ($lot->lot_stage ?? 'raw'),
-            'inward_mode' => (string) ($lot->inward_mode ?? 'qty'),
+            'inward_mode' => $normalizedInwardMode,
             'available_weight_kg' => (float) ($lot->available_weight_kg ?? 0),
             'available_quantity' => (float) ($lot->available_quantity ?? 0),
             'available_piece_count' => (int) ($lot->available_piece_count ?? 0),
+            'tracked_piece_record_count' => $trackedPieceRecordCount,
+            'available_tracked_piece_count' => $availablePieces->count(),
+            'requires_piece_selection' => $hasAvailableTrackedPieces || $canConsumeEntirePieceLot,
+            'piece_selection_mode' => $hasAvailableTrackedPieces ? 'tracked' : ($canConsumeEntirePieceLot ? 'whole_lot' : 'none'),
             'batch_code' => (string) ($lot->batch_code ?? ''),
             'expiry_date' => $lot->expiry_date ? $lot->expiry_date->format('Y-m-d') : '',
             'sell_unit' => (string) ($lot->product->sell_unit ?? 'piece'),
-            'pieces' => ($lot->pieces ?? collect())->map(function ($piece) {
+            'pieces' => $availablePieces->map(function ($piece) {
                 return [
                     'id' => (int) $piece->id,
                     'piece_no' => (int) $piece->piece_no,
-                    'weight_kg' => (float) $piece->weight_kg,
+                    'label' => (string) ($piece->label ?: ('Piece ' . $piece->piece_no)),
+                    'weight_kg' => (float) ($piece->available_weight_kg ?? $piece->weight_kg ?? 0),
                 ];
             })->values()->all(),
         ]];
@@ -167,7 +182,103 @@
                         </div>
                     </div>
 
-                    <div id="pieces-list" class="grid gap-2 md:grid-cols-2"></div>
+                    <div id="pieces-list">
+                        @foreach($inputLots as $pieceLot)
+                            @php
+                                $availablePieceRows = ($pieceLot->pieces ?? collect())->values();
+                                $normalizedPieceLotMode = strtolower(trim((string) ($pieceLot->inward_mode ?? '')));
+                                $trackedPieceRecordCount = (int) ($pieceLot->tracked_piece_record_count ?? $availablePieceRows->count());
+                                $canConsumeEntirePieceLot = $availablePieceRows->isEmpty()
+                                    && $trackedPieceRecordCount === 0
+                                    && in_array($normalizedPieceLotMode, ['pieces', 'pieces_weight'], true)
+                                    && (int) ($pieceLot->available_piece_count ?? 0) > 0
+                                    && (float) ($pieceLot->available_weight_kg ?? 0) > 0;
+                                $hasPieceSelection = $availablePieceRows->isNotEmpty() || $canConsumeEntirePieceLot;
+                            @endphp
+
+                            @if($hasPieceSelection)
+                                <div class="hidden"
+                                     data-piece-lot-group="{{ $pieceLot->id }}"
+                                     data-piece-selection-mode="{{ $availablePieceRows->isNotEmpty() ? 'tracked' : 'whole_lot' }}">
+                                    @if($availablePieceRows->isNotEmpty())
+                                        <div class="mb-2 text-[11px] text-gray-500 dark:text-gray-400">
+                                            {{ $availablePieceRows->count() }} available piece(s) loaded from this lot.
+                                        </div>
+                                        <div class="grid gap-2 md:grid-cols-2">
+                                            @foreach($availablePieceRows as $piece)
+                                                @php
+                                                    $pieceInputId = 'production-piece-' . $piece->id;
+                                                    $isOldPiece = in_array((int) $piece->id, $oldSelectedPieceIds, true);
+                                                @endphp
+                                                <label for="{{ $pieceInputId }}"
+                                                       class="flex min-h-12 cursor-pointer items-center justify-between gap-3 rounded-xl border border-gray-200 bg-white px-3 py-2.5 transition hover:shadow-sm focus-within:ring-2 focus-within:ring-gray-300 dark:border-gray-800 dark:bg-gray-900 dark:focus-within:ring-gray-700">
+                                                    <span class="flex min-w-0 items-center gap-3">
+                                                        <input id="{{ $pieceInputId }}"
+                                                               type="checkbox"
+                                                               name="selected_piece_ids[]"
+                                                               value="{{ $piece->id }}"
+                                                               data-piece-selection-control="1"
+                                                               data-selection-kind="piece"
+                                                               data-piece-checkbox="1"
+                                                               data-lot-id="{{ $pieceLot->id }}"
+                                                               data-weight="{{ (float) ($piece->available_weight_kg ?? $piece->weight_kg ?? 0) }}"
+                                                               @checked($isOldPiece)
+                                                               @disabled((string) $oldInputLotId !== (string) $pieceLot->id)
+                                                               class="h-5 w-5 shrink-0 rounded border-gray-300 text-gray-900 focus:ring-gray-400 dark:border-gray-700 dark:bg-gray-950 dark:text-gray-100">
+                                                        <span class="truncate text-[12px] text-gray-800 dark:text-gray-200">
+                                                            {{ $piece->label ?: ('Piece ' . $piece->piece_no) }}
+                                                        </span>
+                                                    </span>
+                                                    <span class="shrink-0 text-[12px] font-medium text-gray-700 dark:text-gray-300">
+                                                        {{ number_format((float) ($piece->available_weight_kg ?? $piece->weight_kg ?? 0), 3) }} kg
+                                                    </span>
+                                                </label>
+                                            @endforeach
+                                        </div>
+                                    @else
+                                        @php
+                                            $wholeLotInputId = 'production-whole-lot-' . $pieceLot->id;
+                                            $isOldWholeLot = (string) $oldInputLotId === (string) $pieceLot->id
+                                                && (bool) old('consume_entire_input_lot');
+                                        @endphp
+                                        <div class="mb-2 rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-[11px] text-amber-800 dark:border-amber-900/60 dark:bg-amber-950/30 dark:text-amber-200">
+                                            This older piece lot has no individual piece records. It can be consumed only as the entire remaining lot.
+                                        </div>
+                                        <label for="{{ $wholeLotInputId }}"
+                                               class="flex min-h-12 cursor-pointer items-center justify-between gap-3 rounded-xl border border-gray-200 bg-white px-3 py-2.5 transition hover:shadow-sm focus-within:ring-2 focus-within:ring-gray-300 dark:border-gray-800 dark:bg-gray-900 dark:focus-within:ring-gray-700">
+                                            <span class="flex min-w-0 items-center gap-3">
+                                                <input id="{{ $wholeLotInputId }}"
+                                                       type="checkbox"
+                                                       name="consume_entire_input_lot"
+                                                       value="1"
+                                                       data-piece-selection-control="1"
+                                                       data-selection-kind="whole-lot"
+                                                       data-lot-id="{{ $pieceLot->id }}"
+                                                       data-weight="{{ (float) ($pieceLot->available_weight_kg ?? 0) }}"
+                                                       data-quantity="{{ (float) ($pieceLot->available_quantity ?? 0) }}"
+                                                       data-piece-count="{{ (int) ($pieceLot->available_piece_count ?? 0) }}"
+                                                       @checked($isOldWholeLot)
+                                                       @disabled((string) $oldInputLotId !== (string) $pieceLot->id)
+                                                       class="h-5 w-5 shrink-0 rounded border-gray-300 text-gray-900 focus:ring-gray-400 dark:border-gray-700 dark:bg-gray-950 dark:text-gray-100">
+                                                <span class="truncate text-[12px] text-gray-800 dark:text-gray-200">
+                                                    Use the entire remaining lot
+                                                </span>
+                                            </span>
+                                            <span class="shrink-0 text-right text-[12px] font-medium text-gray-700 dark:text-gray-300">
+                                                {{ (int) ($pieceLot->available_piece_count ?? 0) }} piece(s) · {{ number_format((float) ($pieceLot->available_weight_kg ?? 0), 3) }} kg
+                                            </span>
+                                        </label>
+                                    @endif
+                                </div>
+                            @endif
+                        @endforeach
+                    </div>
+
+                    <noscript>
+                        <div class="rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-[11px] text-amber-800">
+                            JavaScript is required to filter the available pieces by the selected lot.
+                        </div>
+                    </noscript>
 
                     <div id="pieces-summary"
                          class="rounded-lg border border-gray-200 dark:border-gray-800 bg-white dark:bg-gray-900 px-3 py-2 text-[12px] text-gray-700 dark:text-gray-200">
@@ -471,6 +582,7 @@
     const inputLotSummary = document.getElementById('input-lot-summary');
     const pieceWrap = document.getElementById('piece-picker-wrap');
     const pieceList = document.getElementById('pieces-list');
+    const pieceGroups = Array.from(pieceList.querySelectorAll('[data-piece-lot-group]'));
     const pieceSummary = document.getElementById('pieces-summary');
     const selectAllPiecesBtn = document.getElementById('select-all-pieces');
     const clearAllPiecesBtn = document.getElementById('clear-all-pieces');
@@ -611,31 +723,51 @@
         }
     }
 
-    function selectedPieceCheckboxes() {
-        return Array.from(pieceList.querySelectorAll('input[type="checkbox"][name="selected_piece_ids[]"]'));
+    function activePieceSelectionControls() {
+        return Array.from(pieceList.querySelectorAll('input[data-piece-selection-control="1"]:not(:disabled)'));
     }
 
     function refreshPieceSummary() {
         const lot = lotMeta[inputLotEl.value];
-        const boxes = selectedPieceCheckboxes().filter(cb => cb.checked);
+        const selectedControls = activePieceSelectionControls().filter(function (control) {
+            return control.checked;
+        });
 
-        if (!lot || boxes.length === 0) {
+        if (!lot || selectedControls.length === 0) {
             pieceSummary.textContent = 'No pieces selected.';
             consumedWeightEl.value = '';
             consumedQuantityEl.value = '';
             return;
         }
 
-        let totalWeight = 0;
-        boxes.forEach(function (box) {
-            totalWeight += Number(box.dataset.weight || 0);
+        const wholeLotControl = selectedControls.find(function (control) {
+            return control.dataset.selectionKind === 'whole-lot';
         });
 
-        const pieceCount = boxes.length;
+        if (wholeLotControl) {
+            const totalWeight = Number(wholeLotControl.dataset.weight || 0);
+            const pieceCount = Number(wholeLotControl.dataset.pieceCount || 0);
+            const availableQuantity = Number(wholeLotControl.dataset.quantity || 0);
+
+            pieceSummary.textContent = 'Entire lot selected · '
+                + pieceCount + ' piece(s) · '
+                + totalWeight.toFixed(3) + ' kg';
+            consumedWeightEl.value = totalWeight.toFixed(3);
+            consumedQuantityEl.value = lot.lot_stage === 'raw'
+                ? totalWeight.toFixed(3)
+                : String(availableQuantity > 0 ? availableQuantity : pieceCount);
+            return;
+        }
+
+        let totalWeight = 0;
+        selectedControls.forEach(function (control) {
+            totalWeight += Number(control.dataset.weight || 0);
+        });
+
+        const pieceCount = selectedControls.length;
 
         pieceSummary.textContent = pieceCount + ' piece(s) selected · ' + totalWeight.toFixed(3) + ' kg';
         consumedWeightEl.value = totalWeight.toFixed(3);
-
         consumedQuantityEl.value = lot.lot_stage === 'raw'
             ? totalWeight.toFixed(3)
             : String(pieceCount);
@@ -643,55 +775,48 @@
 
     function renderPiecePicker() {
         const lot = lotMeta[inputLotEl.value];
+        const previousActiveLotId = pieceWrap.dataset.activeLotId || '';
+        let activeGroup = null;
 
-        pieceList.innerHTML = '';
+        pieceGroups.forEach(function (group) {
+            const isActive = !!lot
+                && Boolean(lot.requires_piece_selection)
+                && String(group.dataset.pieceLotGroup) === String(lot.id);
 
-        if (!lot || lot.inward_mode !== 'pieces' || !Array.isArray(lot.pieces) || lot.pieces.length === 0) {
+            if (isActive) {
+                group.classList.remove('hidden');
+            } else {
+                group.classList.add('hidden');
+            }
+
+            group.querySelectorAll('input[data-piece-selection-control="1"]').forEach(function (control) {
+                control.disabled = !isActive;
+                if (!isActive) {
+                    control.checked = false;
+                }
+            });
+
+            if (isActive) {
+                activeGroup = group;
+            }
+        });
+
+        if (!lot || !Boolean(lot.requires_piece_selection) || !activeGroup) {
             pieceWrap.classList.add('hidden');
+            pieceWrap.dataset.activeLotId = '';
             setConsumedFieldsReadonly(false);
+            pieceSummary.textContent = 'No pieces selected.';
+
+            if (previousActiveLotId !== '') {
+                consumedWeightEl.value = '';
+                consumedQuantityEl.value = '';
+            }
             return;
         }
 
         pieceWrap.classList.remove('hidden');
+        pieceWrap.dataset.activeLotId = String(lot.id);
         setConsumedFieldsReadonly(true);
-
-        lot.pieces.forEach(function (piece) {
-            const row = document.createElement('label');
-            row.className = 'flex items-center justify-between gap-3 rounded-xl border border-gray-200 dark:border-gray-800 bg-white dark:bg-gray-900 px-3 py-2';
-
-            const left = document.createElement('div');
-            left.className = 'flex items-center gap-2';
-
-            const checkbox = document.createElement('input');
-            checkbox.type = 'checkbox';
-            checkbox.name = 'selected_piece_ids[]';
-            checkbox.value = piece.id;
-            checkbox.dataset.weight = piece.weight_kg;
-            checkbox.className = 'rounded border-gray-300 dark:border-gray-700';
-
-            if (oldSelectedPieceIds.map(String).includes(String(piece.id))) {
-                checkbox.checked = true;
-            }
-
-            checkbox.addEventListener('change', refreshPieceSummary);
-
-            const text = document.createElement('span');
-            text.className = 'text-[12px] text-gray-800 dark:text-gray-200';
-            text.textContent = 'Piece ' + piece.piece_no;
-
-            left.appendChild(checkbox);
-            left.appendChild(text);
-
-            const weight = document.createElement('span');
-            weight.className = 'text-[12px] font-medium text-gray-700 dark:text-gray-300';
-            weight.textContent = Number(piece.weight_kg).toFixed(3) + ' kg';
-
-            row.appendChild(left);
-            row.appendChild(weight);
-
-            pieceList.appendChild(row);
-        });
-
         refreshPieceSummary();
     }
 
@@ -950,6 +1075,16 @@
         return rowEl;
     }
 
+    function handlePieceSelectionEvent(event) {
+        const target = event.target;
+        if (target && typeof target.matches === 'function' && target.matches('input[data-piece-selection-control="1"]')) {
+            refreshPieceSummary();
+        }
+    }
+
+    pieceList.addEventListener('change', handlePieceSelectionEvent);
+    pieceList.addEventListener('input', handlePieceSelectionEvent);
+
     runTypeEl.addEventListener('change', function () {
         inputProductEl.value = '';
         inputLotEl.value = '';
@@ -962,18 +1097,25 @@
         renderPiecePicker();
     });
 
-    inputLotEl.addEventListener('change', function () {
+    function handleInputLotSelection() {
         refreshInputLotSummary();
         renderPiecePicker();
-    });
+    }
+
+    inputLotEl.addEventListener('change', handleInputLotSelection);
+    inputLotEl.addEventListener('input', handleInputLotSelection);
 
     selectAllPiecesBtn?.addEventListener('click', function () {
-        selectedPieceCheckboxes().forEach(cb => cb.checked = true);
+        activePieceSelectionControls().forEach(function (control) {
+            control.checked = true;
+        });
         refreshPieceSummary();
     });
 
     clearAllPiecesBtn?.addEventListener('click', function () {
-        selectedPieceCheckboxes().forEach(cb => cb.checked = false);
+        activePieceSelectionControls().forEach(function (control) {
+            control.checked = false;
+        });
         refreshPieceSummary();
     });
 
@@ -982,6 +1124,10 @@
     });
 
     refreshSelectors();
+
+    window.addEventListener('pageshow', function () {
+        handleInputLotSelection();
+    });
 
     if (oldOutputs.length > 0) {
         oldOutputs.forEach(function (row) {

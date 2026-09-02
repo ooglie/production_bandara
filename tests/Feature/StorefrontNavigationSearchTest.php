@@ -63,7 +63,6 @@ class StorefrontNavigationSearchTest extends TestCase
             'mrp_price' => 110,
             'sell_unit' => 'pack',
             'pack_type' => 'quantity',
-            'pricing_unit' => 'pack',
             'is_active' => true,
             'manage_stock' => false,
         ]);

@@ -14,19 +14,6 @@
     // Bulk pay -> goes to VendorPaymentController@create (GET)
     $bulkPayUrl = $has('admin.vendor-payments.create') ? route('admin.vendor-payments.create') : null;
 
-    // Build paid map: vendor_invoice_id => sum(amount)
-    $invoiceIds = collect($invoices)->pluck('id')->filter()->values()->all();
-
-    $paidMap = [];
-    if (!empty($invoiceIds)) {
-        $paidMap = \App\Models\VendorPayment::query()
-            ->selectRaw('vendor_invoice_id, SUM(amount) as paid')
-            ->whereIn('vendor_invoice_id', $invoiceIds)
-            ->groupBy('vendor_invoice_id')
-            ->pluck('paid', 'vendor_invoice_id')
-            ->toArray();
-    }
-
     $outstandingUrl = \Illuminate\Support\Facades\Route::has('admin.vendor-invoices.outstanding')
         ? route('admin.vendor-invoices.outstanding')
         : null;
@@ -38,11 +25,11 @@
         <div>
             <h1 class="text-base sm:text-lg font-semibold text-gray-900 dark:text-gray-50">Vendor invoices</h1>
             <p class="text-[11px] text-gray-500 dark:text-gray-400">
-                Track inward stock, costs, and batch/expiry data per invoice.
+                Track inward stock, supplier credits/debits, purchase returns and adjusted payable per invoice.
             </p>
         </div>
 
-        @can('manage invoices')
+        @can('create vendor invoice')
         <div class="flex items-center gap-2">
             <a href="{{ $createUrl }}"
                class="inline-flex items-center rounded-xl border border-gray-900 dark:border-gray-100 bg-gray-900 text-white dark:bg-gray-100 dark:text-gray-900 px-4 py-2 text-[12px] font-semibold hover:bg-gray-800 dark:hover:bg-gray-200">
@@ -130,7 +117,7 @@
             <div>
                 <div class="text-sm font-semibold text-gray-900 dark:text-gray-50">Bulk payment</div>
                 <div class="text-[11px] text-gray-500 dark:text-gray-400">
-                    Select multiple invoices (same vendor). Paid/cancelled invoices cannot be selected.
+                    Select multiple invoices from one vendor. Only invoices with an adjusted outstanding amount can be selected.
                 </div>
             </div>
 
@@ -183,11 +170,14 @@
                     $status = (string)($inv->status ?? 'pending');
                     $vendorId = (int)($inv->vendor_id ?? ($inv->vendor?->id ?? 0));
 
-                    $total = (float)($inv->total_amount ?? (($inv->subtotal ?? 0) + ($inv->tax_amount ?? 0)) ?? 0);
-                    $paid  = (float)($paidMap[$inv->id] ?? 0);
+                    $originalTotal = (float)($inv->total_amount ?? 0);
+                    $adjustmentTotal = (float)($inv->posted_adjustment_total ?? 0);
+                    $total = max(0, $originalTotal + $adjustmentTotal);
+                    $paid = (float)($inv->paid_total ?? 0);
                     $outstanding = max($total - $paid, 0);
+                    $vendorCreditDue = max($paid - $total, 0);
 
-                    $disabled = in_array($status, ['paid','cancelled'], true);
+                    $disabled = $status === 'cancelled' || $outstanding <= 0.005;
                 @endphp
                 <tr class="hover:bg-gray-50 dark:hover:bg-gray-900/40">
                     <td class="px-3 py-3 align-top">
@@ -231,22 +221,21 @@
 
                     <td class="px-3 py-3 align-top text-right text-gray-900 dark:text-gray-50">
                         ₹{{ number_format($total, 2) }}
+                        @if(abs($adjustmentTotal) > 0.005)
+                            <div class="text-[10px] text-gray-400">Original ₹{{ number_format($originalTotal, 2) }} · Adj {{ $adjustmentTotal >= 0 ? '+' : '' }}₹{{ number_format($adjustmentTotal, 2) }}</div>
+                        @endif
                         @if($paid > 0)
                             <div class="text-[10px] text-gray-400">Paid: ₹{{ number_format($paid, 2) }}</div>
                         @endif
                     </td>
 
                     <td class="px-3 py-3 align-top text-right">
-                        @if($outstanding <= 0.0001)
-                            <span class="inline-flex items-center rounded-full border px-2 py-0.5 text-[11px]
-                                border-emerald-200 bg-emerald-50 text-emerald-700
-                                dark:border-emerald-800 dark:bg-emerald-900/30 dark:text-emerald-200">
-                                ₹0.00
-                            </span>
+                        @if($vendorCreditDue > 0.005)
+                            <span class="font-semibold text-amber-700 dark:text-amber-300">Vendor credit ₹{{ number_format($vendorCreditDue, 2) }}</span>
+                        @elseif($outstanding <= 0.005)
+                            <span class="inline-flex items-center rounded-full border border-emerald-200 bg-emerald-50 px-2 py-0.5 text-[11px] text-emerald-700 dark:border-emerald-800 dark:bg-emerald-900/30 dark:text-emerald-200">₹0.00</span>
                         @else
-                            <span class="font-semibold text-gray-900 dark:text-gray-50">
-                                ₹{{ number_format($outstanding, 2) }}
-                            </span>
+                            <span class="font-semibold text-gray-900 dark:text-gray-50">₹{{ number_format($outstanding, 2) }}</span>
                         @endif
                     </td>
                 </tr>

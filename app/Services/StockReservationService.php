@@ -19,7 +19,7 @@ class StockReservationService
 {
     public function holdMinutes(): int
     {
-        $minutes = (int) config('store.stock_reservation.hold_minutes', env('STOCK_RESERVATION_MINUTES', 5));
+        $minutes = (int) config('store.stock_reservation_ttl_minutes', 5);
 
         return max(1, min($minutes, 30));
     }

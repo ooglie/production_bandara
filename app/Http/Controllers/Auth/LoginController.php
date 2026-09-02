@@ -5,7 +5,7 @@ namespace App\Http\Controllers\Auth;
 use App\Http\Controllers\Controller;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Auth;
-use Illuminate\Support\Str;
+use App\Support\SafeRedirect;
 
 class LoginController extends Controller
 {
@@ -26,6 +26,8 @@ class LoginController extends Controller
             'email'    => ['required', 'email'],
             'password' => ['required', 'string'],
         ]);
+
+        $credentials['is_active'] = true;
 
         $remember = $request->boolean('remember');
 
@@ -110,39 +112,7 @@ class LoginController extends Controller
 
     protected function safeLocalRedirectUrl(Request $request, mixed $candidate): ?string
     {
-        if (! is_string($candidate)) {
-            return null;
-        }
-
-        $candidate = trim($candidate);
-
-        if ($candidate === '' || str_contains($candidate, "\r") || str_contains($candidate, "\n")) {
-            return null;
-        }
-
-        if (Str::startsWith($candidate, ['//', '\\\\'])) {
-            return null;
-        }
-
-        if (Str::startsWith($candidate, '/')) {
-            return $candidate;
-        }
-
-        $parts = parse_url($candidate);
-
-        if (! is_array($parts) || empty($parts['host'])) {
-            return null;
-        }
-
-        if (strcasecmp((string) $parts['host'], $request->getHost()) !== 0) {
-            return null;
-        }
-
-        $path = $parts['path'] ?? '/';
-        $query = isset($parts['query']) && $parts['query'] !== '' ? '?' . $parts['query'] : '';
-        $fragment = isset($parts['fragment']) && $parts['fragment'] !== '' ? '#' . $parts['fragment'] : '';
-
-        return $path . $query . $fragment;
+        return SafeRedirect::local($request, $candidate);
     }
 
     protected function redirectPathFor($user): string

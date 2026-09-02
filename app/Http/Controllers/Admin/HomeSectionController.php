@@ -9,15 +9,20 @@ use App\Models\HomeSectionItem;
 use App\Models\Product;
 use App\Models\ProductCollection;
 use App\Models\Recipe;
+use App\Services\MediaPathService;
+use App\Services\MediaReferenceService;
 use Illuminate\Http\Request;
-use Illuminate\Http\UploadedFile;
-use Illuminate\Support\Facades\Storage;
-use Illuminate\Support\Str;
 use Illuminate\Validation\Rule;
 use Illuminate\Validation\ValidationException;
 
 class HomeSectionController extends Controller
 {
+    public function __construct(
+        protected MediaPathService $media,
+        protected MediaReferenceService $mediaReferences,
+    ) {
+    }
+
     public function index()
     {
         $sections = HomeSection::query()
@@ -44,28 +49,44 @@ class HomeSectionController extends Controller
     public function update(Request $request, HomeSection $homeSection)
     {
         $data = $this->validatedSection($request, $homeSection);
+        $newFiles = [];
+        $oldFiles = [];
+        $directory = $this->media->homeSectionImagesDirectoryFor($data['key'] ?? $homeSection->key);
 
         if ($request->boolean('remove_image')) {
-            $this->deletePublicFile($homeSection->image_path);
+            $oldFiles[] = $homeSection->image_path;
             $data['image_path'] = null;
         }
 
         if ($request->boolean('remove_mobile_image')) {
-            $this->deletePublicFile($homeSection->mobile_image_path);
+            $oldFiles[] = $homeSection->mobile_image_path;
             $data['mobile_image_path'] = null;
         }
 
         if ($request->hasFile('image_upload')) {
-            $this->deletePublicFile($homeSection->image_path);
-            $data['image_path'] = $this->storeImage($request->file('image_upload'));
+            $newPath = $this->media->storePublic($request->file('image_upload'), $directory, 'section-desktop');
+            $newFiles[] = $newPath;
+            $oldFiles[] = $homeSection->image_path;
+            $data['image_path'] = $newPath;
         }
 
         if ($request->hasFile('mobile_image_upload')) {
-            $this->deletePublicFile($homeSection->mobile_image_path);
-            $data['mobile_image_path'] = $this->storeImage($request->file('mobile_image_upload'));
+            $newPath = $this->media->storePublic($request->file('mobile_image_upload'), $directory, 'section-mobile');
+            $newFiles[] = $newPath;
+            $oldFiles[] = $homeSection->mobile_image_path;
+            $data['mobile_image_path'] = $newPath;
         }
 
-        $homeSection->update($data);
+        try {
+            $homeSection->update($data);
+        } catch (\Throwable $e) {
+            $this->deleteNewFiles($newFiles);
+            throw $e;
+        }
+
+        foreach (array_values(array_unique(array_filter($oldFiles))) as $oldFile) {
+            $this->mediaReferences->deletePublicFileIfUnreferenced($oldFile);
+        }
 
         return redirect()
             ->route('admin.home-sections.edit', $homeSection)
@@ -103,12 +124,33 @@ class HomeSectionController extends Controller
     {
         $data = $this->validatedItem($request);
         $data['home_section_id'] = $homeSection->id;
+        $newPath = null;
+        $item = null;
 
-        if ($request->hasFile('item_image_upload')) {
-            $data['image_path'] = $this->storeImage($request->file('item_image_upload'));
+        try {
+            $item = $homeSection->items()->create($data);
+
+            if ($request->hasFile('item_image_upload')) {
+                $newPath = $this->media->storePublic(
+                    $request->file('item_image_upload'),
+                    $this->media->homeItemImagesDirectory($homeSection, $item),
+                    'image'
+                );
+                $item->update(['image_path' => $newPath]);
+            }
+        } catch (\Throwable $e) {
+            $this->deleteNewFiles([$newPath]);
+
+            if ($item?->exists) {
+                try {
+                    $item->delete();
+                } catch (\Throwable) {
+                    // Preserve the original upload/create exception.
+                }
+            }
+
+            throw $e;
         }
-
-        $homeSection->items()->create($data);
 
         return redirect()
             ->route('admin.home-sections.edit', $homeSection)
@@ -120,18 +162,34 @@ class HomeSectionController extends Controller
         abort_unless((int) $item->home_section_id === (int) $homeSection->id, 404);
 
         $data = $this->validatedItem($request);
+        $newPath = null;
+        $oldPath = null;
 
         if ($request->boolean('remove_item_image')) {
-            $this->deletePublicFile($item->image_path);
+            $oldPath = $item->image_path;
             $data['image_path'] = null;
         }
 
         if ($request->hasFile('item_image_upload')) {
-            $this->deletePublicFile($item->image_path);
-            $data['image_path'] = $this->storeImage($request->file('item_image_upload'));
+            $newPath = $this->media->storePublic(
+                $request->file('item_image_upload'),
+                $this->media->homeItemImagesDirectory($homeSection, $item),
+                'image'
+            );
+            $oldPath = $item->image_path;
+            $data['image_path'] = $newPath;
         }
 
-        $item->update($data);
+        try {
+            $item->update($data);
+        } catch (\Throwable $e) {
+            $this->deleteNewFiles([$newPath]);
+            throw $e;
+        }
+
+        if ($oldPath) {
+            $this->mediaReferences->deletePublicFileIfUnreferenced($oldPath);
+        }
 
         return redirect()
             ->route('admin.home-sections.edit', $homeSection)
@@ -153,10 +211,39 @@ class HomeSectionController extends Controller
     {
         abort_unless((int) $item->home_section_id === (int) $homeSection->id, 404);
 
-        $copy = $item->replicate();
-        $copy->sort_order = ((int) $homeSection->items()->max('sort_order')) + 10;
-        $copy->title = filled($copy->title) ? $copy->title . ' (copy)' : $copy->title;
-        $copy->save();
+        $newPath = null;
+        $copy = null;
+
+        try {
+            $copy = $item->replicate();
+            $copy->sort_order = ((int) $homeSection->items()->max('sort_order')) + 10;
+            $copy->title = filled($copy->title) ? $copy->title . ' (copy)' : $copy->title;
+            $copy->save();
+
+            if (filled($item->image_path) && ! $this->media->isExternalReference($item->image_path)) {
+                $newPath = $this->media->duplicatePublicFile(
+                    $item->image_path,
+                    $this->media->homeItemImagesDirectory($homeSection, $copy),
+                    'image'
+                );
+
+                if ($newPath) {
+                    $copy->update(['image_path' => $newPath]);
+                }
+            }
+        } catch (\Throwable $e) {
+            $this->deleteNewFiles([$newPath]);
+
+            if ($copy?->exists) {
+                try {
+                    $copy->delete();
+                } catch (\Throwable) {
+                    // Preserve the original duplication exception.
+                }
+            }
+
+            throw $e;
+        }
 
         return redirect()
             ->route('admin.home-sections.edit', $homeSection)
@@ -189,8 +276,9 @@ class HomeSectionController extends Controller
     {
         abort_unless((int) $item->home_section_id === (int) $homeSection->id, 404);
 
-        $this->deletePublicFile($item->image_path);
+        $oldPath = $item->image_path;
         $item->delete();
+        $this->mediaReferences->deletePublicFileIfUnreferenced($oldPath);
 
         return redirect()
             ->route('admin.home-sections.edit', $homeSection)
@@ -412,6 +500,7 @@ class HomeSectionController extends Controller
                 ])
                 ->all(),
             'collection' => ProductCollection::query()
+                ->where('slug', '!=', 'chef-picks')
                 ->orderBy('name')
                 ->limit(300)
                 ->get(['id', 'name'])
@@ -433,25 +522,10 @@ class HomeSectionController extends Controller
         ];
     }
 
-    protected function storeImage(UploadedFile $file): string
+    protected function deleteNewFiles(array $paths): void
     {
-        return $file->store('home', 'public');
-    }
-
-    protected function deletePublicFile(?string $path): void
-    {
-        if (! filled($path)) {
-            return;
+        foreach (array_values(array_unique(array_filter($paths))) as $path) {
+            $this->media->deleteFromDisks($path, [$this->media->publicDisk()]);
         }
-
-        if (Str::startsWith($path, ['http://', 'https://'])) {
-            return;
-        }
-
-        $normalized = Str::startsWith($path, '/storage/')
-            ? ltrim(Str::after($path, '/storage/'), '/')
-            : ltrim($path, '/');
-
-        Storage::disk('public')->delete($normalized);
     }
 }

@@ -88,6 +88,7 @@ return [
         'users'      => ['manage'],
         'settings'   => ['manage'],
         'reports'    => ['view'],
+        'labels'     => ['view', 'manage'],
     ],
 
     'labels' => [
@@ -106,6 +107,7 @@ return [
         'users'      => 'Users & Roles',
         'settings'   => 'Settings',
         'reports'    => 'Reports',
+        'labels'     => 'Product Labels',
     ],
 
     // Existing legacy permissions that are used by older code or tables but do
@@ -136,6 +138,7 @@ return [
             'view content', 'manage content',
             'view rewards', 'manage rewards',
             'view reports',
+            'view labels', 'manage labels',
             'create vendor invoice',
             'manage vendor payments',
         ],
@@ -168,6 +171,7 @@ return [
             'view products',
             'view vendors',
             'view stores', 'manage stores',
+            'view labels', 'manage labels',
             'create vendor invoice',
         ],
 

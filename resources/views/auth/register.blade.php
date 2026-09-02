@@ -10,7 +10,7 @@
         <div class="rounded-lg border border-gray-200 dark:border-gray-800 bg-gradient-to-br from-white via-blue-50 to-gray-50 dark:from-gray-900 dark:via-gray-900 dark:to-slate-900 p-6 sm:p-8 flex flex-col justify-between min-h-[320px]">
             <div class="space-y-4">
                 <span class="inline-flex items-center rounded-sm border border-gray-200 dark:border-gray-700 bg-white/90 dark:bg-gray-950/50 px-3 py-1 text-[11px] font-medium uppercase tracking-[0.14em] text-gray-600 dark:text-gray-300">
-                    Frozen • Bandara by Maytira
+                    Frozen • Bandara
                 </span>
 
                 <div class="space-y-2">
@@ -117,6 +117,29 @@
                 </div>
 
                 <div>
+                    <label for="date_of_birth" class="block text-xs font-medium text-gray-700 dark:text-gray-300">
+                        Date of birth <span class="text-red-500">*</span>
+                    </label>
+                    <input
+                        id="date_of_birth"
+                        type="date"
+                        name="date_of_birth"
+                        value="{{ old('date_of_birth') }}"
+                        min="1900-01-01"
+                        max="{{ now()->toDateString() }}"
+                        required
+                        autocomplete="bday"
+                        class="mt-1 w-full rounded-sm border border-gray-300 dark:border-gray-700 bg-white dark:bg-gray-950 px-3 py-2.5 text-sm text-gray-900 dark:text-gray-50 focus:outline-none focus:ring-1 focus:ring-gray-400 dark:focus:ring-gray-500"
+                    >
+                    <p class="mt-1 text-[11px] text-gray-500 dark:text-gray-400">
+                        Used for your B2C customer profile and birthday-related benefits when enabled.
+                    </p>
+                    @error('date_of_birth')
+                        <p class="mt-1 text-[11px] text-red-600">{{ $message }}</p>
+                    @enderror
+                </div>
+
+                <div>
                     <label class="block text-xs font-medium text-gray-700 dark:text-gray-300">
                         Password
                     </label>
@@ -162,4 +185,8 @@
         </div>
     </div>
 </div>
+
+{{-- BANDARA-B2B-CORRECTIVE:REGISTER:START --}}
+@include('partials.b2b-application.registration-link')
+{{-- BANDARA-B2B-CORRECTIVE:REGISTER:END --}}
 @endsection

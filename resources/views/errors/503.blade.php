@@ -7,7 +7,7 @@
 <head>
     <meta charset="utf-8">
     <meta name="viewport" content="width=device-width, initial-scale=1">
-    <title>503 | Bandara Frozen</title>
+    <title>503 | Bandara</title>
     <style>
         :root {
             --bg: #f8f4ee;
@@ -95,7 +95,7 @@
             <button type="button" class="primary" onclick="window.location.reload()">Check again</button>
             <a class="secondary" href="{{ $homeUrl }}">Go home</a>
         </div>
-        <p class="footer-note">Bandara Frozen · Quality you can freeze on.</p>
+        <p class="footer-note">Bandara · Quality you can freeze on.</p>
     </main>
 </body>
 </html>

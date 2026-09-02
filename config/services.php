@@ -41,7 +41,8 @@ return [
     ],
 
     'google_translate' => [
-        'key' => env('GOOGLE_TRANSLATE_KEY'),
+        'driver' => env('AUTO_TRANSLATE_DRIVER', 'google'),
+        'key' => env('GOOGLE_TRANSLATE_KEY', env('GOOGLE_TRANSLATE_API_KEY')),
     ],
 
 ];

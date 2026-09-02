@@ -139,6 +139,16 @@
                         @endif
                     </span>
                 </label>
+
+                <label class="inline-flex items-center gap-2 text-[11px] text-gray-700 dark:text-gray-300">
+                    <input type="hidden" name="allow_unpaid_checkout" value="0">
+                    <input type="checkbox" name="allow_unpaid_checkout" value="1"
+                           @checked(old('allow_unpaid_checkout', $isEdit ? (bool)($user?->allow_unpaid_checkout) : false))>
+                    <span>Allow checkout without online payment</span>
+                </label>
+                <p class="pl-5 text-[10px] text-gray-500 dark:text-gray-400">
+                    Orders are placed with payment pending. Admin or Manager records payment later.
+                </p>
             </div>
 
         </div>

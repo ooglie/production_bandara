@@ -43,6 +43,12 @@ class ReportController extends Controller
                     'route' => route('admin.reports.inventory-stock'),
                     'accent' => 'Inventory',
                 ],
+                [
+                    'title' => 'All Products',
+                    'description' => 'Every product and variant with its SKU and latest vendor price, including products with and without stock.',
+                    'route' => route('admin.reports.all-products'),
+                    'accent' => 'Products',
+                ],
             ],
         ]);
     }
@@ -200,6 +206,35 @@ class ReportController extends Controller
         return $this->csvResponse('inventory-stock-' . now()->format('Ymd-His') . '.csv', $csvRows);
     }
 
+    public function allProducts()
+    {
+        $rows = $this->allProductsQuery()
+            ->paginate(100)
+            ->withQueryString();
+
+        return view('admin.reports.all-products', [
+            'rows' => $rows,
+        ]);
+    }
+
+    public function exportAllProducts(): StreamedResponse
+    {
+        $rows = collect([
+            ['Product Name', 'Variant', 'SKU', 'Vendor Price'],
+        ]);
+
+        $this->allProductsQuery()->get()->each(function ($row) use ($rows) {
+            $rows->push([
+                $row->product_name,
+                $row->variant_name ?: '',
+                $row->sku ?: '',
+                round((float) $row->vendor_price, 2),
+            ]);
+        });
+
+        return $this->csvResponse('all-products-' . now()->format('Ymd-His') . '.csv', $rows);
+    }
+
     private function dateRange(Request $request): array
     {
         $from = $request->query('from') ?: now()->startOfMonth()->toDateString();
@@ -222,6 +257,72 @@ class ReportController extends Controller
         }
 
         return [$fromDate, $toDate];
+    }
+
+    private function allProductsQuery(): Builder
+    {
+        $latestProductVendorItemIds = DB::table('vendor_invoice_items')
+            ->join('vendor_invoices', 'vendor_invoices.id', '=', 'vendor_invoice_items.vendor_invoice_id')
+            ->selectRaw('vendor_invoice_items.product_id')
+            ->selectRaw('MAX(vendor_invoice_items.id) as latest_item_id')
+            ->where('vendor_invoices.status', '<>', 'cancelled')
+            ->whereNull('vendor_invoice_items.product_variant_id')
+            ->groupBy('vendor_invoice_items.product_id');
+
+        $latestVariantVendorItemIds = DB::table('vendor_invoice_items')
+            ->join('vendor_invoices', 'vendor_invoices.id', '=', 'vendor_invoice_items.vendor_invoice_id')
+            ->selectRaw('vendor_invoice_items.product_id')
+            ->selectRaw('vendor_invoice_items.product_variant_id')
+            ->selectRaw('MAX(vendor_invoice_items.id) as latest_item_id')
+            ->where('vendor_invoices.status', '<>', 'cancelled')
+            ->whereNotNull('vendor_invoice_items.product_variant_id')
+            ->groupBy('vendor_invoice_items.product_id', 'vendor_invoice_items.product_variant_id');
+
+        $productRows = DB::table('products')
+            ->leftJoinSub($latestProductVendorItemIds, 'latest_product_vendor_items', function ($join) {
+                $join->on('latest_product_vendor_items.product_id', '=', 'products.id');
+            })
+            ->leftJoin('vendor_invoice_items as latest_product_vendor_item', 'latest_product_vendor_item.id', '=', 'latest_product_vendor_items.latest_item_id')
+            ->whereNull('products.deleted_at')
+            ->whereNotExists(function ($query) {
+                $query->selectRaw('1')
+                    ->from('product_variants')
+                    ->whereColumn('product_variants.product_id', 'products.id')
+                    ->whereNull('product_variants.deleted_at');
+            })
+            ->selectRaw('products.id as product_id')
+            ->selectRaw('NULL as variant_id')
+            ->selectRaw('products.name as product_name')
+            ->selectRaw('NULL as variant_name')
+            ->selectRaw('products.sku as sku')
+            ->selectRaw('COALESCE(latest_product_vendor_item.unit_cost, 0) as vendor_price');
+
+        $variantRows = DB::table('product_variants')
+            ->join('products', 'products.id', '=', 'product_variants.product_id')
+            ->leftJoinSub($latestVariantVendorItemIds, 'latest_variant_vendor_items', function ($join) {
+                $join->on('latest_variant_vendor_items.product_id', '=', 'products.id')
+                    ->on('latest_variant_vendor_items.product_variant_id', '=', 'product_variants.id');
+            })
+            ->leftJoin('vendor_invoice_items as latest_variant_vendor_item', 'latest_variant_vendor_item.id', '=', 'latest_variant_vendor_items.latest_item_id')
+            ->leftJoinSub($latestProductVendorItemIds, 'latest_product_vendor_items', function ($join) {
+                $join->on('latest_product_vendor_items.product_id', '=', 'products.id');
+            })
+            ->leftJoin('vendor_invoice_items as latest_product_vendor_item', 'latest_product_vendor_item.id', '=', 'latest_product_vendor_items.latest_item_id')
+            ->whereNull('products.deleted_at')
+            ->whereNull('product_variants.deleted_at')
+            ->selectRaw('products.id as product_id')
+            ->selectRaw('product_variants.id as variant_id')
+            ->selectRaw('products.name as product_name')
+            ->selectRaw('COALESCE(product_variants.name, product_variants.sku) as variant_name')
+            ->selectRaw('product_variants.sku as sku')
+            ->selectRaw('COALESCE(latest_variant_vendor_item.unit_cost, latest_product_vendor_item.unit_cost, 0) as vendor_price');
+
+        return DB::query()
+            ->fromSub($productRows->unionAll($variantRows), 'catalogue_rows')
+            ->select('catalogue_rows.*')
+            ->orderBy('catalogue_rows.product_name')
+            ->orderByRaw('CASE WHEN catalogue_rows.variant_name IS NULL THEN 0 ELSE 1 END')
+            ->orderBy('catalogue_rows.variant_name');
     }
 
     private function salesFilters(Request $request): array
@@ -249,7 +350,7 @@ class ReportController extends Controller
             'stock_type' => $request->query('stock_type', ''),
             'category_id' => (int) $request->query('category_id', 0),
             'product_id' => (int) $request->query('product_id', 0),
-            'status' => $request->query('status', 'available'),
+            'status' => $request->query('status', 'all'),
             'expiry' => $request->query('expiry', ''),
         ];
     }
@@ -459,12 +560,19 @@ class ReportController extends Controller
             ->selectRaw("CONCAT('Product #', products.id) as reference")
             ->selectRaw('NULL as batch')
             ->selectRaw("CASE WHEN products.is_active = 1 THEN 'active' ELSE 'inactive' END as status")
-            ->selectRaw('products.stock_quantity as quantity')
-            ->selectRaw("CASE WHEN products.sell_unit = 'kg' THEN products.stock_quantity ELSE NULL END as weight_kg")
+            ->selectRaw('COALESCE(products.stock_quantity, 0) as quantity')
+            ->selectRaw("CASE WHEN products.sell_unit = 'kg' THEN COALESCE(products.stock_quantity, 0) ELSE NULL END as weight_kg")
             ->selectRaw('products.pieces_per_pack as pieces')
-            ->selectRaw("CASE WHEN products.sell_unit IN ('pack','piece') THEN products.stock_quantity ELSE NULL END as packs")
+            ->selectRaw("CASE WHEN products.sell_unit IN ('pack','piece') THEN COALESCE(products.stock_quantity, 0) ELSE NULL END as packs")
             ->selectRaw('NULL as expiry_date')
-            ->selectRaw("'Product stock' as source");
+            ->selectRaw("'Product stock' as source")
+            ->where('products.is_active', true)
+            ->where('products.manage_stock', true)
+            ->whereNull('products.deleted_at')
+            ->where(function (Builder $query) {
+                $query->whereNull('products.inventory_role')
+                    ->orWhereIn('products.inventory_role', ['saleable', 'both']);
+            });
 
         $this->applyProductFilters($query, $filters, 'products.id');
         $this->applyInventoryStatusFilter($query, $filters, 'products.stock_quantity');
@@ -484,12 +592,21 @@ class ReportController extends Controller
             ->selectRaw("CONCAT('Variant #', product_variants.id) as reference")
             ->selectRaw('NULL as batch')
             ->selectRaw("CASE WHEN product_variants.is_active = 1 THEN 'active' ELSE 'inactive' END as status")
-            ->selectRaw('product_variants.stock_quantity as quantity')
-            ->selectRaw("CASE WHEN product_variants.pricing_unit = 'kg' THEN product_variants.stock_quantity ELSE NULL END as weight_kg")
+            ->selectRaw('COALESCE(product_variants.stock_quantity, 0) as quantity')
+            ->selectRaw("CASE WHEN product_variants.pricing_unit = 'kg' THEN COALESCE(product_variants.stock_quantity, 0) ELSE NULL END as weight_kg")
             ->selectRaw('product_variants.pieces_per_pack as pieces')
-            ->selectRaw('product_variants.stock_quantity as packs')
+            ->selectRaw('COALESCE(product_variants.stock_quantity, 0) as packs')
             ->selectRaw('NULL as expiry_date')
-            ->selectRaw("'Variant stock' as source");
+            ->selectRaw("'Variant stock' as source")
+            ->where('products.is_active', true)
+            ->where('product_variants.is_active', true)
+            ->where('product_variants.manage_stock', true)
+            ->whereNull('products.deleted_at')
+            ->whereNull('product_variants.deleted_at')
+            ->where(function (Builder $query) {
+                $query->whereNull('products.inventory_role')
+                    ->orWhereIn('products.inventory_role', ['saleable', 'both']);
+            });
 
         $this->applyProductFilters($query, $filters, 'products.id');
         $this->applyInventoryStatusFilter($query, $filters, 'product_variants.stock_quantity');
@@ -662,7 +779,7 @@ class ReportController extends Controller
 
     private function applyPieceStatusFilter(Builder $query, array $filters): void
     {
-        $status = (string) ($filters['status'] ?? 'available');
+        $status = (string) ($filters['status'] ?? 'all');
         if ($status === '' || $status === 'all') {
             return;
         }
@@ -679,7 +796,7 @@ class ReportController extends Controller
 
     private function applyInventoryStatusFilter(Builder $query, array $filters, ?string ...$columns): void
     {
-        $status = (string) ($filters['status'] ?? 'available');
+        $status = (string) ($filters['status'] ?? 'all');
         if ($status === '' || $status === 'all') {
             return;
         }

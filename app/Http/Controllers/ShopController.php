@@ -6,6 +6,7 @@ use App\Models\Category;
 use App\Models\InventoryPiece;
 use App\Models\Product;
 use App\Services\PricingService;
+use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Http\Request;
 use Illuminate\Support\Collection;
 use Illuminate\Support\Facades\Schema;
@@ -31,6 +32,10 @@ class ShopController extends Controller
             });
 
         app(PricingService::class)->applyProductAvailabilityFilter($productsQuery, $request->user());
+
+        if ($request->boolean('in_stock')) {
+            $this->applyInStockFilter($productsQuery, $request);
+        }
 
         $search = trim((string) $request->input('q', ''));
 
@@ -162,6 +167,52 @@ class ShopController extends Controller
         $variants = $product->variants ?? collect();
 
         return view('products.show', compact('product', 'variants'));
+    }
+
+    /**
+     * Limit the shop to products that are currently purchasable from stock.
+     */
+    protected function applyInStockFilter(Builder $productsQuery, Request $request): void
+    {
+        $customerType = strtolower((string) ($request->user()?->customer_type ?? 'b2c'));
+        $visibleTo = $customerType === 'b2b'
+            ? ['all', 'b2b']
+            : ['all', 'b2c'];
+
+        $productsQuery->where(function (Builder $availabilityQuery) use ($visibleTo) {
+            $availabilityQuery
+                ->where(function (Builder $simpleProductQuery) {
+                    $simpleProductQuery
+                        ->where('products.type', 'simple')
+                        ->where(function (Builder $stockQuery) {
+                            $stockQuery
+                                ->where('products.manage_stock', false)
+                                ->orWhere('products.stock_quantity', '>', 0);
+                        });
+                })
+                ->orWhere(function (Builder $variableProductQuery) use ($visibleTo) {
+                    $variableProductQuery
+                        ->where('products.type', 'variable')
+                        ->whereHas('variants', function (Builder $variantQuery) use ($visibleTo) {
+                            $variantQuery
+                                ->where('product_variants.is_active', true)
+                                ->where(function (Builder $visibilityQuery) use ($visibleTo) {
+                                    $visibilityQuery
+                                        ->whereNull('product_variants.customer_visibility')
+                                        ->orWhereIn('product_variants.customer_visibility', $visibleTo);
+                                })
+                                ->where(function (Builder $stockQuery) {
+                                    $stockQuery
+                                        ->where('product_variants.stock_quantity', '>', 0)
+                                        ->orWhere(function (Builder $untrackedStockQuery) {
+                                            $untrackedStockQuery
+                                                ->where('product_variants.manage_stock', false)
+                                                ->whereNull('product_variants.stock_quantity');
+                                        });
+                                });
+                        });
+                });
+        });
     }
 
     protected function normalizeCategoryIds(mixed $rawCategories): \Illuminate\Support\Collection

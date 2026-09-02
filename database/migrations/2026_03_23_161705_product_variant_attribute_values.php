@@ -60,6 +60,13 @@ return new class extends Migration
             return;
         }
 
+        // These duplicate legacy migrations are repair passes. The first migration
+        // already creates the FK on a fresh SQLite database, and SQLite cannot add
+        // the same named foreign key to the existing table a second time.
+        if (DB::connection()->getDriverName() !== 'mysql') {
+            return;
+        }
+
         if ($this->hasForeignKey(self::TABLE_NAME, $valueColumn)) {
             return;
         }

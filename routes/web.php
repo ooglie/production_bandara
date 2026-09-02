@@ -6,6 +6,7 @@ use Illuminate\Foundation\Auth\EmailVerificationRequest;
 use App\Models\Product;
 
 use App\Http\Controllers\HomeController;
+use App\Http\Controllers\TicketAttachmentController;
 use App\Http\Controllers\ShopController;
 use App\Http\Controllers\NewsletterController;
 
@@ -47,6 +48,7 @@ use App\Http\Controllers\Support\{
 
 use App\Http\Controllers\Admin\{
     ProductController,
+    ProductLabelController,
     CategoryController,
     VendorController,
     ProductVariantController,
@@ -85,16 +87,24 @@ use App\Http\Controllers\Admin\{
     AdminBandaraCreditPreviewController,
     BandaraCreditController,
     ReportController,
+    VendorInvoiceAdjustmentController,
 };
 
 use App\Http\Controllers\Stores\DashboardController as StoresDashboardController;
 use App\Http\Controllers\Delivery\DeliveryDashboardController;
+
+/* BANDARA CONTENT ROUTES */
+require __DIR__.'/content.php';
+/* END BANDARA CONTENT ROUTES */
 
 /*
 |--------------------------------------------------------------------------
 | FRONTEND / CUSTOMER ROUTES (NON-LOCALIZED)
 |--------------------------------------------------------------------------
 */
+
+/* Staff/customer authentication isolation routes. */
+require __DIR__.'/staff-auth.php';
 
 Route::get('/', [HomeController::class, 'index'])
     ->name('home');
@@ -114,22 +124,24 @@ Route::get('/products/{product}/variants/options', [FrontProductController::clas
 // Guest routes
 Route::middleware('guest')->group(function () {
     Route::get('login', [LoginController::class, 'showLoginForm'])->name('login');
-    Route::post('login', [LoginController::class, 'login']);
+    Route::post('login', [LoginController::class, 'login'])->middleware('throttle:login');
 
     Route::get('/register', [RegisteredUserController::class, 'create'])
         ->name('register');
-    Route::post('/register', [RegisteredUserController::class, 'store']);
+    Route::post('/register', [RegisteredUserController::class, 'store'])->middleware('throttle:registration');
 
     Route::get('forgot-password', [PasswordResetLinkController::class, 'create'])
         ->name('password.request');
 
     Route::post('forgot-password', [PasswordResetLinkController::class, 'store'])
+        ->middleware('throttle:password-email')
         ->name('password.email');
 
     Route::get('reset-password/{token}', [NewPasswordController::class, 'create'])
         ->name('password.reset');
 
     Route::post('reset-password', [NewPasswordController::class, 'store'])
+        ->middleware('throttle:password-reset')
         ->name('password.update');
 });
 
@@ -139,7 +151,7 @@ Route::post('logout', [LoginController::class, 'logout'])
     ->name('logout');
 
 Route::post('/impersonation/stop', [AdminUserController::class, 'stopImpersonating'])
-    ->middleware('auth')
+    ->middleware(['auth', 'active'])
     ->name('impersonation.stop');
 
 // CART ROUTES
@@ -268,35 +280,45 @@ Route::middleware(['auth', 'role:Customer'])->group(function () {
         ->name('invoices.show');
 
     Route::post('/invoices/{invoice}/offline-payment', [CustomerInvoicePaymentSubmissionController::class, 'store'])
+        ->middleware('throttle:payment-initiate')
         ->name('invoices.offline-payment.store');
 
     // Payment routes
     Route::middleware('verified')->group(function () {
         Route::get('/orders/{order}/pay', [PaymentController::class, 'showRazorpayForm'])
+            ->middleware('throttle:payment-initiate')
             ->name('orders.pay.razorpay');
 
         Route::get('/invoices/{invoice}/pay', [PaymentController::class, 'showInvoiceRazorpayForm'])
+            ->middleware('throttle:payment-initiate')
             ->name('invoices.pay.razorpay');
 
         Route::post('/payment/razorpay/callback', [PaymentController::class, 'handleRazorpayCallback'])
+            ->middleware('throttle:payment-callback')
             ->name('payment.razorpay.callback');
 
         Route::post('/payment/razorpay/failed', [PaymentController::class, 'handleRazorpayFailure'])
+            ->middleware('throttle:payment-callback')
             ->name('payment.razorpay.failed');
 
         Route::post('/payment/razorpay/invoice-callback', [PaymentController::class, 'handleInvoiceRazorpayCallback'])
+            ->middleware('throttle:payment-callback')
             ->name('payment.razorpay.invoice-callback');
     });
 
     // Customer Ticket Routes
     Route::get('/tickets', [CustomerTicketController::class, 'index'])->name('tickets.index');
     Route::get('/tickets/create', [CustomerTicketController::class, 'create'])->name('tickets.create');
-    Route::post('/tickets', [CustomerTicketController::class, 'store'])->name('tickets.store');
+    Route::post('/tickets', [CustomerTicketController::class, 'store'])->middleware('throttle:ticket-upload')->name('tickets.store');
     Route::get('/tickets/{ticket}', [CustomerTicketController::class, 'show'])->name('tickets.show');
-    Route::post('/tickets/{ticket}/reply', [CustomerTicketController::class, 'reply'])->name('tickets.reply');
+    Route::post('/tickets/{ticket}/reply', [CustomerTicketController::class, 'reply'])->middleware('throttle:ticket-upload')->name('tickets.reply');
     Route::post('/tickets/{ticket}/close', [CustomerTicketController::class, 'close'])->name('tickets.close');
     Route::post('/tickets/{ticket}/reopen', [CustomerTicketController::class, 'reopen'])->name('tickets.reopen');
 });
+
+Route::get('/ticket-attachments/{attachment}/download', TicketAttachmentController::class)
+    ->middleware(['auth', 'active', 'throttle:60,1'])
+    ->name('ticket-attachments.download');
 
 // Email Verification Routes
 Route::get('/email/verify', function () {
@@ -315,6 +337,7 @@ Route::post('/email/verification-notification', function (Request $request) {
 
 // Newsletter Routes
 Route::post('/newsletter/subscribe', [NewsletterController::class, 'subscribe'])
+    ->middleware('throttle:newsletter')
     ->name('newsletter.subscribe');
 
 Route::get('/newsletter/confirm/{subscriber}/{token}', [NewsletterController::class, 'confirm'])
@@ -347,7 +370,7 @@ Route::middleware(['auth', 'role:DeliveryAgent'])
 |--------------------------------------------------------------------------
 */
 
-Route::middleware(['auth'])->prefix('admin')->name('admin.')->group(function () {
+Route::middleware(['auth', 'active'])->prefix('admin')->name('admin.')->group(function () {
     Route::middleware('can:manage users')->group(function () {
         Route::get('/roles', [RolePermissionController::class, 'index'])->name('roles.index');
         Route::get('/roles/{role}', [RolePermissionController::class, 'edit'])->name('roles.edit');
@@ -357,7 +380,7 @@ Route::middleware(['auth'])->prefix('admin')->name('admin.')->group(function () 
     });
 });
 
-Route::middleware(['auth', 'role:Admin|Manager|Accountant|CAAccountant|Stores'])
+Route::middleware(['auth', 'active', 'role:Admin|Manager|Accountant|CAAccountant|Stores', 'admin.permission'])
     ->prefix('admin')
     ->name('admin.')
     ->group(function () {
@@ -408,6 +431,9 @@ Route::middleware(['auth', 'role:Admin|Manager|Accountant|CAAccountant|Stores'])
 
                 Route::get('/inventory-stock', [ReportController::class, 'inventoryStock'])->name('inventory-stock');
                 Route::get('/inventory-stock/export', [ReportController::class, 'exportInventoryStock'])->name('inventory-stock.export');
+
+                Route::get('/all-products', [ReportController::class, 'allProducts'])->name('all-products');
+                Route::get('/all-products/export', [ReportController::class, 'exportAllProducts'])->name('all-products.export');
             });
 
         Route::middleware(['role:Stores|Admin'])
@@ -421,6 +447,17 @@ Route::middleware(['auth', 'role:Admin|Manager|Accountant|CAAccountant|Stores'])
             ->name('orders.bulk-status');
 
         Route::resource('products', ProductController::class)->except(['show']);
+
+        Route::get('product-labels', [ProductLabelController::class, 'index'])
+            ->name('labels.index');
+        Route::get('products/{product}/label', [ProductLabelController::class, 'edit'])
+            ->name('labels.edit');
+        Route::post('products/{product}/label/pdf', [ProductLabelController::class, 'pdf'])
+            ->name('labels.pdf');
+        Route::get('products/{product}/label/batch', [ProductLabelController::class, 'batchEdit'])
+            ->name('labels.batch.edit');
+        Route::post('products/{product}/label/batch/pdf', [ProductLabelController::class, 'batchPdf'])
+            ->name('labels.batch.pdf');
 
         Route::resource('products.variants', ProductVariantController::class)
             ->except(['show'])
@@ -444,6 +481,44 @@ Route::middleware(['auth', 'role:Admin|Manager|Accountant|CAAccountant|Stores'])
         Route::get('vendor-invoices/create', [VendorInvoiceController::class, 'create'])->name('vendor-invoices.create');
         Route::post('vendor-invoices', [VendorInvoiceController::class, 'store'])->name('vendor-invoices.store');
         Route::get('vendor-invoices/{vendorInvoice}', [VendorInvoiceController::class, 'show'])->name('vendor-invoices.show');
+
+        Route::get('vendor-invoices/{vendorInvoice}/edit-details', [VendorInvoiceAdjustmentController::class, 'editDetails'])
+            ->name('vendor-invoices.edit-details');
+        Route::put('vendor-invoices/{vendorInvoice}/details', [VendorInvoiceAdjustmentController::class, 'updateDetails'])
+            ->name('vendor-invoices.update-details');
+
+        Route::get('vendor-invoices/{vendorInvoice}/adjustments/create/{direction}', [VendorInvoiceAdjustmentController::class, 'createFinancial'])
+            ->whereIn('direction', ['credit', 'debit'])
+            ->name('vendor-invoices.adjustments.create');
+        Route::post('vendor-invoices/{vendorInvoice}/adjustments/{direction}', [VendorInvoiceAdjustmentController::class, 'storeFinancial'])
+            ->whereIn('direction', ['credit', 'debit'])
+            ->name('vendor-invoices.adjustments.store');
+        Route::get('vendor-invoices/{vendorInvoice}/adjustments/{adjustment}', [VendorInvoiceAdjustmentController::class, 'showAdjustment'])
+            ->name('vendor-invoices.adjustments.show');
+        Route::post('vendor-invoices/{vendorInvoice}/adjustments/{adjustment}/post', [VendorInvoiceAdjustmentController::class, 'postAdjustment'])
+            ->name('vendor-invoices.adjustments.post');
+        Route::post('vendor-invoices/{vendorInvoice}/adjustments/{adjustment}/reverse', [VendorInvoiceAdjustmentController::class, 'reverseAdjustment'])
+            ->name('vendor-invoices.adjustments.reverse');
+        Route::delete('vendor-invoices/{vendorInvoice}/adjustments/{adjustment}', [VendorInvoiceAdjustmentController::class, 'destroyAdjustment'])
+            ->name('vendor-invoices.adjustments.destroy');
+
+        Route::get('vendor-invoices/{vendorInvoice}/returns/create', [VendorInvoiceAdjustmentController::class, 'createReturn'])
+            ->name('vendor-invoices.returns.create');
+        Route::post('vendor-invoices/{vendorInvoice}/returns', [VendorInvoiceAdjustmentController::class, 'storeReturn'])
+            ->name('vendor-invoices.returns.store');
+        Route::get('vendor-invoices/{vendorInvoice}/returns/{vendorReturn}', [VendorInvoiceAdjustmentController::class, 'showReturn'])
+            ->name('vendor-invoices.returns.show');
+        Route::post('vendor-invoices/{vendorInvoice}/returns/{vendorReturn}/post', [VendorInvoiceAdjustmentController::class, 'postReturn'])
+            ->name('vendor-invoices.returns.post');
+        Route::get('vendor-invoices/{vendorInvoice}/returns/{vendorReturn}/credit-note', [VendorInvoiceAdjustmentController::class, 'createReturnCredit'])
+            ->name('vendor-invoices.returns.credit-note');
+        Route::delete('vendor-invoices/{vendorInvoice}/returns/{vendorReturn}', [VendorInvoiceAdjustmentController::class, 'destroyReturn'])
+            ->name('vendor-invoices.returns.destroy');
+
+        Route::get('vendor-invoices/{vendorInvoice}/reverse', [VendorInvoiceAdjustmentController::class, 'reverseConfirm'])
+            ->name('vendor-invoices.reverse.confirm');
+        Route::post('vendor-invoices/{vendorInvoice}/reverse', [VendorInvoiceAdjustmentController::class, 'reverseInvoice'])
+            ->name('vendor-invoices.reverse.store');
 
         Route::get('vendor-payments', [VendorPaymentController::class, 'index'])->name('vendor-payments.index');
         Route::get('vendor-payments/create', [VendorPaymentController::class, 'create'])->name('vendor-payments.create');
@@ -726,13 +801,13 @@ Route::middleware(['auth', 'role:Admin|Manager|Accountant|CAAccountant|Stores'])
     });
 
 // SUPPORT
-Route::middleware(['auth', 'role:Support'])->group(function () {
+Route::middleware(['auth', 'active', 'role:Support'])->group(function () {
     Route::get('/support/dashboard', SupportDashboardController::class)
         ->name('support.dashboard');
 });
 
 // SUPPORT / MANAGER / ADMIN
-Route::middleware(['auth', 'role:Admin|Manager|Support'])
+Route::middleware(['auth', 'active', 'role:Admin|Manager|Support', 'can:view tickets'])
     ->prefix('support')
     ->name('support.')
     ->group(function () {
@@ -741,12 +816,12 @@ Route::middleware(['auth', 'role:Admin|Manager|Support'])
         Route::get('/tickets/mine', [SupportTicketController::class, 'mine'])->name('tickets.mine');
         Route::get('/tickets/{ticket}', [SupportTicketController::class, 'show'])->name('tickets.show');
 
-        Route::post('/tickets/{ticket}/assign', [SupportTicketController::class, 'assignToMe'])->name('tickets.assignToMe');
-        Route::post('/tickets/{ticket}/reassign', [SupportTicketController::class, 'reassign'])->name('tickets.reassign');
-        Route::post('/tickets/{ticket}/reply', [SupportTicketController::class, 'reply'])->name('tickets.reply');
-        Route::post('/tickets/{ticket}/note', [SupportTicketController::class, 'addInternalNote'])->name('tickets.note');
-        Route::post('/tickets/{ticket}/status', [SupportTicketController::class, 'updateStatus'])->name('tickets.status');
-        Route::post('/tickets/{ticket}/tags', [SupportTicketController::class, 'updateTags'])->name('tickets.tags');
+        Route::post('/tickets/{ticket}/assign', [SupportTicketController::class, 'assignToMe'])->middleware('can:manage tickets')->name('tickets.assignToMe');
+        Route::post('/tickets/{ticket}/reassign', [SupportTicketController::class, 'reassign'])->middleware('can:manage tickets')->name('tickets.reassign');
+        Route::post('/tickets/{ticket}/reply', [SupportTicketController::class, 'reply'])->middleware('can:manage tickets')->name('tickets.reply');
+        Route::post('/tickets/{ticket}/note', [SupportTicketController::class, 'addInternalNote'])->middleware('can:manage tickets')->name('tickets.note');
+        Route::post('/tickets/{ticket}/status', [SupportTicketController::class, 'updateStatus'])->middleware('can:manage tickets')->name('tickets.status');
+        Route::post('/tickets/{ticket}/tags', [SupportTicketController::class, 'updateTags'])->middleware('can:manage tickets')->name('tickets.tags');
     });
 
 // MANAGER
@@ -769,3 +844,11 @@ Route::middleware(['auth', 'role:Stores|Admin'])
         return redirect()->route('admin.stores.dashboard');
     })
     ->name('stores.dashboard');
+
+// BANDARA_FINANCE_V1_ROUTES_START
+require __DIR__.'/finance.php';
+// BANDARA_FINANCE_V1_ROUTES_END
+
+// BANDARA_KITCHEN_ROUTES_START
+require __DIR__.'/bandara-kitchen.php';
+// BANDARA_KITCHEN_ROUTES_END

@@ -20,6 +20,9 @@ class Vendor extends Model
         'phone',
         'gst_number',
         'fssai_number',
+        'bank_name',
+        'bank_ifsc_code',
+        'bank_account_number',
         'address_line1',
         'address_line2',
         'city',
@@ -30,6 +33,31 @@ class Vendor extends Model
         'notes',
         'is_active',
     ];
+
+
+
+    protected $hidden = [
+        'bank_account_number',
+    ];
+
+    protected function casts(): array
+    {
+        return [
+            'is_active' => 'boolean',
+            'bank_account_number' => 'encrypted',
+        ];
+    }
+
+    public function maskedBankAccountNumber(): ?string
+    {
+        $accountNumber = trim((string) ($this->bank_account_number ?? ''));
+
+        if ($accountNumber === '') {
+            return null;
+        }
+
+        return '•••• •••• '.substr($accountNumber, -4);
+    }
 
     public function products()
     {

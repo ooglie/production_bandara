@@ -27,15 +27,19 @@ class RegisteredUserController extends Controller
         $data = $request->validate([
             'name'     => ['required', 'string', 'max:255'],
             'email'    => ['required', 'string', 'email', 'max:255', 'unique:users,email'],
-            'phone'    => ['required', 'string', 'max:20'],
-            'password' => ['required', 'confirmed', Password::min(8)],
+            'phone'         => ['required', 'string', 'max:20'],
+            'date_of_birth' => ['required', 'date_format:Y-m-d', 'before_or_equal:today', 'after_or_equal:1900-01-01'],
+            'password'      => ['required', 'confirmed', Password::min(8)],
         ]);
 
         $user = User::create([
             'name'     => $data['name'],
             'email'    => $data['email'],
-            'phone'    => $data['phone'],
-            'password' => Hash::make($data['password']),
+            'phone'         => $data['phone'],
+            'date_of_birth' => $data['date_of_birth'],
+            'password'      => Hash::make($data['password']),
+            'customer_type' => 'b2c',
+            'is_active'     => true,
         ]);
 
         // Make sure your User model uses Spatie's HasRoles trait
@@ -47,6 +51,7 @@ class RegisteredUserController extends Controller
         event(new Registered($user));
 
         auth()->login($user);
+        $request->session()->regenerate();
 
         // Send them either to customer dashboard or home:
         return redirect()->route('account.dashboard'); // or ->route('home')

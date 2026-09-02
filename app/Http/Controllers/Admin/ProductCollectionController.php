@@ -6,16 +6,26 @@ use App\Http\Controllers\Controller;
 use App\Http\Requests\Admin\ProductCollectionRequest;
 use App\Models\Product;
 use App\Models\ProductCollection;
-use Illuminate\Http\UploadedFile;
+use App\Services\MediaPathService;
+use App\Services\MediaReferenceService;
 use Illuminate\Support\Collection;
-use Illuminate\Support\Facades\Storage;
+use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Str;
 
 class ProductCollectionController extends Controller
 {
+    private const LEGACY_CHEF_PICKS_SLUG = 'chef-picks';
+
+    public function __construct(
+        protected MediaPathService $media,
+        protected MediaReferenceService $mediaReferences,
+    ) {
+    }
+
     public function index()
     {
         $collections = ProductCollection::query()
+            ->where('slug', '!=', self::LEGACY_CHEF_PICKS_SLUG)
             ->withCount('products')
             ->orderByDesc('is_active')
             ->orderBy('home_section')
@@ -43,11 +53,43 @@ class ProductCollectionController extends Controller
 
     public function store(ProductCollectionRequest $request)
     {
-        $productCollection = new ProductCollection($this->payload($request));
-        $this->syncImage($request, $productCollection);
-        $productCollection->save();
+        $newPath = null;
+        $productCollection = null;
 
-        $this->syncProducts($request, $productCollection);
+        try {
+            $productCollection = ProductCollection::create($this->payload($request));
+
+            if ($request->hasFile('image')) {
+                $newPath = $this->media->storePublic(
+                    $request->file('image'),
+                    $this->media->productCollectionImagesDirectory($productCollection),
+                    'cover'
+                );
+            }
+
+            DB::transaction(function () use ($request, $productCollection, $newPath): void {
+                if ($newPath) {
+                    $productCollection->update(['image_path' => $newPath]);
+                }
+
+                $this->syncProducts($request, $productCollection);
+            });
+        } catch (\Throwable $e) {
+            if ($newPath) {
+                $this->media->deleteFromDisks($newPath, [$this->media->publicDisk()]);
+            }
+
+            if ($productCollection?->exists) {
+                try {
+                    $productCollection->products()->detach();
+                    $productCollection->delete();
+                } catch (\Throwable) {
+                    // Preserve the original upload/create exception.
+                }
+            }
+
+            throw $e;
+        }
 
         return redirect()
             ->route('admin.product-collections.index')
@@ -56,6 +98,10 @@ class ProductCollectionController extends Controller
 
     public function edit(ProductCollection $productCollection)
     {
+        if ($redirect = $this->redirectLegacyChefCollection($productCollection)) {
+            return $redirect;
+        }
+
         $productCollection->load(['products' => function ($q) {
             $q->orderBy('product_collection_product.sort_order');
         }]);
@@ -67,11 +113,45 @@ class ProductCollectionController extends Controller
 
     public function update(ProductCollectionRequest $request, ProductCollection $productCollection)
     {
-        $productCollection->fill($this->payload($request, $productCollection));
-        $this->syncImage($request, $productCollection);
-        $productCollection->save();
+        if ($redirect = $this->redirectLegacyChefCollection($productCollection)) {
+            return $redirect;
+        }
 
-        $this->syncProducts($request, $productCollection);
+        $oldPath = $productCollection->image_path;
+        $newPath = null;
+        $payload = $this->payload($request, $productCollection);
+
+        $productCollection->fill($payload);
+
+        if ($request->boolean('remove_image')) {
+            $productCollection->image_path = null;
+        }
+
+        if ($request->hasFile('image')) {
+            $newPath = $this->media->storePublic(
+                $request->file('image'),
+                $this->media->productCollectionImagesDirectory($productCollection),
+                'cover'
+            );
+            $productCollection->image_path = $newPath;
+        }
+
+        try {
+            DB::transaction(function () use ($request, $productCollection): void {
+                $productCollection->save();
+                $this->syncProducts($request, $productCollection);
+            });
+        } catch (\Throwable $e) {
+            if ($newPath) {
+                $this->media->deleteFromDisks($newPath, [$this->media->publicDisk()]);
+            }
+
+            throw $e;
+        }
+
+        if ($oldPath && $oldPath !== $productCollection->image_path) {
+            $this->deleteImage($oldPath);
+        }
 
         return redirect()
             ->route('admin.product-collections.index')
@@ -80,12 +160,28 @@ class ProductCollectionController extends Controller
 
     public function destroy(ProductCollection $productCollection)
     {
-        $this->deleteImage($productCollection->image_path);
+        if ($redirect = $this->redirectLegacyChefCollection($productCollection)) {
+            return $redirect;
+        }
+
+        $oldPath = $productCollection->image_path;
         $productCollection->delete();
+        $this->deleteImage($oldPath);
 
         return redirect()
             ->route('admin.product-collections.index')
             ->with('success', 'Collection deleted successfully.');
+    }
+
+    protected function redirectLegacyChefCollection(ProductCollection $productCollection)
+    {
+        if ($productCollection->slug !== self::LEGACY_CHEF_PICKS_SLUG) {
+            return null;
+        }
+
+        return redirect()
+            ->route('admin.kitchen.chefs.index')
+            ->with('info', 'Chef profiles and homepage Chef selection are managed from Content → Chefs.');
     }
 
     protected function productsForForm(): Collection
@@ -181,37 +277,8 @@ class ProductCollectionController extends Controller
         $productCollection->products()->sync($syncPayload);
     }
 
-    protected function syncImage(ProductCollectionRequest $request, ProductCollection $productCollection): void
-    {
-        if ($request->boolean('remove_image') && $productCollection->image_path) {
-            $this->deleteImage($productCollection->image_path);
-            $productCollection->image_path = null;
-        }
-
-        if ($request->hasFile('image')) {
-            if ($productCollection->image_path) {
-                $this->deleteImage($productCollection->image_path);
-            }
-
-            $productCollection->image_path = $this->storeImage($request->file('image'));
-        }
-    }
-
-    protected function storeImage(UploadedFile $file): string
-    {
-        return $file->store('product-collections', 'public');
-    }
-
     protected function deleteImage(?string $path): void
     {
-        if (!filled($path)) {
-            return;
-        }
-
-        $normalized = Str::startsWith($path, '/storage/')
-            ? ltrim(Str::after($path, '/storage/'), '/')
-            : ltrim($path, '/');
-
-        Storage::disk('public')->delete($normalized);
+        $this->mediaReferences->deletePublicFileIfUnreferenced($path);
     }
 }

@@ -37,7 +37,13 @@ return new class extends Migration
                 }
             });
 
-        // 3) Drop old columns
+        // 3) Drop the legacy string-slug index before replacing slug with JSON.
+        // SQLite refuses to drop an indexed column while the index still exists.
+        Schema::table('recipes', function (Blueprint $table) {
+            $table->dropIndex('recipes_slug_index');
+        });
+
+        // 4) Drop old columns
         Schema::table('recipes', function (Blueprint $table) {
             $table->dropColumn([
                 'title',
@@ -49,7 +55,7 @@ return new class extends Migration
             ]);
         });
 
-        // 4) Rename temp columns back to original names
+        // 5) Rename temp columns back to original names
         Schema::table('recipes', function (Blueprint $table) {
             $table->renameColumn('title_i18n', 'title');
             $table->renameColumn('slug_i18n', 'slug');
@@ -115,6 +121,11 @@ return new class extends Migration
             $table->renameColumn('description_plain', 'description');
             $table->renameColumn('ingredients_plain', 'ingredients');
             $table->renameColumn('steps_plain', 'steps');
+        });
+
+        // The rolled-back slug is a normal string again, so restore its index.
+        Schema::table('recipes', function (Blueprint $table) {
+            $table->index('slug');
         });
     }
 

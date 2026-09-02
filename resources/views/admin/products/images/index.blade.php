@@ -51,7 +51,7 @@
                         <div class="relative aspect-[4/3] bg-gray-100 dark:bg-gray-800 flex items-center justify-center group">
                             @if($image->file_path)
                                 <img
-                                    src="{{ Storage::url($image->file_path) }}"
+                                    src="{{ Storage::disk(config('media.public_disk', 'public'))->url($image->file_path) }}"
                                     alt="{{ $image->alt_text }}"
                                     class="object-contain max-h-full max-w-full"
                                 >

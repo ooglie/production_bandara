@@ -3,6 +3,7 @@
 namespace App\Http\Controllers\Customer;
 
 use App\Http\Controllers\Controller;
+use App\Support\SafeRedirect;
 use App\Models\CartItem;
 use App\Models\Coupon;
 use App\Models\CustomerAddress;
@@ -645,21 +646,7 @@ class CartController extends Controller
 
     private function safeCartReturnUrl(Request $request): ?string
     {
-        $returnTo = trim((string) $request->input('return_to', ''));
-
-        if ($returnTo === '') {
-            return null;
-        }
-
-        if (preg_match('/^[a-z][a-z0-9+\-.]*:/i', $returnTo) || str_starts_with($returnTo, '//')) {
-            return null;
-        }
-
-        if (! str_starts_with($returnTo, '/')) {
-            return null;
-        }
-
-        return $returnTo;
+        return SafeRedirect::local($request, $request->input('return_to'));
     }
 
 

@@ -13,7 +13,7 @@ class SettingsSeeder extends Seeder
             // Store info
             [
                 'key'   => 'store.name',
-                'value' => 'Frozen - Bandara by Maytira',
+                'value' => 'Frozen - Bandara',
                 'type'  => 'string',
                 'group' => 'store',
             ],

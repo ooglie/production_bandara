@@ -94,6 +94,16 @@ class VendorController extends Controller
 
     protected function validatedData(Request $request, ?int $vendorId = null): array
     {
+        $bankName = trim((string) $request->input('bank_name', ''));
+        $bankIfscCode = strtoupper((string) preg_replace('/\s+/', '', (string) $request->input('bank_ifsc_code', '')));
+        $bankAccountNumber = (string) preg_replace('/[\s-]+/', '', (string) $request->input('bank_account_number', ''));
+
+        $request->merge([
+            'bank_name' => $bankName !== '' ? $bankName : null,
+            'bank_ifsc_code' => $bankIfscCode !== '' ? $bankIfscCode : null,
+            'bank_account_number' => $bankAccountNumber !== '' ? $bankAccountNumber : null,
+        ]);
+
         $codeRule = Rule::unique('vendors', 'code')
             ->whereNull('deleted_at');
 
@@ -111,6 +121,10 @@ class VendorController extends Controller
             'gst_number'    => ['nullable', 'string', 'max:50'],
             'fssai_number'  => ['nullable', 'string', 'max:50'],
 
+            'bank_name'           => ['nullable', 'string', 'max:150'],
+            'bank_ifsc_code'      => ['nullable', 'string', 'size:11', 'regex:/^[A-Z]{4}0[A-Z0-9]{6}$/'],
+            'bank_account_number' => ['nullable', 'string', 'min:6', 'max:34', 'regex:/^[0-9]+$/'],
+
             'address_line1' => ['nullable', 'string', 'max:255'],
             'address_line2' => ['nullable', 'string', 'max:255'],
             'city'          => ['nullable', 'string', 'max:100'],
@@ -120,6 +134,12 @@ class VendorController extends Controller
             'pincode'       => ['nullable', 'string', 'max:20'],
 
             'notes'         => ['nullable', 'string'],
+        ], [
+            'bank_ifsc_code.size' => 'The IFSC code must contain exactly 11 characters.',
+            'bank_ifsc_code.regex' => 'Enter a valid IFSC code, for example HDFC0001234.',
+            'bank_account_number.min' => 'The bank account number must contain at least 6 digits.',
+            'bank_account_number.max' => 'The bank account number may not contain more than 34 digits.',
+            'bank_account_number.regex' => 'The bank account number may contain digits only.',
         ]);
     }
 }

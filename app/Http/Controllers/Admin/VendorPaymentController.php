@@ -5,13 +5,20 @@ namespace App\Http\Controllers\Admin;
 use App\Http\Controllers\Controller;
 use App\Models\Vendor;
 use App\Models\VendorInvoice;
+use App\Models\VendorInvoiceAdjustment;
 use App\Models\VendorPayment;
+use App\Services\VendorInvoiceBalanceService;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Validation\ValidationException;
 
 class VendorPaymentController extends Controller
 {
+    public function __construct(
+        private readonly VendorInvoiceBalanceService $balances,
+    ) {
+    }
+
     public function index(Request $request)
     {
         $query = VendorPayment::with(['vendor', 'invoice'])
@@ -25,15 +32,15 @@ class VendorPaymentController extends Controller
             ->orderByDesc('id');
 
         $payments = $query->paginate(20)->withQueryString();
-        $vendors  = Vendor::orderBy('name')->get();
+        $vendors = Vendor::orderBy('name')->get();
 
         return view('admin.vendor_payments.index', compact('payments', 'vendors'));
     }
 
     /**
-     * Single OR Bulk create screen.
-     * - Single: uses vendor_invoice_id
-     * - Bulk: uses invoice_ids[] (from vendor_invoices index)
+     * Single or bulk create screen.
+     * - Single: vendor_invoice_id
+     * - Bulk: invoice_ids[] from the vendor-invoice index
      */
     public function create(Request $request)
     {
@@ -43,17 +50,19 @@ class VendorPaymentController extends Controller
             ? Vendor::find($request->vendor_id)
             : null;
 
-        // Bulk mode: invoice_ids[] present
         $invoiceIds = $request->input('invoice_ids', []);
-        if (!is_array($invoiceIds)) $invoiceIds = [];
+        if (! is_array($invoiceIds)) {
+            $invoiceIds = [];
+        }
 
-        $bulkMode = !empty($invoiceIds);
+        $bulkMode = $invoiceIds !== [];
 
         if ($bulkMode) {
             $invoiceIds = array_values(array_unique(array_map('intval', $invoiceIds)));
 
-            $selectedInvoices = VendorInvoice::with('vendor')
+            $selectedInvoices = $this->invoiceBalanceQuery()
                 ->whereIn('id', $invoiceIds)
+                ->whereNotIn('status', ['cancelled'])
                 ->orderByDesc('invoice_date')
                 ->orderByDesc('id')
                 ->get();
@@ -64,7 +73,6 @@ class VendorPaymentController extends Controller
                     ->with('status', 'No valid invoices selected for bulk payment.');
             }
 
-            // Ensure single vendor
             $vendorIds = $selectedInvoices->pluck('vendor_id')->unique()->values();
             if ($vendorIds->count() !== 1) {
                 throw ValidationException::withMessages([
@@ -74,38 +82,31 @@ class VendorPaymentController extends Controller
 
             $selectedVendor = Vendor::find($vendorIds->first());
 
-            // preload paid amounts
-            $paidMap = VendorPayment::query()
-                ->selectRaw('vendor_invoice_id, SUM(amount) as paid')
-                ->whereIn('vendor_invoice_id', $invoiceIds)
-                ->groupBy('vendor_invoice_id')
-                ->pluck('paid', 'vendor_invoice_id');
-
-            // Compute outstanding + defaults
-            $rows = $selectedInvoices->map(function ($inv) use ($paidMap) {
-                $paid = (float) ($paidMap[$inv->id] ?? 0);
-                $total = (float) ($inv->total_amount ?? 0);
-                $outstanding = max($total - $paid, 0);
+            $rows = $selectedInvoices->map(function (VendorInvoice $invoice) {
+                $summary = $this->balances->summary($invoice);
 
                 return [
-                    'invoice'      => $inv,
-                    'total'        => $total,
-                    'paid'         => $paid,
-                    'outstanding'  => $outstanding,
-                    'default_pay'  => $outstanding,
+                    'invoice' => $invoice,
+                    'original_total' => $summary['original_total'],
+                    'adjustment_total' => $summary['adjustment_total'],
+                    'total' => $summary['adjusted_total'],
+                    'paid' => $summary['paid'],
+                    'outstanding' => $summary['outstanding'],
+                    'vendor_credit_due' => $summary['vendor_credit_due'],
+                    'default_pay' => $summary['outstanding'],
                 ];
             });
 
             return view('admin.vendor_payments.bulk_create', [
-                'vendors'         => $vendors,
-                'selectedVendor'  => $selectedVendor,
-                'rows'            => $rows,
-                'invoiceIds'      => $invoiceIds,
+                'vendors' => $vendors,
+                'selectedVendor' => $selectedVendor,
+                'rows' => $rows,
+                'invoiceIds' => $invoiceIds,
             ]);
         }
 
-        // Single payment mode (existing)
-        $invoicesQuery = VendorInvoice::with('vendor')
+        $invoicesQuery = $this->invoiceBalanceQuery()
+            ->whereNotIn('status', ['cancelled'])
             ->orderByDesc('invoice_date')
             ->orderByDesc('id');
 
@@ -113,10 +114,16 @@ class VendorPaymentController extends Controller
             $invoicesQuery->where('vendor_id', $selectedVendor->id);
         }
 
-        $invoices = $invoicesQuery->take(100)->get();
+        $invoices = $invoicesQuery
+            ->take(200)
+            ->get()
+            ->filter(fn (VendorInvoice $invoice) => $this->balances->outstanding($invoice) > 0.005)
+            ->values();
 
         $selectedInvoice = $request->filled('vendor_invoice_id')
-            ? VendorInvoice::find($request->vendor_invoice_id)
+            ? $this->invoiceBalanceQuery()
+                ->whereNotIn('status', ['cancelled'])
+                ->find($request->vendor_invoice_id)
             : null;
 
         return view('admin.vendor_payments.create', compact(
@@ -128,133 +135,175 @@ class VendorPaymentController extends Controller
     }
 
     /**
-     * Single OR bulk store.
-     * - Single: vendor_invoice_id + amount
-     * - Bulk: invoice_ids[] + amounts[invoice_id]
+     * Single or bulk payment store.
      */
     public function store(Request $request)
     {
         $invoiceIds = $request->input('invoice_ids', []);
-        if (!is_array($invoiceIds)) $invoiceIds = [];
-        $bulkMode = !empty($invoiceIds);
-
-        if ($bulkMode) {
-            $validated = $request->validate([
-                'vendor_id'            => ['required', 'exists:vendors,id'],
-                'payment_date'         => ['required', 'date'],
-                'payment_method'       => ['nullable', 'string', 'max:50'],
-                'reference_number'     => ['nullable', 'string', 'max:100'],
-                'notes'                => ['nullable', 'string'],
-                'invoice_ids'          => ['required', 'array', 'min:1'],
-                'invoice_ids.*'        => ['integer', 'exists:vendor_invoices,id'],
-                'amounts'              => ['required', 'array'],
-            ]);
-
-            $vendorId = (int) $validated['vendor_id'];
-            $invoiceIds = array_values(array_unique(array_map('intval', $validated['invoice_ids'])));
-            $amounts = $validated['amounts'] ?? [];
-
-            DB::transaction(function () use ($vendorId, $invoiceIds, $validated, $amounts) {
-                $invoices = VendorInvoice::query()
-                    ->lockForUpdate()
-                    ->whereIn('id', $invoiceIds)
-                    ->get();
-
-                if ($invoices->isEmpty()) {
-                    throw ValidationException::withMessages(['invoice_ids' => 'No valid invoices found.']);
-                }
-
-                // Enforce single vendor
-                $vendorIds = $invoices->pluck('vendor_id')->unique();
-                if ($vendorIds->count() !== 1 || (int)$vendorIds->first() !== $vendorId) {
-                    throw ValidationException::withMessages([
-                        'vendor_id' => 'Selected invoices must belong to the chosen vendor.',
-                    ]);
-                }
-
-                foreach ($invoices as $inv) {
-                    $total = (float) ($inv->total_amount ?? 0);
-                    $paid  = (float) $inv->payments()->sum('amount');
-                    $outstanding = max($total - $paid, 0);
-
-                    $raw = $amounts[(string)$inv->id] ?? $amounts[$inv->id] ?? null;
-                    $pay = (float) $raw;
-
-                    if ($pay <= 0) {
-                        continue; // skip zeros
-                    }
-
-                    // clamp to outstanding
-                    if ($pay > $outstanding) $pay = $outstanding;
-
-                    if ($pay <= 0) continue;
-
-                    VendorPayment::create([
-                        'vendor_id'         => $vendorId,
-                        'vendor_invoice_id' => $inv->id,
-                        'amount'            => $pay,
-                        'payment_date'      => $validated['payment_date'],
-                        'payment_method'    => $validated['payment_method'] ?? null,
-                        'reference_number'  => $validated['reference_number'] ?? null,
-                        'notes'             => $validated['notes'] ?? null,
-                    ]);
-
-                    // Update invoice status after inserting this payment
-                    $newPaid = (float) $inv->payments()->sum('amount');
-                    $status = 'pending';
-
-                    if ($total > 0 && $newPaid >= $total) {
-                        $status = 'paid';
-                    } elseif ($newPaid > 0 && $newPaid < $total) {
-                        $status = 'partially_paid';
-                    }
-
-                    $inv->update(['status' => $status]);
-                }
-            });
-
-            return redirect()
-                ->route('admin.vendor-payments.index')
-                ->with('status', 'Bulk vendor payment recorded.');
+        if (! is_array($invoiceIds)) {
+            $invoiceIds = [];
         }
 
-        // ✅ Existing single payment behavior (unchanged)
+        if ($invoiceIds !== []) {
+            return $this->storeBulk($request);
+        }
+
+        return $this->storeSingle($request);
+    }
+
+    private function storeBulk(Request $request)
+    {
         $validated = $request->validate([
-            'vendor_id'        => ['required', 'exists:vendors,id'],
-            'vendor_invoice_id'=> ['nullable', 'exists:vendor_invoices,id'],
-            'amount'           => ['required', 'numeric', 'min:0.01'],
-            'payment_date'     => ['required', 'date'],
-            'payment_method'   => ['nullable', 'string', 'max:50'],
+            'vendor_id' => ['required', 'exists:vendors,id'],
+            'payment_date' => ['required', 'date'],
+            'payment_method' => ['nullable', 'string', 'max:50'],
             'reference_number' => ['nullable', 'string', 'max:100'],
-            'notes'            => ['nullable', 'string'],
+            'notes' => ['nullable', 'string'],
+            'invoice_ids' => ['required', 'array', 'min:1'],
+            'invoice_ids.*' => ['integer', 'exists:vendor_invoices,id'],
+            'amounts' => ['required', 'array'],
         ]);
 
-        $payment = null;
+        $vendorId = (int) $validated['vendor_id'];
+        $invoiceIds = array_values(array_unique(array_map('intval', $validated['invoice_ids'])));
+        $amounts = $validated['amounts'] ?? [];
+        $created = 0;
 
-        DB::transaction(function () use ($validated, &$payment) {
-            $payment = VendorPayment::create($validated);
+        DB::transaction(function () use ($vendorId, $invoiceIds, $validated, $amounts, &$created) {
+            $invoices = VendorInvoice::query()
+                ->whereIn('id', $invoiceIds)
+                ->orderBy('id')
+                ->lockForUpdate()
+                ->get();
 
-            if (!empty($validated['vendor_invoice_id'])) {
-                $invoice = VendorInvoice::find($validated['vendor_invoice_id']);
+            if ($invoices->isEmpty()) {
+                throw ValidationException::withMessages(['invoice_ids' => 'No valid invoices found.']);
+            }
 
-                if ($invoice) {
-                    $paid  = $invoice->payments()->sum('amount');
-                    $total = (float) $invoice->total_amount;
+            $vendorIds = $invoices->pluck('vendor_id')->unique();
+            if ($vendorIds->count() !== 1 || (int) $vendorIds->first() !== $vendorId) {
+                throw ValidationException::withMessages([
+                    'vendor_id' => 'Selected invoices must belong to the chosen vendor.',
+                ]);
+            }
 
-                    $status = 'pending';
-                    if ($total > 0 && $paid >= $total) {
-                        $status = 'paid';
-                    } elseif ($paid > 0 && $paid < $total) {
-                        $status = 'partially_paid';
-                    }
+            foreach ($invoices as $invoice) {
+                if ((string) $invoice->status === 'cancelled') {
+                    throw ValidationException::withMessages([
+                        'invoice_ids' => "Invoice {$invoice->invoice_number} is cancelled and cannot receive a payment.",
+                    ]);
+                }
 
-                    $invoice->update(['status' => $status]);
+                $invoice->load(['postedAdjustments', 'payments']);
+                $summary = $this->balances->summary($invoice);
+
+                $raw = $amounts[(string) $invoice->id] ?? $amounts[$invoice->id] ?? null;
+                $paymentAmount = round((float) $raw, 2);
+
+                if ($paymentAmount <= 0) {
+                    continue;
+                }
+
+                if ($paymentAmount > $summary['outstanding'] + 0.005) {
+                    throw ValidationException::withMessages([
+                        "amounts.{$invoice->id}" => "Payment for {$invoice->invoice_number} exceeds its adjusted outstanding amount of ₹" . number_format($summary['outstanding'], 2) . '.',
+                    ]);
+                }
+
+                VendorPayment::create([
+                    'vendor_id' => $vendorId,
+                    'vendor_invoice_id' => $invoice->id,
+                    'amount' => $paymentAmount,
+                    'payment_date' => $validated['payment_date'],
+                    'payment_method' => $validated['payment_method'] ?? null,
+                    'reference_number' => $validated['reference_number'] ?? null,
+                    'notes' => $validated['notes'] ?? null,
+                ]);
+
+                $this->balances->syncStatus($invoice->fresh());
+                $created++;
+            }
+        }, 3);
+
+        if ($created === 0) {
+            throw ValidationException::withMessages([
+                'amounts' => 'Enter a positive payment amount for at least one selected invoice.',
+            ]);
+        }
+
+        return redirect()
+            ->route('admin.vendor-payments.index')
+            ->with('status', 'Bulk vendor payment recorded.');
+    }
+
+    private function storeSingle(Request $request)
+    {
+        $validated = $request->validate([
+            'vendor_id' => ['required', 'exists:vendors,id'],
+            'vendor_invoice_id' => ['nullable', 'exists:vendor_invoices,id'],
+            'amount' => ['required', 'numeric', 'min:0.01'],
+            'payment_date' => ['required', 'date'],
+            'payment_method' => ['nullable', 'string', 'max:50'],
+            'reference_number' => ['nullable', 'string', 'max:100'],
+            'notes' => ['nullable', 'string'],
+        ]);
+
+        DB::transaction(function () use ($validated) {
+            $invoice = null;
+
+            if (! empty($validated['vendor_invoice_id'])) {
+                $invoice = VendorInvoice::query()
+                    ->lockForUpdate()
+                    ->findOrFail((int) $validated['vendor_invoice_id']);
+
+                if ((int) $invoice->vendor_id !== (int) $validated['vendor_id']) {
+                    throw ValidationException::withMessages([
+                        'vendor_invoice_id' => 'The selected invoice does not belong to the chosen vendor.',
+                    ]);
+                }
+
+                if ((string) $invoice->status === 'cancelled') {
+                    throw ValidationException::withMessages([
+                        'vendor_invoice_id' => 'A cancelled vendor invoice cannot receive another payment.',
+                    ]);
+                }
+
+                $invoice->load(['postedAdjustments', 'payments']);
+                $summary = $this->balances->summary($invoice);
+                $amount = round((float) $validated['amount'], 2);
+
+                if ($summary['outstanding'] <= 0.005) {
+                    throw ValidationException::withMessages([
+                        'amount' => 'The selected invoice has no adjusted outstanding amount.',
+                    ]);
+                }
+
+                if ($amount > $summary['outstanding'] + 0.005) {
+                    throw ValidationException::withMessages([
+                        'amount' => 'Payment exceeds the adjusted outstanding amount of ₹' . number_format($summary['outstanding'], 2) . '.',
+                    ]);
                 }
             }
-        });
+
+            VendorPayment::create($validated);
+
+            if ($invoice) {
+                $this->balances->syncStatus($invoice->fresh());
+            }
+        }, 3);
 
         return redirect()
             ->route('admin.vendor-payments.index')
             ->with('status', 'Vendor payment recorded.');
+    }
+
+    private function invoiceBalanceQuery()
+    {
+        return VendorInvoice::query()
+            ->with('vendor')
+            ->withSum('payments as paid_total', 'amount')
+            ->withSum([
+                'adjustments as posted_adjustment_total' => fn ($adjustments) => $adjustments->where('status', VendorInvoiceAdjustment::STATUS_POSTED),
+            ], 'total_delta');
     }
 }

@@ -2,7 +2,7 @@
     /** @var \App\Models\NewsletterSubscriber|null $subscriber */
 
     $subscriber = $subscriber ?? null;
-    $isEdit = $subscriber && method_exists($subscriber, 'exists') && $subscriber->exists;
+    $isEdit = $subscriber instanceof \App\Models\NewsletterSubscriber && (bool) $subscriber->exists;
 
     $action = $action ?? '#';
     $backUrl = $backUrl ?? (Route::has('admin.newsletter-subscribers.index') ? route('admin.newsletter-subscribers.index') : url()->previous());

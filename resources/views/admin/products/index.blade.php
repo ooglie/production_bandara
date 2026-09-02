@@ -383,6 +383,13 @@
                             </td>
                             <td class="px-3 py-2 align-top text-right">
                                 <div class="inline-flex items-center gap-2">
+                                    @can('manage labels')
+                                        <a href="{{ route('admin.labels.edit', $product) }}"
+                                           class="text-[11px] text-gray-500 hover:text-gray-800 dark:hover:text-gray-200">
+                                            Label
+                                        </a>
+                                    @endcan
+
                                     <a href="{{ route('admin.products.images.index', $product) }}"
                                     class="text-[11px] text-gray-500 hover:text-gray-800 dark:hover:text-gray-200">
                                         Images
@@ -424,6 +431,5 @@
         @endif
     </div>
 @endsection
-
 
 
