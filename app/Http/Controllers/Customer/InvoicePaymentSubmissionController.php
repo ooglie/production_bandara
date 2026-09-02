@@ -21,6 +21,13 @@ class InvoicePaymentSubmissionController extends Controller
             abort(404);
         }
 
+        if (($invoice->order->payment_method ?? 'razorpay') === 'pay_later'
+            && (($request->user()->customer_type ?? 'b2c') === 'b2c')) {
+            return redirect()
+                ->route('invoices.show', $invoice)
+                ->with('status', 'Payment for this order will be recorded separately by Bandara.');
+        }
+
         $balance = (float) ($invoice->balance_amount ?? 0);
         if ($balance <= 0.00001) {
             return back()->withErrors([

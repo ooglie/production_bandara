@@ -1,4 +1,4 @@
-<?php if (! $__env->hasRenderedOnce('7f118cd9-cf92-46d3-acbb-b5c2f26b7310')): $__env->markAsRenderedOnce('7f118cd9-cf92-46d3-acbb-b5c2f26b7310'); ?>
+<?php if (! $__env->hasRenderedOnce('d66a61ac-707a-4fa6-a302-ab9231f95583')): $__env->markAsRenderedOnce('d66a61ac-707a-4fa6-a302-ab9231f95583'); ?>
     <style>
         /*
          * Bandara homepage Phase 1 — hero-only presentation.

@@ -46,6 +46,7 @@ class B2CCustomerController extends Controller
             'password'              => ['required', 'string', 'min:8', 'confirmed'],
             'mark_email_verified'   => ['nullable', 'boolean'],
             'is_active'             => ['nullable', 'boolean'],
+            'allow_unpaid_checkout' => ['nullable', 'boolean'],
         ]);
 
         $u = new User();
@@ -56,6 +57,7 @@ class B2CCustomerController extends Controller
         $u->fssai_number = $data['fssai_number'];
         $u->password = Hash::make($data['password']);
         $u->is_active = $request->boolean('is_active', true);
+        $u->allow_unpaid_checkout = $request->boolean('allow_unpaid_checkout');
         $u->customer_type = 'b2c';
 
         if ($request->boolean('mark_email_verified')) {
@@ -96,6 +98,7 @@ class B2CCustomerController extends Controller
             'fssai_number'  => ['nullable', 'string', 'max:50'],
             'mark_email_verified' => ['nullable', 'boolean'],
             'is_active'           => ['nullable', 'boolean'],
+            'allow_unpaid_checkout' => ['nullable', 'boolean'],
         ]);
 
         $user->name = $data['name'];
@@ -115,6 +118,9 @@ class B2CCustomerController extends Controller
         }
 
         $user->is_active = $request->boolean('is_active', $user->is_active);
+        if ($request->has('allow_unpaid_checkout')) {
+            $user->allow_unpaid_checkout = $request->boolean('allow_unpaid_checkout');
+        }
         $user->customer_type = 'b2c';
 
         $user->save();

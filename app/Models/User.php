@@ -68,11 +68,18 @@ class User extends Authenticatable implements MustVerifyEmail
         return [
             'email_verified_at' => 'datetime',
             'is_active' => 'boolean',
+            'allow_unpaid_checkout' => 'boolean',
             'date_of_birth' => 'date',
             'password' => 'hashed',
             'gst_number' => 'string',
             'fssai_number' => 'string',
         ];
+    }
+
+    public function canCheckoutWithoutOnlinePayment(): bool
+    {
+        return $this->customer_type === 'b2c'
+            && (bool) ($this->allow_unpaid_checkout ?? false);
     }
 
     protected function gstNumber(): Attribute

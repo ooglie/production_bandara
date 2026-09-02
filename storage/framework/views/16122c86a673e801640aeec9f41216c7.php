@@ -1,8 +1,6 @@
-@extends('layouts.customer')
+<?php $__env->startSection('title', 'Checkout'); ?>
 
-@section('title', 'Checkout')
-
-@section('content')
+<?php $__env->startSection('content'); ?>
 <style>
     [data-checkout-colour-scope] {
         --checkout-delivery-bg: #f3f5f6;
@@ -94,7 +92,7 @@
         color: var(--checkout-total-text);
     }
 </style>
-@php
+<?php
     $fmtQty = function ($qty) {
         $n = (float) $qty;
         return rtrim(rtrim(number_format($n, 2), '0'), '.');
@@ -300,7 +298,7 @@
     $selectedDeliveryAddress = $addresses->firstWhere('id', $selectedDeliveryAddressId) ?? $addresses->first();
     $selectedBillingAddress = $addresses->firstWhere('id', $selectedBillingAddressId) ?? $addresses->first();
 
-@endphp
+?>
 
 <div data-checkout-colour-scope class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-6 text-xs space-y-4">
 
@@ -313,39 +311,41 @@
         </div>
 
         <div class="flex items-center gap-2">
-            <a href="{{ $backUrl }}"
+            <a href="<?php echo e($backUrl); ?>"
                class="text-[11px] px-3 py-1 rounded-sm border border-gray-300 dark:border-gray-700 hover:bg-gray-100 dark:hover:bg-gray-800">
-                {{ $backLabel }}
+                <?php echo e($backLabel); ?>
+
             </a>
         </div>
     </div>
 
-    @if(!empty($pricingUpdatedCount) && $pricingUpdatedCount > 0)
+    <?php if(!empty($pricingUpdatedCount) && $pricingUpdatedCount > 0): ?>
         <div class="rounded-sm border border-gray-200 dark:border-gray-800 bg-white dark:bg-gray-900 px-3 py-2 text-[11px] text-gray-700 dark:text-gray-200">
-            Your cart was updated for {{ $pricingUpdatedCount }} item(s) based on current availability and pricing.
+            Your cart was updated for <?php echo e($pricingUpdatedCount); ?> item(s) based on current availability and pricing.
         </div>
-    @endif
+    <?php endif; ?>
 
-    @if(!empty($couponNotice))
+    <?php if(!empty($couponNotice)): ?>
         <div class="rounded-sm border border-yellow-300 bg-yellow-50 px-3 py-2 text-[11px] text-yellow-800">
-            {{ $couponNotice }}
-        </div>
-    @endif
+            <?php echo e($couponNotice); ?>
 
-    @if($errors->any())
+        </div>
+    <?php endif; ?>
+
+    <?php if($errors->any()): ?>
         <div class="rounded-sm border border-red-300 bg-red-50 px-3 py-2 text-[11px] text-red-800">
             <ul class="list-disc pl-4 space-y-0.5">
-                @foreach($errors->all() as $error)
-                    <li>{{ $error }}</li>
-                @endforeach
+                <?php $__currentLoopData = $errors->all(); $__env->addLoop($__currentLoopData); foreach($__currentLoopData as $error): $__env->incrementLoopIndices(); $loop = $__env->getLastLoop(); ?>
+                    <li><?php echo e($error); ?></li>
+                <?php endforeach; $__env->popLoop(); $loop = $__env->getLastLoop(); ?>
             </ul>
         </div>
-    @endif
+    <?php endif; ?>
 
     <div class="grid gap-4 lg:grid-cols-3">
-        {{-- Delivery and shipping --}}
+        
         <div class="lg:col-span-2 space-y-4">
-            @if($currentDeliverySchedule)
+            <?php if($currentDeliverySchedule): ?>
                 <section data-checkout-tone="delivery" class="rounded-sm border border-gray-200 dark:border-gray-800 bg-white dark:bg-gray-900 p-4">
                     <div>
                         <h2 class="text-sm font-semibold text-gray-900 dark:text-gray-50">
@@ -362,7 +362,8 @@
                                 Order timing
                             </div>
                             <div class="mt-1 text-xs font-semibold text-gray-900 dark:text-gray-50">
-                                {{ $currentDeliveryOrderTiming }}
+                                <?php echo e($currentDeliveryOrderTiming); ?>
+
                             </div>
                         </div>
 
@@ -371,7 +372,8 @@
                                 Expected delivery
                             </div>
                             <div class="mt-1 text-xs font-semibold text-gray-900 dark:text-gray-50">
-                                {{ $currentDeliverySchedule['delivery_window'] ?? 'See full delivery schedule' }}
+                                <?php echo e($currentDeliverySchedule['delivery_window'] ?? 'See full delivery schedule'); ?>
+
                             </div>
                         </div>
                     </div>
@@ -392,31 +394,34 @@
                             </div>
 
                             <div class="divide-y divide-gray-100 dark:divide-gray-800">
-                                @foreach($customerDeliverySchedule as $schedule)
+                                <?php $__currentLoopData = $customerDeliverySchedule; $__env->addLoop($__currentLoopData); foreach($__currentLoopData as $schedule): $__env->incrementLoopIndices(); $loop = $__env->getLastLoop(); ?>
                                     <div class="flex items-start justify-between gap-3 px-3 py-2 text-[11px]">
                                         <div class="min-w-0 flex-1 text-gray-600 dark:text-gray-300">
-                                            {{ $schedule['order_time'] ?? '' }}
+                                            <?php echo e($schedule['order_time'] ?? ''); ?>
+
                                         </div>
                                         <div class="min-w-0 flex-1 font-medium text-gray-900 dark:text-gray-50">
-                                            {{ $schedule['delivery_window'] ?? '' }}
+                                            <?php echo e($schedule['delivery_window'] ?? ''); ?>
+
                                         </div>
                                     </div>
-                                @endforeach
+                                <?php endforeach; $__env->popLoop(); $loop = $__env->getLastLoop(); ?>
                             </div>
                         </div>
 
-                        @if($customerDeliveryScheduleNote !== '')
+                        <?php if($customerDeliveryScheduleNote !== ''): ?>
                             <p class="mt-3 text-[10px] leading-relaxed text-gray-500 dark:text-gray-400">
-                                {{ $customerDeliveryScheduleNote }}
+                                <?php echo e($customerDeliveryScheduleNote); ?>
+
                             </p>
-                        @endif
+                        <?php endif; ?>
                     </details>
                 </section>
-            @endif
+            <?php endif; ?>
 
-            @if($placeUrl)
+            <?php if($placeUrl): ?>
                 <div class="flex flex-col gap-4 sm:flex-row">
-                    {{-- Delivery address --}}
+                    
                     <section data-checkout-delivery-address-card
                              class="min-w-0 flex-1 rounded-sm border border-gray-200 dark:border-gray-800 bg-white dark:bg-gray-900 p-4">
                         <div>
@@ -428,95 +433,110 @@
                             </p>
                         </div>
 
-                        @if($addresses->isEmpty())
+                        <?php if($addresses->isEmpty()): ?>
                             <div class="mt-3 rounded-sm border border-amber-300 bg-amber-50 dark:border-amber-800 dark:bg-amber-950/20 px-3 py-2 text-[11px] text-amber-800 dark:text-amber-300">
                                 You need at least one saved address before you can place this order.
                             </div>
 
                             <div class="mt-3">
-                                <a href="{{ $addressCreateUrl ?? route('account.addresses.create', ['return_to' => request()->fullUrl()]) }}"
+                                <a href="<?php echo e($addressCreateUrl ?? route('account.addresses.create', ['return_to' => request()->fullUrl()])); ?>"
                                    class="text-[11px] text-gray-600 dark:text-gray-300 hover:underline">
                                     Add address
                                 </a>
                             </div>
-                        @else
-                            @if($selectedDeliveryAddress)
+                        <?php else: ?>
+                            <?php if($selectedDeliveryAddress): ?>
                                 <div class="mt-3 text-[11px] text-gray-600 dark:text-gray-300 leading-relaxed">
                                     <div class="font-medium text-gray-900 dark:text-gray-50">
-                                        {{ $selectedDeliveryAddress->full_name }}
+                                        <?php echo e($selectedDeliveryAddress->full_name); ?>
+
                                     </div>
                                     <div class="mt-1">
-                                        {{ $selectedDeliveryAddress->address_line1 }}
-                                        @if($selectedDeliveryAddress->address_line2), {{ $selectedDeliveryAddress->address_line2 }} @endif
+                                        <?php echo e($selectedDeliveryAddress->address_line1); ?>
+
+                                        <?php if($selectedDeliveryAddress->address_line2): ?>, <?php echo e($selectedDeliveryAddress->address_line2); ?> <?php endif; ?>
                                         <br>
-                                        {{ $selectedDeliveryAddress->city }}, {{ $selectedDeliveryAddress->state }} - {{ $selectedDeliveryAddress->pincode }}
+                                        <?php echo e($selectedDeliveryAddress->city); ?>, <?php echo e($selectedDeliveryAddress->state); ?> - <?php echo e($selectedDeliveryAddress->pincode); ?>
+
                                         <br>
-                                        Phone: {{ $selectedDeliveryAddress->phone }}
+                                        Phone: <?php echo e($selectedDeliveryAddress->phone); ?>
+
                                     </div>
                                 </div>
-                            @endif
+                            <?php endif; ?>
 
-                            <details class="mt-3 border-t border-gray-200 dark:border-gray-800 pt-3" @if($errors->has('address_id')) open @endif>
+                            <details class="mt-3 border-t border-gray-200 dark:border-gray-800 pt-3" <?php if($errors->has('address_id')): ?> open <?php endif; ?>>
                                 <summary class="cursor-pointer text-[11px] font-medium text-gray-700 dark:text-gray-200">
                                     Change address
                                 </summary>
 
                                 <div class="mt-3 space-y-2">
-                                    @foreach($addresses as $address)
+                                    <?php $__currentLoopData = $addresses; $__env->addLoop($__currentLoopData); foreach($__currentLoopData as $address): $__env->incrementLoopIndices(); $loop = $__env->getLastLoop(); ?>
                                         <label class="block cursor-pointer rounded-sm border border-gray-200 dark:border-gray-800 bg-gray-50 dark:bg-gray-950/40 px-3 py-2 hover:bg-gray-100 dark:hover:bg-gray-900">
                                             <div class="flex items-start gap-3">
                                                 <input
                                                     type="radio"
                                                     name="address_id"
                                                     form="checkout-place-form"
-                                                    value="{{ $address->id }}"
+                                                    value="<?php echo e($address->id); ?>"
                                                     class="mt-1 rounded border-gray-300 dark:border-gray-700"
-                                                    @checked($selectedDeliveryAddressId === (int) $address->id)
+                                                    <?php if($selectedDeliveryAddressId === (int) $address->id): echo 'checked'; endif; ?>
                                                     data-checkout-address-radio
                                                 >
 
                                                 <div class="min-w-0 flex-1">
                                                     <div class="flex flex-wrap items-center gap-2">
                                                         <div class="text-[11px] font-medium text-gray-900 dark:text-gray-50">
-                                                            {{ $address->full_name }}
+                                                            <?php echo e($address->full_name); ?>
+
                                                         </div>
 
-                                                        @if($address->is_default_shipping)
+                                                        <?php if($address->is_default_shipping): ?>
                                                             <span class="rounded-full bg-sky-100 dark:bg-sky-900/40 px-2 py-0.5 text-[10px] font-medium text-sky-700 dark:text-sky-300">
                                                                 Default shipping
                                                             </span>
-                                                        @endif
+                                                        <?php endif; ?>
                                                     </div>
 
                                                     <div class="mt-1 text-[10px] text-gray-600 dark:text-gray-300 leading-relaxed">
-                                                        {{ $address->address_line1 }}
-                                                        @if($address->address_line2), {{ $address->address_line2 }} @endif
+                                                        <?php echo e($address->address_line1); ?>
+
+                                                        <?php if($address->address_line2): ?>, <?php echo e($address->address_line2); ?> <?php endif; ?>
                                                         <br>
-                                                        {{ $address->city }}, {{ $address->state }} - {{ $address->pincode }}
+                                                        <?php echo e($address->city); ?>, <?php echo e($address->state); ?> - <?php echo e($address->pincode); ?>
+
                                                         <br>
-                                                        Phone: {{ $address->phone }}
+                                                        Phone: <?php echo e($address->phone); ?>
+
                                                     </div>
                                                 </div>
                                             </div>
                                         </label>
-                                    @endforeach
+                                    <?php endforeach; $__env->popLoop(); $loop = $__env->getLastLoop(); ?>
                                 </div>
 
                                 <div class="mt-3">
-                                    <a href="{{ $addressCreateUrl ?? route('account.addresses.create', ['return_to' => request()->fullUrl()]) }}"
+                                    <a href="<?php echo e($addressCreateUrl ?? route('account.addresses.create', ['return_to' => request()->fullUrl()])); ?>"
                                        class="text-[11px] text-gray-600 dark:text-gray-300 hover:underline">
                                         Add another address
                                     </a>
                                 </div>
                             </details>
 
-                            @error('address_id')
-                                <p class="mt-2 text-[11px] text-red-600">{{ $message }}</p>
-                            @enderror
-                        @endif
+                            <?php $__errorArgs = ['address_id'];
+$__bag = $errors->getBag($__errorArgs[1] ?? 'default');
+if ($__bag->has($__errorArgs[0])) :
+if (isset($message)) { $__messageOriginal = $message; }
+$message = $__bag->first($__errorArgs[0]); ?>
+                                <p class="mt-2 text-[11px] text-red-600"><?php echo e($message); ?></p>
+                            <?php unset($message);
+if (isset($__messageOriginal)) { $message = $__messageOriginal; }
+endif;
+unset($__errorArgs, $__bag); ?>
+                        <?php endif; ?>
                     </section>
 
-                    {{-- Billing address --}}
+                    
                     <section data-checkout-billing-address-card
                              class="min-w-0 flex-1 rounded-sm border border-gray-200 dark:border-gray-800 bg-white dark:bg-gray-900 p-4">
                         <div>
@@ -528,122 +548,140 @@
                             </p>
                         </div>
 
-                        @if($addresses->isNotEmpty())
-                            @if($selectedBillingAddress)
+                        <?php if($addresses->isNotEmpty()): ?>
+                            <?php if($selectedBillingAddress): ?>
                                 <div class="mt-3 text-[11px] text-gray-600 dark:text-gray-300 leading-relaxed">
                                     <div class="font-medium text-gray-900 dark:text-gray-50">
-                                        {{ $selectedBillingAddress->full_name }}
+                                        <?php echo e($selectedBillingAddress->full_name); ?>
+
                                     </div>
                                     <div class="mt-1">
-                                        {{ $selectedBillingAddress->address_line1 }}
-                                        @if($selectedBillingAddress->address_line2), {{ $selectedBillingAddress->address_line2 }} @endif
+                                        <?php echo e($selectedBillingAddress->address_line1); ?>
+
+                                        <?php if($selectedBillingAddress->address_line2): ?>, <?php echo e($selectedBillingAddress->address_line2); ?> <?php endif; ?>
                                         <br>
-                                        {{ $selectedBillingAddress->city }}, {{ $selectedBillingAddress->state }} - {{ $selectedBillingAddress->pincode }}
+                                        <?php echo e($selectedBillingAddress->city); ?>, <?php echo e($selectedBillingAddress->state); ?> - <?php echo e($selectedBillingAddress->pincode); ?>
+
                                     </div>
 
-                                    @if(!empty($selectedBillingAddress->gstin))
+                                    <?php if(!empty($selectedBillingAddress->gstin)): ?>
                                         <div class="mt-1 text-[10px] text-gray-500 dark:text-gray-400">
-                                            GSTIN: {{ $selectedBillingAddress->gstin }}
+                                            GSTIN: <?php echo e($selectedBillingAddress->gstin); ?>
+
                                         </div>
-                                    @elseif($profileGstin !== '')
+                                    <?php elseif($profileGstin !== ''): ?>
                                         <div class="mt-1 text-[10px] text-gray-500 dark:text-gray-400">
-                                            Account GSTIN: {{ $profileGstin }}
+                                            Account GSTIN: <?php echo e($profileGstin); ?>
+
                                         </div>
-                                    @else
+                                    <?php else: ?>
                                         <div class="mt-1 text-[10px] text-gray-500 dark:text-gray-400">
                                             No GSTIN — GST will follow the delivery state.
                                         </div>
-                                    @endif
+                                    <?php endif; ?>
                                 </div>
-                            @endif
+                            <?php endif; ?>
 
-                            <details class="mt-3 border-t border-gray-200 dark:border-gray-800 pt-3" @if($errors->has('billing_address_id')) open @endif>
+                            <details class="mt-3 border-t border-gray-200 dark:border-gray-800 pt-3" <?php if($errors->has('billing_address_id')): ?> open <?php endif; ?>>
                                 <summary class="cursor-pointer text-[11px] font-medium text-gray-700 dark:text-gray-200">
                                     Change address
                                 </summary>
 
                                 <div class="mt-3 space-y-2">
-                                    @foreach($addresses as $billingOption)
+                                    <?php $__currentLoopData = $addresses; $__env->addLoop($__currentLoopData); foreach($__currentLoopData as $billingOption): $__env->incrementLoopIndices(); $loop = $__env->getLastLoop(); ?>
                                         <label class="block cursor-pointer rounded-sm border border-gray-200 dark:border-gray-800 bg-gray-50 dark:bg-gray-950/40 px-3 py-2 hover:bg-gray-100 dark:hover:bg-gray-900">
                                             <div class="flex items-start gap-3">
                                                 <input
                                                     type="radio"
                                                     name="billing_address_id"
                                                     form="checkout-place-form"
-                                                    value="{{ $billingOption->id }}"
+                                                    value="<?php echo e($billingOption->id); ?>"
                                                     class="mt-1 rounded border-gray-300 dark:border-gray-700"
-                                                    @checked($selectedBillingAddressId === (int) $billingOption->id)
+                                                    <?php if($selectedBillingAddressId === (int) $billingOption->id): echo 'checked'; endif; ?>
                                                     data-checkout-billing-address-radio
                                                 >
 
                                                 <div class="min-w-0 flex-1">
                                                     <div class="flex flex-wrap items-center gap-2">
                                                         <div class="text-[11px] font-medium text-gray-900 dark:text-gray-50">
-                                                            {{ $billingOption->full_name }}
+                                                            <?php echo e($billingOption->full_name); ?>
+
                                                         </div>
 
-                                                        @if($billingOption->is_default_billing)
+                                                        <?php if($billingOption->is_default_billing): ?>
                                                             <span class="rounded-full bg-violet-100 dark:bg-violet-900/40 px-2 py-0.5 text-[10px] font-medium text-violet-700 dark:text-violet-300">
                                                                 Default billing
                                                             </span>
-                                                        @endif
+                                                        <?php endif; ?>
                                                     </div>
 
                                                     <div class="mt-1 text-[10px] text-gray-600 dark:text-gray-300 leading-relaxed">
-                                                        {{ $billingOption->address_line1 }}
-                                                        @if($billingOption->address_line2), {{ $billingOption->address_line2 }} @endif
+                                                        <?php echo e($billingOption->address_line1); ?>
+
+                                                        <?php if($billingOption->address_line2): ?>, <?php echo e($billingOption->address_line2); ?> <?php endif; ?>
                                                         <br>
-                                                        {{ $billingOption->city }}, {{ $billingOption->state }} - {{ $billingOption->pincode }}
+                                                        <?php echo e($billingOption->city); ?>, <?php echo e($billingOption->state); ?> - <?php echo e($billingOption->pincode); ?>
+
                                                     </div>
 
-                                                    @if(!empty($billingOption->gstin))
+                                                    <?php if(!empty($billingOption->gstin)): ?>
                                                         <div class="mt-1 text-[10px] text-gray-500 dark:text-gray-400">
-                                                            GSTIN: {{ $billingOption->gstin }}
+                                                            GSTIN: <?php echo e($billingOption->gstin); ?>
+
                                                         </div>
-                                                    @elseif($profileGstin !== '')
+                                                    <?php elseif($profileGstin !== ''): ?>
                                                         <div class="mt-1 text-[10px] text-gray-500 dark:text-gray-400">
-                                                            Account GSTIN will be used: {{ $profileGstin }}
+                                                            Account GSTIN will be used: <?php echo e($profileGstin); ?>
+
                                                         </div>
-                                                    @else
+                                                    <?php else: ?>
                                                         <div class="mt-1 text-[10px] text-gray-500 dark:text-gray-400">
                                                             No GSTIN — GST will follow the delivery state.
                                                         </div>
-                                                    @endif
+                                                    <?php endif; ?>
                                                 </div>
                                             </div>
                                         </label>
-                                    @endforeach
+                                    <?php endforeach; $__env->popLoop(); $loop = $__env->getLastLoop(); ?>
                                 </div>
                             </details>
 
-                            @error('billing_address_id')
-                                <p class="mt-2 text-[11px] text-red-600">{{ $message }}</p>
-                            @enderror
-                        @endif
+                            <?php $__errorArgs = ['billing_address_id'];
+$__bag = $errors->getBag($__errorArgs[1] ?? 'default');
+if ($__bag->has($__errorArgs[0])) :
+if (isset($message)) { $__messageOriginal = $message; }
+$message = $__bag->first($__errorArgs[0]); ?>
+                                <p class="mt-2 text-[11px] text-red-600"><?php echo e($message); ?></p>
+                            <?php unset($message);
+if (isset($__messageOriginal)) { $message = $__messageOriginal; }
+endif;
+unset($__errorArgs, $__bag); ?>
+                        <?php endif; ?>
                     </section>
                 </div>
 
                 <div data-gst-context-notice>
-                    @if($gstContextError)
+                    <?php if($gstContextError): ?>
                         <div class="rounded-sm border border-red-200 dark:border-red-900/60 bg-red-50 dark:bg-red-950/25 px-3 py-2 text-[11px] text-red-700 dark:text-red-300">
-                            GST details need correction: {{ $gstContextError }}
+                            GST details need correction: <?php echo e($gstContextError); ?>
+
                         </div>
-                    @elseif(!empty($gstContext['is_bill_to_ship_to']))
+                    <?php elseif(!empty($gstContext['is_bill_to_ship_to'])): ?>
                         <div class="rounded-sm border border-gray-200 dark:border-gray-800 bg-gray-50 dark:bg-gray-950/40 px-3 py-2 text-[11px] text-gray-600 dark:text-gray-300">
-                            Bill-To / Ship-To order: the invoice place of supply is {{ $gstContext['place_of_supply_state_name'] ?? ('state code '.$gstContext['place_of_supply_gst_state_code']) }} from the Bill-To GSTIN, while delivery is to {{ $gstContext['ship_to_state_name'] ?? ('state code '.$gstContext['ship_to_gst_state_code']) }}.
+                            Bill-To / Ship-To order: the invoice place of supply is <?php echo e($gstContext['place_of_supply_state_name'] ?? ('state code '.$gstContext['place_of_supply_gst_state_code'])); ?> from the Bill-To GSTIN, while delivery is to <?php echo e($gstContext['ship_to_state_name'] ?? ('state code '.$gstContext['ship_to_gst_state_code'])); ?>.
                         </div>
-                    @endif
+                    <?php endif; ?>
                 </div>
-            @endif
+            <?php endif; ?>
         </div>
 
-        {{-- Read-only order summary and payment --}}
+        
         <div data-checkout-order-summary class="rounded-sm border border-gray-200 dark:border-gray-800 bg-white dark:bg-gray-900 p-4">
-            @if($placeUrl)
-                <form id="checkout-place-form" method="POST" action="{{ $placeUrl }}" class="space-y-3" data-checkout-form>
-                    @csrf
+            <?php if($placeUrl): ?>
+                <form id="checkout-place-form" method="POST" action="<?php echo e($placeUrl); ?>" class="space-y-3" data-checkout-form>
+                    <?php echo csrf_field(); ?>
 
-                    <input type="hidden" name="return_to" value="{{ $checkoutReturnTo }}">
+                    <input type="hidden" name="return_to" value="<?php echo e($checkoutReturnTo); ?>">
 
                     <div class="flex items-start justify-between gap-3">
                         <div>
@@ -655,15 +693,15 @@
                             </p>
                         </div>
 
-                        <a href="{{ $backUrl }}"
+                        <a href="<?php echo e($backUrl); ?>"
                            class="text-[11px] text-gray-600 dark:text-gray-300 hover:underline">
                             Edit cart
                         </a>
                     </div>
 
                     <div class="border-t border-gray-200 dark:border-gray-800 divide-y divide-gray-100 dark:divide-gray-800">
-                        @foreach($items as $it)
-                            @php
+                        <?php $__currentLoopData = $items; $__env->addLoop($__currentLoopData); foreach($__currentLoopData as $it): $__env->incrementLoopIndices(); $loop = $__env->getLastLoop(); ?>
+                            <?php
                                 $p = $it->product;
 
                                 $sellUnit = strtolower((string)($it->sell_unit ?? $p?->sell_unit ?? 'pc'));
@@ -706,39 +744,46 @@
                                         : round($qty * $displayUnitPrice, 2);
                                     $displayPriceNote = ($quote['display_price_includes_gst'] ?? false) ? 'incl GST' : 'excl GST';
                                 }
-                            @endphp
+                            ?>
 
                             <div class="flex items-start justify-between gap-3 py-3 text-[11px]">
                                 <div class="min-w-0 flex-1">
                                     <div class="font-medium text-gray-900 dark:text-gray-50">
-                                        {{ $p?->name ?? 'Product' }}
+                                        <?php echo e($p?->name ?? 'Product'); ?>
+
                                     </div>
 
-                                    @if($variantLabel)
+                                    <?php if($variantLabel): ?>
                                         <div class="mt-1 text-[10px] text-gray-500 dark:text-gray-400">
-                                            {{ $variantLabel }}
+                                            <?php echo e($variantLabel); ?>
+
                                         </div>
-                                    @endif
+                                    <?php endif; ?>
 
                                     <div class="mt-1 text-[10px] text-gray-500 dark:text-gray-400 leading-relaxed">
-                                        Qty: {{ $isKg ? $fmtQty($qty) : (int) $qty }} {{ $unitLabel($sellUnit) }}
-                                        @if(!$isB2BCheckoutUser)
-                                            · Weight: {{ $fmtW($lineWeight) }}
-                                        @endif
+                                        Qty: <?php echo e($isKg ? $fmtQty($qty) : (int) $qty); ?> <?php echo e($unitLabel($sellUnit)); ?>
+
+                                        <?php if(!$isB2BCheckoutUser): ?>
+                                            · Weight: <?php echo e($fmtW($lineWeight)); ?>
+
+                                        <?php endif; ?>
                                         <br>
-                                        ₹{{ number_format($displayUnitPrice, 2) }}
-                                        @if($displayPriceNote)
-                                            {{ $displayPriceNote }}
-                                        @endif
-                                        · GST {{ $gstRate }}%
+                                        ₹<?php echo e(number_format($displayUnitPrice, 2)); ?>
+
+                                        <?php if($displayPriceNote): ?>
+                                            <?php echo e($displayPriceNote); ?>
+
+                                        <?php endif; ?>
+                                        · GST <?php echo e($gstRate); ?>%
                                     </div>
                                 </div>
 
                                 <div class="text-right font-semibold text-gray-900 dark:text-gray-50">
-                                    ₹{{ number_format($displayLineTotal, 2) }}
+                                    ₹<?php echo e(number_format($displayLineTotal, 2)); ?>
+
                                 </div>
                             </div>
-                        @endforeach
+                        <?php endforeach; $__env->popLoop(); $loop = $__env->getLastLoop(); ?>
                     </div>
 
                     <div class="border-t border-gray-200 dark:border-gray-800 pt-3">
@@ -749,10 +794,10 @@
                                   name="customer_note"
                                   rows="2"
                                   placeholder="Add a note for your order…"
-                                  class="mt-1 w-full rounded-sm border border-gray-300 dark:border-gray-700 bg-white dark:bg-gray-950 px-2 py-2 text-[11px]">{{ old('customer_note') }}</textarea>
+                                  class="mt-1 w-full rounded-sm border border-gray-300 dark:border-gray-700 bg-white dark:bg-gray-950 px-2 py-2 text-[11px]"><?php echo e(old('customer_note')); ?></textarea>
                     </div>
 
-                    @if($isB2BCheckoutUser)
+                    <?php if($isB2BCheckoutUser): ?>
                         <div data-checkout-payment-methods class="rounded-sm border border-gray-200 dark:border-gray-800 bg-white dark:bg-gray-900 p-4 space-y-3">
                             <div>
                                 <h2 class="text-sm font-semibold text-gray-900 dark:text-gray-50">Payment method</h2>
@@ -762,39 +807,48 @@
                             </div>
 
                             <label class="flex gap-3 rounded-sm border border-gray-200 dark:border-gray-800 px-3 py-2 text-[11px]">
-                                <input type="radio" name="payment_method" value="razorpay" @checked($selectedPaymentMethod !== 'pay_later')>
+                                <input type="radio" name="payment_method" value="razorpay" <?php if($selectedPaymentMethod !== 'pay_later'): echo 'checked'; endif; ?>>
                                 <span>
                                     <span class="block font-medium text-gray-900 dark:text-gray-50">Pay now online</span>
                                     <span class="block text-gray-500 dark:text-gray-400">Pay securely using Razorpay.</span>
                                 </span>
                             </label>
 
-                            @if($payLaterEligible)
+                            <?php if($payLaterEligible): ?>
                                 <label class="flex gap-3 rounded-sm border border-gray-200 dark:border-gray-800 px-3 py-2 text-[11px]">
-                                    <input type="radio" name="payment_method" value="pay_later" @checked($selectedPaymentMethod === 'pay_later')>
+                                    <input type="radio" name="payment_method" value="pay_later" <?php if($selectedPaymentMethod === 'pay_later'): echo 'checked'; endif; ?>>
                                     <span>
                                         <span class="block font-medium text-gray-900 dark:text-gray-50">Pay later on invoice</span>
                                         <span class="block text-gray-500 dark:text-gray-400">
-                                            Due in {{ (int) ($payLaterOption['terms_days'] ?? 0) }} day(s).
-                                            Available credit: ₹{{ number_format((float) ($payLaterOption['available_credit'] ?? 0), 2) }}
+                                            Due in <?php echo e((int) ($payLaterOption['terms_days'] ?? 0)); ?> day(s).
+                                            Available credit: ₹<?php echo e(number_format((float) ($payLaterOption['available_credit'] ?? 0), 2)); ?>
+
                                         </span>
                                     </span>
                                 </label>
-                            @else
+                            <?php else: ?>
                                 <div class="rounded-sm border border-gray-200 dark:border-gray-800 bg-gray-50 dark:bg-gray-950/40 px-3 py-2 text-[11px] text-gray-600 dark:text-gray-300">
-                                    Pay Later is not available: {{ $payLaterOption['reason'] ?? 'not approved for this account.' }}
+                                    Pay Later is not available: <?php echo e($payLaterOption['reason'] ?? 'not approved for this account.'); ?>
+
                                 </div>
-                            @endif
+                            <?php endif; ?>
 
-                            @error('payment_method')
-                                <p class="text-[11px] text-red-600">{{ $message }}</p>
-                            @enderror
+                            <?php $__errorArgs = ['payment_method'];
+$__bag = $errors->getBag($__errorArgs[1] ?? 'default');
+if ($__bag->has($__errorArgs[0])) :
+if (isset($message)) { $__messageOriginal = $message; }
+$message = $__bag->first($__errorArgs[0]); ?>
+                                <p class="text-[11px] text-red-600"><?php echo e($message); ?></p>
+                            <?php unset($message);
+if (isset($__messageOriginal)) { $message = $__messageOriginal; }
+endif;
+unset($__errorArgs, $__bag); ?>
                         </div>
-                    @else
-                        <input type="hidden" name="payment_method" value="{{ $unpaidCheckoutEnabled ? 'pay_later' : 'razorpay' }}">
-                    @endif
+                    <?php else: ?>
+                        <input type="hidden" name="payment_method" value="<?php echo e($unpaidCheckoutEnabled ? 'pay_later' : 'razorpay'); ?>">
+                    <?php endif; ?>
 
-                    @if(!$isB2BCheckoutUser && !$unpaidCheckoutEnabled)
+                    <?php if(!$isB2BCheckoutUser && !$unpaidCheckoutEnabled): ?>
                     <div data-bandara-credit-section class="rounded-sm border border-gray-200 dark:border-gray-800 bg-white dark:bg-gray-900 p-4 space-y-3">
                         <div class="flex items-start justify-between gap-3">
                             <div>
@@ -804,14 +858,14 @@
                                 </p>
                             </div>
                             <div class="text-right text-[11px]">
-                                <div class="font-semibold text-gray-900 dark:text-gray-50">{{ number_format($bandaraCreditAvailable) }} available</div>
-                                @if($bandaraCreditReserved > 0)
-                                    <div class="text-amber-600 dark:text-amber-300">{{ number_format($bandaraCreditReserved) }} reserved</div>
-                                @endif
+                                <div class="font-semibold text-gray-900 dark:text-gray-50"><?php echo e(number_format($bandaraCreditAvailable)); ?> available</div>
+                                <?php if($bandaraCreditReserved > 0): ?>
+                                    <div class="text-amber-600 dark:text-amber-300"><?php echo e(number_format($bandaraCreditReserved)); ?> reserved</div>
+                                <?php endif; ?>
                             </div>
                         </div>
 
-                        @if($bandaraCreditEnabled && $bandaraCreditCanRedeem && $bandaraCreditMaxPoints > 0)
+                        <?php if($bandaraCreditEnabled && $bandaraCreditCanRedeem && $bandaraCreditMaxPoints > 0): ?>
                             <div class="space-y-3">
                                 <div>
                                     <label for="bandara_credit_points" class="block text-[11px] font-medium text-gray-700 dark:text-gray-200">
@@ -822,31 +876,38 @@
                                         type="number"
                                         name="bandara_credit_points"
                                         min="0"
-                                        max="{{ $bandaraCreditMaxPoints }}"
+                                        max="<?php echo e($bandaraCreditMaxPoints); ?>"
                                         step="1"
-                                        value="{{ $bandaraCreditRequested }}"
+                                        value="<?php echo e($bandaraCreditRequested); ?>"
                                         inputmode="numeric"
                                         data-bandara-credit-input
                                         class="mt-1 w-full rounded-sm border border-gray-300 dark:border-gray-700 bg-white dark:bg-gray-950 px-3 py-2 text-xs"
                                     >
                                     <p class="mt-1 text-[11px] text-gray-500 dark:text-gray-400">
-                                        Maximum for this order: {{ number_format($bandaraCreditMaxPoints) }} credits
-                                        @if($bandaraCreditMaxAmount > 0)
-                                            (₹{{ number_format($bandaraCreditMaxAmount, 2) }})
-                                        @endif
-                                        @if($bandaraCreditMinimum > 0)
-                                            · Minimum redemption: {{ number_format($bandaraCreditMinimum) }} credits
-                                        @endif
+                                        Maximum for this order: <?php echo e(number_format($bandaraCreditMaxPoints)); ?> credits
+                                        <?php if($bandaraCreditMaxAmount > 0): ?>
+                                            (₹<?php echo e(number_format($bandaraCreditMaxAmount, 2)); ?>)
+                                        <?php endif; ?>
+                                        <?php if($bandaraCreditMinimum > 0): ?>
+                                            · Minimum redemption: <?php echo e(number_format($bandaraCreditMinimum)); ?> credits
+                                        <?php endif; ?>
                                     </p>
-                                    @error('bandara_credit_points')
-                                        <p class="mt-1 text-[11px] text-red-600">{{ $message }}</p>
-                                    @enderror
+                                    <?php $__errorArgs = ['bandara_credit_points'];
+$__bag = $errors->getBag($__errorArgs[1] ?? 'default');
+if ($__bag->has($__errorArgs[0])) :
+if (isset($message)) { $__messageOriginal = $message; }
+$message = $__bag->first($__errorArgs[0]); ?>
+                                        <p class="mt-1 text-[11px] text-red-600"><?php echo e($message); ?></p>
+                                    <?php unset($message);
+if (isset($__messageOriginal)) { $message = $__messageOriginal; }
+endif;
+unset($__errorArgs, $__bag); ?>
                                 </div>
 
                                 <div class="flex flex-wrap items-center gap-2">
                                     <button
                                         type="submit"
-                                        formaction="{{ route('checkout.bandara-credit.apply') }}"
+                                        formaction="<?php echo e(route('checkout.bandara-credit.apply')); ?>"
                                         formmethod="POST"
                                         formnovalidate
                                         data-bandara-credit-apply
@@ -858,16 +919,16 @@
                                     <button
                                         type="button"
                                         data-bandara-credit-use-maximum
-                                        data-bandara-credit-maximum="{{ $bandaraCreditMaxPoints }}"
+                                        data-bandara-credit-maximum="<?php echo e($bandaraCreditMaxPoints); ?>"
                                         class="inline-flex items-center justify-center rounded-xl border border-gray-300 dark:border-gray-700 px-3 py-2 text-[11px] font-medium text-gray-700 dark:text-gray-200 hover:bg-gray-50 dark:hover:bg-gray-800"
                                     >
                                         Use maximum
                                     </button>
 
-                                    @if($bandaraCreditAppliedPoints > 0 || $bandaraCreditRequested > 0)
+                                    <?php if($bandaraCreditAppliedPoints > 0 || $bandaraCreditRequested > 0): ?>
                                         <button
                                             type="submit"
-                                            formaction="{{ route('checkout.bandara-credit.remove') }}"
+                                            formaction="<?php echo e(route('checkout.bandara-credit.remove')); ?>"
                                             formmethod="POST"
                                             formnovalidate
                                             name="_method"
@@ -877,186 +938,195 @@
                                         >
                                             Remove credit
                                         </button>
-                                    @endif
+                                    <?php endif; ?>
                                 </div>
 
-                                @if($bandaraCreditAppliedPoints > 0)
+                                <?php if($bandaraCreditAppliedPoints > 0): ?>
                                     <div class="rounded-sm border border-emerald-200 dark:border-emerald-900 bg-emerald-50 dark:bg-emerald-950/25 px-3 py-2 text-[11px] text-emerald-800 dark:text-emerald-300">
-                                        {{ number_format($bandaraCreditAppliedPoints) }} credits applied
-                                        @if($bandaraCreditAppliedAmount > 0)
-                                            · ₹{{ number_format($bandaraCreditAppliedAmount, 2) }} will be reserved when you place the order.
-                                        @endif
+                                        <?php echo e(number_format($bandaraCreditAppliedPoints)); ?> credits applied
+                                        <?php if($bandaraCreditAppliedAmount > 0): ?>
+                                            · ₹<?php echo e(number_format($bandaraCreditAppliedAmount, 2)); ?> will be reserved when you place the order.
+                                        <?php endif; ?>
                                     </div>
-                                @endif
+                                <?php endif; ?>
 
-                                @if($bandaraCreditMessage)
+                                <?php if($bandaraCreditMessage): ?>
                                     <div class="rounded-sm border border-amber-200 dark:border-amber-900 bg-amber-50 dark:bg-amber-950/25 px-3 py-2 text-[11px] text-amber-800 dark:text-amber-300">
-                                        {{ $bandaraCreditMessage }}
+                                        <?php echo e($bandaraCreditMessage); ?>
+
                                     </div>
-                                @endif
+                                <?php endif; ?>
                             </div>
-                        @elseif($bandaraCreditEnabled)
+                        <?php elseif($bandaraCreditEnabled): ?>
                             <div class="rounded-sm border border-gray-200 dark:border-gray-800 bg-gray-50 dark:bg-gray-950/40 px-3 py-2 text-[11px] text-gray-600 dark:text-gray-300">
-                                {{ $bandaraCreditMessage ?: 'You do not currently have enough eligible Bandara Credit for this order.' }}
+                                <?php echo e($bandaraCreditMessage ?: 'You do not currently have enough eligible Bandara Credit for this order.'); ?>
+
                             </div>
-                        @else
+                        <?php else: ?>
                             <div class="rounded-sm border border-gray-200 dark:border-gray-800 bg-gray-50 dark:bg-gray-950/40 px-3 py-2 text-[11px] text-gray-600 dark:text-gray-300">
-                                {{ $bandaraCreditEnabled ? 'You do not currently have enough eligible Bandara Credit for this order.' : 'Bandara Credit redemption is currently disabled. You can still earn credits on eligible orders.' }}
+                                <?php echo e($bandaraCreditEnabled ? 'You do not currently have enough eligible Bandara Credit for this order.' : 'Bandara Credit redemption is currently disabled. You can still earn credits on eligible orders.'); ?>
+
                             </div>
-                        @endif
+                        <?php endif; ?>
                     </div>
-                    @endif
+                    <?php endif; ?>
 
                     <div data-checkout-totals class="border-t border-gray-200 dark:border-gray-800 pt-3 space-y-2">
                         <div class="flex items-center justify-between text-[11px]">
                             <span class="text-gray-600 dark:text-gray-300">Subtotal <span class="text-[10px] text-gray-400">(excl GST)</span></span>
-                            <span class="text-gray-900 dark:text-gray-50">₹{{ number_format($subtotal, 2) }}</span>
+                            <span class="text-gray-900 dark:text-gray-50">₹<?php echo e(number_format($subtotal, 2)); ?></span>
                         </div>
 
                         <div class="flex items-center justify-between text-[11px]">
                             <span class="text-gray-600 dark:text-gray-300">Discount</span>
-                            <span class="text-gray-900 dark:text-gray-50">-₹{{ number_format($discount ?? 0, 2) }}</span>
+                            <span class="text-gray-900 dark:text-gray-50">-₹<?php echo e(number_format($discount ?? 0, 2)); ?></span>
                         </div>
 
                         <div class="flex items-center justify-between text-[11px]">
                             <span class="text-gray-600 dark:text-gray-300">Taxable <span class="text-[10px] text-gray-400">(excl GST)</span></span>
-                            <span class="text-gray-900 dark:text-gray-50">₹{{ number_format($taxable, 2) }}</span>
+                            <span class="text-gray-900 dark:text-gray-50">₹<?php echo e(number_format($taxable, 2)); ?></span>
                         </div>
 
                         <div class="flex items-center justify-between text-[11px]">
                             <span class="text-gray-600 dark:text-gray-300">GST treatment</span>
-                            <span class="font-medium text-gray-900 dark:text-gray-50">{{ $gstContext['tax_label'] ?? (($gst['gst_type'] ?? null) === 'intra_state' ? 'CGST + SGST' : 'IGST') }}</span>
+                            <span class="font-medium text-gray-900 dark:text-gray-50"><?php echo e($gstContext['tax_label'] ?? (($gst['gst_type'] ?? null) === 'intra_state' ? 'CGST + SGST' : 'IGST')); ?></span>
                         </div>
 
                         <div class="flex items-center justify-between text-[11px]">
                             <span class="text-gray-600 dark:text-gray-300">Product GST</span>
-                            <span class="text-gray-900 dark:text-gray-50">₹{{ number_format($gst['tax_total'] ?? 0, 2) }}</span>
+                            <span class="text-gray-900 dark:text-gray-50">₹<?php echo e(number_format($gst['tax_total'] ?? 0, 2)); ?></span>
                         </div>
 
-                        @php
+                        <?php
                             $deliveryQuote = $deliveryQuote ?? [];
                             $deliveryFee = (float) ($deliveryQuote['delivery_fee'] ?? 0);
                             $handlingFee = (float) ($deliveryQuote['handling_fee'] ?? 0);
                             $hasHandlingRule = !empty($deliveryQuote['handling_rule_id']) || $handlingFee > 0;
                             $handlingWasWaived = (bool) ($deliveryQuote['handling_free_handling_applied'] ?? false);
                             $chargeTax = (float) ($deliveryChargeTaxTotal ?? ($deliveryQuote['tax_total'] ?? 0));
-                        @endphp
+                        ?>
 
                         <div class="flex items-center justify-between text-[11px]">
                             <span class="text-gray-600 dark:text-gray-300">Delivery fee <span class="text-[10px] text-gray-400">(excl GST)</span></span>
-                            <span class="text-gray-900 dark:text-gray-50">₹{{ number_format($deliveryFee, 2) }}</span>
+                            <span class="text-gray-900 dark:text-gray-50">₹<?php echo e(number_format($deliveryFee, 2)); ?></span>
                         </div>
 
-                        @if($hasHandlingRule)
+                        <?php if($hasHandlingRule): ?>
                             <div class="flex items-center justify-between text-[11px]">
                                 <span class="text-gray-600 dark:text-gray-300">Cold-chain handling & packing <span class="text-[10px] text-gray-400">(excl GST)</span></span>
                                 <span class="text-gray-900 dark:text-gray-50">
-                                    @if($handlingFee > 0)
-                                        ₹{{ number_format($handlingFee, 2) }}
-                                    @else
+                                    <?php if($handlingFee > 0): ?>
+                                        ₹<?php echo e(number_format($handlingFee, 2)); ?>
+
+                                    <?php else: ?>
                                         Free
-                                    @endif
+                                    <?php endif; ?>
                                 </span>
                             </div>
-                            @if($handlingWasWaived && (float) ($deliveryQuote['handling_fee_before_waiver'] ?? 0) > 0)
+                            <?php if($handlingWasWaived && (float) ($deliveryQuote['handling_fee_before_waiver'] ?? 0) > 0): ?>
                                 <div class="-mt-1 text-[10px] text-emerald-600 dark:text-emerald-300">
                                     Cold-chain handling waived for this order.
                                 </div>
-                            @endif
-                        @endif
+                            <?php endif; ?>
+                        <?php endif; ?>
 
-                        @if($chargeTax > 0)
+                        <?php if($chargeTax > 0): ?>
                             <div class="flex items-center justify-between text-[11px]">
                                 <span class="text-gray-600 dark:text-gray-300">Delivery / handling GST</span>
-                                <span class="text-gray-900 dark:text-gray-50">₹{{ number_format($chargeTax, 2) }}</span>
+                                <span class="text-gray-900 dark:text-gray-50">₹<?php echo e(number_format($chargeTax, 2)); ?></span>
                             </div>
-                        @endif
+                        <?php endif; ?>
 
-                        @if(($deliveryQuote['delivery_fee_source'] ?? null) === 'distance' && !empty($deliveryQuote['delivery_distance_km']))
+                        <?php if(($deliveryQuote['delivery_fee_source'] ?? null) === 'distance' && !empty($deliveryQuote['delivery_distance_km'])): ?>
                             <div class="rounded-sm border border-gray-200 dark:border-gray-800 bg-gray-50 dark:bg-gray-950/40 px-3 py-2 text-[11px] text-gray-600 dark:text-gray-300">
-                                Delivery distance: {{ number_format((float) $deliveryQuote['delivery_distance_km'], 2) }} km from store
-                                @if(!empty($deliveryQuote['delivery_duration_minutes']))
-                                    · approx. {{ (int) $deliveryQuote['delivery_duration_minutes'] }} min
-                                @endif
-                                @if(!empty($deliveryQuote['pincode']))
-                                    · {{ $deliveryQuote['pincode'] }}
-                                @endif
-                                @if(($deliveryQuote['delivery_fee_formula'] ?? null) === 'base_plus_per_km')
+                                Delivery distance: <?php echo e(number_format((float) $deliveryQuote['delivery_distance_km'], 2)); ?> km from store
+                                <?php if(!empty($deliveryQuote['delivery_duration_minutes'])): ?>
+                                    · approx. <?php echo e((int) $deliveryQuote['delivery_duration_minutes']); ?> min
+                                <?php endif; ?>
+                                <?php if(!empty($deliveryQuote['pincode'])): ?>
+                                    · <?php echo e($deliveryQuote['pincode']); ?>
+
+                                <?php endif; ?>
+                                <?php if(($deliveryQuote['delivery_fee_formula'] ?? null) === 'base_plus_per_km'): ?>
                                     <div class="mt-1 text-[10px] text-gray-500 dark:text-gray-400">
-                                        Fee: ₹{{ number_format((float) ($deliveryQuote['delivery_base_fee'] ?? 0), 2) }} base
-                                        @if((float) ($deliveryQuote['delivery_included_distance_km'] ?? 0) > 0)
-                                            covers first {{ number_format((float) $deliveryQuote['delivery_included_distance_km'], 2) }} km
-                                        @endif
-                                        + ₹{{ number_format((float) ($deliveryQuote['delivery_per_km_fee'] ?? 0), 2) }} × {{ (int) ($deliveryQuote['delivery_chargeable_km_units'] ?? 0) }} started km after base.
+                                        Fee: ₹<?php echo e(number_format((float) ($deliveryQuote['delivery_base_fee'] ?? 0), 2)); ?> base
+                                        <?php if((float) ($deliveryQuote['delivery_included_distance_km'] ?? 0) > 0): ?>
+                                            covers first <?php echo e(number_format((float) $deliveryQuote['delivery_included_distance_km'], 2)); ?> km
+                                        <?php endif; ?>
+                                        + ₹<?php echo e(number_format((float) ($deliveryQuote['delivery_per_km_fee'] ?? 0), 2)); ?> × <?php echo e((int) ($deliveryQuote['delivery_chargeable_km_units'] ?? 0)); ?> started km after base.
                                     </div>
-                                @endif
+                                <?php endif; ?>
                             </div>
-                        @elseif(!empty($deliveryQuote['zone_name']))
+                        <?php elseif(!empty($deliveryQuote['zone_name'])): ?>
                             <div class="rounded-sm border border-gray-200 dark:border-gray-800 bg-gray-50 dark:bg-gray-950/40 px-3 py-2 text-[11px] text-gray-600 dark:text-gray-300">
-                                Delivery zone: {{ $deliveryQuote['zone_name'] }}
-                                @if(!empty($deliveryQuote['pincode']))
-                                    · {{ $deliveryQuote['pincode'] }}
-                                @endif
-                            </div>
-                        @elseif(!empty($deliveryQuote['messages']))
-                            <div class="rounded-sm border border-amber-200 dark:border-amber-900/50 bg-amber-50 dark:bg-amber-950/30 px-3 py-2 text-[11px] text-amber-800 dark:text-amber-200">
-                                {{ $deliveryQuote['messages'][0] }}
-                            </div>
-                        @endif
+                                Delivery zone: <?php echo e($deliveryQuote['zone_name']); ?>
 
-                        @if(! $isB2BCheckoutUser && !empty($bandaraCredit['applied_points']))
+                                <?php if(!empty($deliveryQuote['pincode'])): ?>
+                                    · <?php echo e($deliveryQuote['pincode']); ?>
+
+                                <?php endif; ?>
+                            </div>
+                        <?php elseif(!empty($deliveryQuote['messages'])): ?>
+                            <div class="rounded-sm border border-amber-200 dark:border-amber-900/50 bg-amber-50 dark:bg-amber-950/30 px-3 py-2 text-[11px] text-amber-800 dark:text-amber-200">
+                                <?php echo e($deliveryQuote['messages'][0]); ?>
+
+                            </div>
+                        <?php endif; ?>
+
+                        <?php if(! $isB2BCheckoutUser && !empty($bandaraCredit['applied_points'])): ?>
                             <div class="flex items-center justify-between text-[11px] text-emerald-700 dark:text-emerald-300">
                                 <span>Bandara Credit preview</span>
-                                <span>-₹{{ number_format((float) ($bandaraCredit['applied_amount'] ?? 0), 2) }}</span>
+                                <span>-₹<?php echo e(number_format((float) ($bandaraCredit['applied_amount'] ?? 0), 2)); ?></span>
                             </div>
-                        @endif
+                        <?php endif; ?>
 
                         <div data-checkout-grand-total class="flex items-center justify-between text-[12px] font-semibold pt-2">
                             <span class="text-gray-900 dark:text-gray-50">Grand total</span>
-                            <span class="text-gray-900 dark:text-gray-50">₹{{ number_format($grandTotal, 2) }}</span>
+                            <span class="text-gray-900 dark:text-gray-50">₹<?php echo e(number_format($grandTotal, 2)); ?></span>
                         </div>
                     
-                        @if(! $isB2BCheckoutUser && !empty($bandaraCredit['applied_points']))
+                        <?php if(! $isB2BCheckoutUser && !empty($bandaraCredit['applied_points'])): ?>
                             <div class="flex items-center justify-between text-[12px] font-semibold text-emerald-700 dark:text-emerald-300">
                                 <span>Payable after Bandara Credit</span>
-                                <span>₹{{ number_format((float) ($bandaraCredit['remaining_payable'] ?? $grandTotal), 2) }}</span>
+                                <span>₹<?php echo e(number_format((float) ($bandaraCredit['remaining_payable'] ?? $grandTotal), 2)); ?></span>
                             </div>
-                        @endif
+                        <?php endif; ?>
                     </div>
 
                     <div class="flex items-center justify-between gap-3 pt-4">
-                        <a href="{{ $backUrl }}"
+                        <a href="<?php echo e($backUrl); ?>"
                         class="text-xs text-gray-500 dark:text-gray-400 hover:underline">
-                            {{ $backLabel }}
+                            <?php echo e($backLabel); ?>
+
                         </a>
 
-                        @if($addresses->isEmpty())
-                            <a href="{{ $addressCreateUrl ?? route('account.addresses.create', ['return_to' => request()->fullUrl()]) }}"
+                        <?php if($addresses->isEmpty()): ?>
+                            <a href="<?php echo e($addressCreateUrl ?? route('account.addresses.create', ['return_to' => request()->fullUrl()])); ?>"
                             class="inline-flex items-center justify-center rounded-xl bg-gray-900 dark:bg-gray-100 px-4 py-2 text-xs font-medium text-white dark:text-gray-900 hover:bg-gray-800 dark:hover:bg-white">
                                 Add address to continue
                             </a>
-                        @else
+                        <?php else: ?>
                             <button
                                 type="submit"
                                 class="inline-flex items-center justify-center rounded-xl bg-gray-900 dark:bg-gray-100 px-4 py-2 text-xs font-medium text-white dark:text-gray-900 hover:bg-gray-800 dark:hover:bg-white"
                             >
                                 Place order
                             </button>
-                        @endif
+                        <?php endif; ?>
                     </div>
                 </form>
-            @else
+            <?php else: ?>
                 <div class="rounded-sm border border-yellow-300 bg-yellow-50 px-3 py-2 text-[11px] text-yellow-800">
                     Checkout place route not found. Expected route name: <code>checkout.place</code>
                 </div>
-            @endif
+            <?php endif; ?>
         </div>
     </div>
 </div>
 
-@endsection
+<?php $__env->stopSection(); ?>
 
-@push('scripts')
+<?php $__env->startPush('scripts'); ?>
 <script>
 (function () {
     const form = document.querySelector('[data-checkout-form]');
@@ -1275,4 +1345,6 @@
 })();
 
 </script>
-@endpush
+<?php $__env->stopPush(); ?>
+
+<?php echo $__env->make('layouts.customer', array_diff_key(get_defined_vars(), ['__data' => 1, '__path' => 1]))->render(); ?><?php /**PATH /Users/ooglie/Website/ChatGPT/PRODUCTIONFrozen/BandaraFrozen/resources/views/customer/checkout/index.blade.php ENDPATH**/ ?>

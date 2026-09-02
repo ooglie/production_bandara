@@ -203,6 +203,13 @@ class PaymentController extends Controller
             abort(404);
         }
 
+        if (($invoice->order->payment_method ?? 'razorpay') === 'pay_later'
+            && (($user->customer_type ?? 'b2c') === 'b2c')) {
+            return redirect()
+                ->route('invoices.show', $invoice)
+                ->with('status', 'Payment for this order will be recorded separately by Bandara.');
+        }
+
         if (($invoice->order->payment_method ?? 'razorpay') !== 'pay_later'
             && strtolower((string) ($invoice->order->payment_status ?? 'pending')) !== 'paid') {
             return redirect()

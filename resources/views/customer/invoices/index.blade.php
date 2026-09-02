@@ -41,6 +41,8 @@
                     @php
                         $invoicePaidAmount = (float) ($invoice->amount_paid ?? 0);
                         $invoiceBalanceAmount = (float) ($invoice->balance_amount ?? max(0, ($invoice->grand_total ?? 0) - $invoicePaidAmount));
+                        $invoicePaymentRecordedByAdmin = (($invoice->order?->payment_method ?? 'razorpay') === 'pay_later')
+                            && ((auth()->user()?->customer_type ?? 'b2c') === 'b2c');
                     @endphp
                     <tr class="border-t border-gray-100 dark:border-gray-800">
                         <td class="px-3 py-2 align-top">
@@ -86,7 +88,7 @@
                                    class="text-[11px] text-gray-700 dark:text-gray-200 underline">
                                     View
                                 </a>
-                                @if(($invoiceBalanceAmount ?? 0) > 0.00001 && Route::has('invoices.pay.razorpay'))
+                                @if(! $invoicePaymentRecordedByAdmin && ($invoiceBalanceAmount ?? 0) > 0.00001 && Route::has('invoices.pay.razorpay'))
                                     <a href="{{ route('invoices.show', $invoice) }}"
                                        class="inline-flex items-center rounded-sm border border-gray-900 dark:border-gray-100 bg-gray-900 text-white dark:bg-gray-100 dark:text-gray-900 px-2 py-0.5 text-[10px] font-medium hover:bg-gray-800 dark:hover:bg-gray-200">
                                         Pay / part pay

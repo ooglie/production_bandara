@@ -1,4 +1,4 @@
-@php
+<?php
     use Illuminate\Support\Facades\Route;
 
     $paymentWidgetInvoice = $invoice ?? null;
@@ -50,28 +50,30 @@
     $paymentWidgetButtonLabel = $paymentButtonLabel ?? 'Pay now';
     $paymentWidgetSubmissions = $paymentWidgetInvoice?->paymentSubmissions ?? collect();
     $paymentWidgetPaidOn = old('offline_paid_on', now()->toDateString());
-@endphp
+?>
 
-@if($paymentWidgetCanPay)
-    <div id="{{ $paymentWidgetId }}"
+<?php if($paymentWidgetCanPay): ?>
+    <div id="<?php echo e($paymentWidgetId); ?>"
          data-invoice-payment-widget
-         data-invoice-balance="{{ number_format($paymentWidgetBalance, 2, '.', '') }}"
-         data-offline-limit="{{ number_format($paymentWidgetOfflineLimit, 2, '.', '') }}"
+         data-invoice-balance="<?php echo e(number_format($paymentWidgetBalance, 2, '.', '')); ?>"
+         data-offline-limit="<?php echo e(number_format($paymentWidgetOfflineLimit, 2, '.', '')); ?>"
          class="mt-3 rounded-sm border border-sky-200 dark:border-sky-900/40 bg-sky-50/80 dark:bg-sky-950/20 px-3 py-3">
         <div class="flex flex-col gap-1 sm:flex-row sm:items-start sm:justify-between">
             <div>
                 <div class="text-[11px] font-semibold text-sky-900 dark:text-sky-100">
-                    {{ $paymentWidgetOnlineTitle }}
+                    <?php echo e($paymentWidgetOnlineTitle); ?>
+
                 </div>
                 <p class="mt-1 text-[10px] text-sky-700 dark:text-sky-300">
-                    {{ $paymentWidgetOnlineDescription }}
+                    <?php echo e($paymentWidgetOnlineDescription); ?>
+
                 </p>
             </div>
             <div class="text-[10px] text-sky-700 dark:text-sky-300 sm:text-right">
-                Outstanding: <span class="font-semibold">₹{{ number_format($paymentWidgetBalance, 2) }}</span>
-                @if($paymentWidgetPendingAmount > 0)
-                    <br>Pending approval: <span class="font-semibold">₹{{ number_format($paymentWidgetPendingAmount, 2) }}</span>
-                @endif
+                Outstanding: <span class="font-semibold">₹<?php echo e(number_format($paymentWidgetBalance, 2)); ?></span>
+                <?php if($paymentWidgetPendingAmount > 0): ?>
+                    <br>Pending approval: <span class="font-semibold">₹<?php echo e(number_format($paymentWidgetPendingAmount, 2)); ?></span>
+                <?php endif; ?>
             </div>
         </div>
 
@@ -80,16 +82,16 @@
                 <label class="block text-[10px] text-sky-800 dark:text-sky-200 mb-1">Payment method</label>
                 <select data-payment-method
                         class="w-full rounded-sm border border-sky-200 dark:border-sky-900/60 bg-white dark:bg-gray-950 px-2 py-1 text-[11px] text-gray-900 dark:text-gray-50 focus:outline-none focus:ring-1 focus:ring-sky-400">
-                    @if($paymentWidgetRazorpayEnabled)
-                        <option value="razorpay" @selected($paymentWidgetSelectedMethod === 'razorpay')>Razorpay / online</option>
-                    @endif
-                    @if($paymentWidgetOfflineEnabled)
-                        <option value="bank_transfer" @selected($paymentWidgetSelectedMethod === 'bank_transfer')>NEFT / RTGS / IMPS</option>
-                        <option value="upi" @selected($paymentWidgetSelectedMethod === 'upi')>UPI</option>
-                        <option value="cheque" @selected($paymentWidgetSelectedMethod === 'cheque')>Cheque</option>
-                        <option value="cash" @selected($paymentWidgetSelectedMethod === 'cash')>Cash</option>
-                        <option value="other" @selected($paymentWidgetSelectedMethod === 'other')>Other</option>
-                    @endif
+                    <?php if($paymentWidgetRazorpayEnabled): ?>
+                        <option value="razorpay" <?php if($paymentWidgetSelectedMethod === 'razorpay'): echo 'selected'; endif; ?>>Razorpay / online</option>
+                    <?php endif; ?>
+                    <?php if($paymentWidgetOfflineEnabled): ?>
+                        <option value="bank_transfer" <?php if($paymentWidgetSelectedMethod === 'bank_transfer'): echo 'selected'; endif; ?>>NEFT / RTGS / IMPS</option>
+                        <option value="upi" <?php if($paymentWidgetSelectedMethod === 'upi'): echo 'selected'; endif; ?>>UPI</option>
+                        <option value="cheque" <?php if($paymentWidgetSelectedMethod === 'cheque'): echo 'selected'; endif; ?>>Cheque</option>
+                        <option value="cash" <?php if($paymentWidgetSelectedMethod === 'cash'): echo 'selected'; endif; ?>>Cash</option>
+                        <option value="other" <?php if($paymentWidgetSelectedMethod === 'other'): echo 'selected'; endif; ?>>Other</option>
+                    <?php endif; ?>
                 </select>
             </div>
 
@@ -99,41 +101,41 @@
                        data-payment-amount
                        step="0.01"
                        min="0.01"
-                       max="{{ number_format($paymentWidgetBalance, 2, '.', '') }}"
-                       value="{{ $paymentWidgetDefaultAmount }}"
+                       max="<?php echo e(number_format($paymentWidgetBalance, 2, '.', '')); ?>"
+                       value="<?php echo e($paymentWidgetDefaultAmount); ?>"
                        class="w-full rounded-sm border border-sky-200 dark:border-sky-900/60 bg-white dark:bg-gray-950 px-2 py-1 text-[11px] text-gray-900 dark:text-gray-50 focus:outline-none focus:ring-1 focus:ring-sky-400">
                 <p data-offline-limit-message class="mt-1 text-[10px] text-amber-700 dark:text-amber-300 hidden">
-                    Offline submissions available now: ₹{{ number_format($paymentWidgetOfflineLimit, 2) }}.
+                    Offline submissions available now: ₹<?php echo e(number_format($paymentWidgetOfflineLimit, 2)); ?>.
                 </p>
             </div>
         </div>
 
-        @if($paymentWidgetRazorpayEnabled)
+        <?php if($paymentWidgetRazorpayEnabled): ?>
             <form method="GET"
-                  action="{{ route('invoices.pay.razorpay', $paymentWidgetInvoice) }}"
+                  action="<?php echo e(route('invoices.pay.razorpay', $paymentWidgetInvoice)); ?>"
                   data-razorpay-payment-form
                   class="mt-3">
-                <input type="hidden" name="amount" data-razorpay-amount value="{{ $paymentWidgetDefaultAmount }}">
+                <input type="hidden" name="amount" data-razorpay-amount value="<?php echo e($paymentWidgetDefaultAmount); ?>">
                 <button type="submit"
                         class="inline-flex items-center justify-center rounded-sm border border-gray-900 dark:border-gray-100 bg-gray-900 text-white dark:bg-gray-100 dark:text-gray-900 px-3 py-1.5 text-[11px] font-medium hover:bg-gray-800 dark:hover:bg-gray-200">
-                    {{ $paymentWidgetButtonLabel }} with Razorpay
+                    <?php echo e($paymentWidgetButtonLabel); ?> with Razorpay
                 </button>
                 <p class="mt-2 text-[10px] text-sky-600 dark:text-sky-300">
                     Online payments are applied immediately after Razorpay confirmation.
                 </p>
             </form>
-        @endif
+        <?php endif; ?>
 
-        @if($paymentWidgetOfflineEnabled)
+        <?php if($paymentWidgetOfflineEnabled): ?>
             <form method="POST"
-                  action="{{ route('invoices.offline-payment.store', $paymentWidgetInvoice) }}"
+                  action="<?php echo e(route('invoices.offline-payment.store', $paymentWidgetInvoice)); ?>"
                   enctype="multipart/form-data"
                   data-offline-payment-form
                   class="mt-3 hidden">
-                @csrf
-                <input type="hidden" name="offline_amount" data-offline-amount value="{{ $paymentWidgetDefaultAmount }}">
-                <input type="hidden" name="offline_method" data-offline-method value="{{ $paymentWidgetSelectedMethod === 'razorpay' ? 'bank_transfer' : $paymentWidgetSelectedMethod }}">
-                <input type="hidden" name="offline_paid_on" data-offline-paid-on value="{{ $paymentWidgetPaidOn }}">
+                <?php echo csrf_field(); ?>
+                <input type="hidden" name="offline_amount" data-offline-amount value="<?php echo e($paymentWidgetDefaultAmount); ?>">
+                <input type="hidden" name="offline_method" data-offline-method value="<?php echo e($paymentWidgetSelectedMethod === 'razorpay' ? 'bank_transfer' : $paymentWidgetSelectedMethod); ?>">
+                <input type="hidden" name="offline_paid_on" data-offline-paid-on value="<?php echo e($paymentWidgetPaidOn); ?>">
 
                 <div data-offline-help class="rounded-sm border border-amber-200 dark:border-amber-900/40 bg-amber-50/80 dark:bg-amber-950/20 px-2 py-2 text-[10px] text-amber-800 dark:text-amber-200">
                     Offline payment details are submitted for approval. The invoice balance changes only after Admin / Manager / Accounts approval.
@@ -142,49 +144,49 @@
                 <div data-bank-fields class="mt-3 grid gap-2 sm:grid-cols-2 hidden">
                     <div>
                         <label class="block text-[10px] text-amber-800 dark:text-amber-200 mb-1">UTR / transaction reference</label>
-                        <input type="text" data-offline-field disabled name="offline_reference" value="{{ old('offline_reference') }}" class="w-full rounded-sm border border-amber-200 dark:border-amber-900/60 bg-white dark:bg-gray-950 px-2 py-1 text-[11px] text-gray-900 dark:text-gray-50">
+                        <input type="text" data-offline-field disabled name="offline_reference" value="<?php echo e(old('offline_reference')); ?>" class="w-full rounded-sm border border-amber-200 dark:border-amber-900/60 bg-white dark:bg-gray-950 px-2 py-1 text-[11px] text-gray-900 dark:text-gray-50">
                     </div>
                     <div>
                         <label class="block text-[10px] text-amber-800 dark:text-amber-200 mb-1">Payment date</label>
-                        <input type="date" data-offline-field disabled data-paid-on-source value="{{ $paymentWidgetPaidOn }}" class="w-full rounded-sm border border-amber-200 dark:border-amber-900/60 bg-white dark:bg-gray-950 px-2 py-1 text-[11px] text-gray-900 dark:text-gray-50">
+                        <input type="date" data-offline-field disabled data-paid-on-source value="<?php echo e($paymentWidgetPaidOn); ?>" class="w-full rounded-sm border border-amber-200 dark:border-amber-900/60 bg-white dark:bg-gray-950 px-2 py-1 text-[11px] text-gray-900 dark:text-gray-50">
                     </div>
                     <div>
                         <label class="block text-[10px] text-amber-800 dark:text-amber-200 mb-1">Bank / UPI app name</label>
-                        <input type="text" data-offline-field disabled name="offline_bank_name" value="{{ old('offline_bank_name') }}" class="w-full rounded-sm border border-amber-200 dark:border-amber-900/60 bg-white dark:bg-gray-950 px-2 py-1 text-[11px] text-gray-900 dark:text-gray-50">
+                        <input type="text" data-offline-field disabled name="offline_bank_name" value="<?php echo e(old('offline_bank_name')); ?>" class="w-full rounded-sm border border-amber-200 dark:border-amber-900/60 bg-white dark:bg-gray-950 px-2 py-1 text-[11px] text-gray-900 dark:text-gray-50">
                     </div>
                     <div>
                         <label class="block text-[10px] text-amber-800 dark:text-amber-200 mb-1">Account holder name</label>
-                        <input type="text" data-offline-field disabled name="offline_account_holder_name" value="{{ old('offline_account_holder_name') }}" class="w-full rounded-sm border border-amber-200 dark:border-amber-900/60 bg-white dark:bg-gray-950 px-2 py-1 text-[11px] text-gray-900 dark:text-gray-50">
+                        <input type="text" data-offline-field disabled name="offline_account_holder_name" value="<?php echo e(old('offline_account_holder_name')); ?>" class="w-full rounded-sm border border-amber-200 dark:border-amber-900/60 bg-white dark:bg-gray-950 px-2 py-1 text-[11px] text-gray-900 dark:text-gray-50">
                     </div>
                 </div>
 
                 <div data-cheque-fields class="mt-3 grid gap-2 sm:grid-cols-2 hidden">
                     <div>
                         <label class="block text-[10px] text-amber-800 dark:text-amber-200 mb-1">Cheque number</label>
-                        <input type="text" data-offline-field disabled name="offline_cheque_number" value="{{ old('offline_cheque_number') }}" class="w-full rounded-sm border border-amber-200 dark:border-amber-900/60 bg-white dark:bg-gray-950 px-2 py-1 text-[11px] text-gray-900 dark:text-gray-50">
+                        <input type="text" data-offline-field disabled name="offline_cheque_number" value="<?php echo e(old('offline_cheque_number')); ?>" class="w-full rounded-sm border border-amber-200 dark:border-amber-900/60 bg-white dark:bg-gray-950 px-2 py-1 text-[11px] text-gray-900 dark:text-gray-50">
                     </div>
                     <div>
                         <label class="block text-[10px] text-amber-800 dark:text-amber-200 mb-1">Cheque date</label>
-                        <input type="date" data-offline-field disabled data-paid-on-source name="offline_cheque_date" value="{{ old('offline_cheque_date', $paymentWidgetPaidOn) }}" class="w-full rounded-sm border border-amber-200 dark:border-amber-900/60 bg-white dark:bg-gray-950 px-2 py-1 text-[11px] text-gray-900 dark:text-gray-50">
+                        <input type="date" data-offline-field disabled data-paid-on-source name="offline_cheque_date" value="<?php echo e(old('offline_cheque_date', $paymentWidgetPaidOn)); ?>" class="w-full rounded-sm border border-amber-200 dark:border-amber-900/60 bg-white dark:bg-gray-950 px-2 py-1 text-[11px] text-gray-900 dark:text-gray-50">
                     </div>
                     <div>
                         <label class="block text-[10px] text-amber-800 dark:text-amber-200 mb-1">Cheque bank name</label>
-                        <input type="text" data-offline-field disabled name="offline_cheque_bank_name" value="{{ old('offline_cheque_bank_name') }}" class="w-full rounded-sm border border-amber-200 dark:border-amber-900/60 bg-white dark:bg-gray-950 px-2 py-1 text-[11px] text-gray-900 dark:text-gray-50">
+                        <input type="text" data-offline-field disabled name="offline_cheque_bank_name" value="<?php echo e(old('offline_cheque_bank_name')); ?>" class="w-full rounded-sm border border-amber-200 dark:border-amber-900/60 bg-white dark:bg-gray-950 px-2 py-1 text-[11px] text-gray-900 dark:text-gray-50">
                     </div>
                     <div>
                         <label class="block text-[10px] text-amber-800 dark:text-amber-200 mb-1">Branch, optional</label>
-                        <input type="text" data-offline-field disabled name="offline_cheque_branch_name" value="{{ old('offline_cheque_branch_name') }}" class="w-full rounded-sm border border-amber-200 dark:border-amber-900/60 bg-white dark:bg-gray-950 px-2 py-1 text-[11px] text-gray-900 dark:text-gray-50">
+                        <input type="text" data-offline-field disabled name="offline_cheque_branch_name" value="<?php echo e(old('offline_cheque_branch_name')); ?>" class="w-full rounded-sm border border-amber-200 dark:border-amber-900/60 bg-white dark:bg-gray-950 px-2 py-1 text-[11px] text-gray-900 dark:text-gray-50">
                     </div>
                 </div>
 
                 <div data-other-fields class="mt-3 grid gap-2 sm:grid-cols-2 hidden">
                     <div>
                         <label class="block text-[10px] text-amber-800 dark:text-amber-200 mb-1">Reference / receipt number</label>
-                        <input type="text" data-offline-field disabled name="offline_reference" value="{{ old('offline_reference') }}" class="w-full rounded-sm border border-amber-200 dark:border-amber-900/60 bg-white dark:bg-gray-950 px-2 py-1 text-[11px] text-gray-900 dark:text-gray-50">
+                        <input type="text" data-offline-field disabled name="offline_reference" value="<?php echo e(old('offline_reference')); ?>" class="w-full rounded-sm border border-amber-200 dark:border-amber-900/60 bg-white dark:bg-gray-950 px-2 py-1 text-[11px] text-gray-900 dark:text-gray-50">
                     </div>
                     <div>
                         <label class="block text-[10px] text-amber-800 dark:text-amber-200 mb-1">Payment date</label>
-                        <input type="date" data-offline-field disabled data-paid-on-source value="{{ $paymentWidgetPaidOn }}" class="w-full rounded-sm border border-amber-200 dark:border-amber-900/60 bg-white dark:bg-gray-950 px-2 py-1 text-[11px] text-gray-900 dark:text-gray-50">
+                        <input type="date" data-offline-field disabled data-paid-on-source value="<?php echo e($paymentWidgetPaidOn); ?>" class="w-full rounded-sm border border-amber-200 dark:border-amber-900/60 bg-white dark:bg-gray-950 px-2 py-1 text-[11px] text-gray-900 dark:text-gray-50">
                     </div>
                 </div>
 
@@ -195,7 +197,7 @@
                     </div>
                     <div>
                         <label class="block text-[10px] text-amber-800 dark:text-amber-200 mb-1">Note, optional</label>
-                        <textarea data-offline-field disabled name="offline_note" rows="2" class="w-full rounded-sm border border-amber-200 dark:border-amber-900/60 bg-white dark:bg-gray-950 px-2 py-1 text-[11px] text-gray-900 dark:text-gray-50">{{ old('offline_note') }}</textarea>
+                        <textarea data-offline-field disabled name="offline_note" rows="2" class="w-full rounded-sm border border-amber-200 dark:border-amber-900/60 bg-white dark:bg-gray-950 px-2 py-1 text-[11px] text-gray-900 dark:text-gray-50"><?php echo e(old('offline_note')); ?></textarea>
                     </div>
                 </div>
 
@@ -204,45 +206,49 @@
                     Submit payment details for approval
                 </button>
             </form>
-        @endif
+        <?php endif; ?>
     </div>
-@endif
+<?php endif; ?>
 
-@if($paymentWidgetSubmissions->isNotEmpty())
+<?php if($paymentWidgetSubmissions->isNotEmpty()): ?>
     <div class="mt-3 rounded-sm border border-gray-200 dark:border-gray-800 bg-white dark:bg-gray-900 px-3 py-3">
         <div class="text-[11px] font-semibold text-gray-900 dark:text-gray-50">Submitted offline payments</div>
         <div class="mt-2 space-y-1.5">
-            @foreach($paymentWidgetSubmissions->take(8) as $submission)
+            <?php $__currentLoopData = $paymentWidgetSubmissions->take(8); $__env->addLoop($__currentLoopData); foreach($__currentLoopData as $submission): $__env->incrementLoopIndices(); $loop = $__env->getLastLoop(); ?>
                 <div class="flex items-start justify-between gap-3 rounded-sm border border-gray-100 dark:border-gray-800 px-2 py-1.5 text-[10px]">
                     <div>
                         <div class="font-medium text-gray-800 dark:text-gray-100">
-                            ₹{{ number_format($submission->amount, 2) }} · {{ $submission->method_label }}
+                            ₹<?php echo e(number_format($submission->amount, 2)); ?> · <?php echo e($submission->method_label); ?>
+
                         </div>
                         <div class="text-gray-500 dark:text-gray-400">
-                            {{ optional($submission->paid_on)->format('d M Y') ?? optional($submission->created_at)->format('d M Y') }}
-                            @if($submission->reference)
-                                · Ref: {{ $submission->reference }}
-                            @endif
+                            <?php echo e(optional($submission->paid_on)->format('d M Y') ?? optional($submission->created_at)->format('d M Y')); ?>
+
+                            <?php if($submission->reference): ?>
+                                · Ref: <?php echo e($submission->reference); ?>
+
+                            <?php endif; ?>
                         </div>
-                        @if($submission->admin_note)
-                            <div class="mt-0.5 text-gray-500 dark:text-gray-400">Note: {{ $submission->admin_note }}</div>
-                        @endif
+                        <?php if($submission->admin_note): ?>
+                            <div class="mt-0.5 text-gray-500 dark:text-gray-400">Note: <?php echo e($submission->admin_note); ?></div>
+                        <?php endif; ?>
                     </div>
                     <span class="shrink-0 inline-flex rounded-full px-2 py-0.5
-                        @if($submission->status === 'approved') bg-emerald-100 text-emerald-700 dark:bg-emerald-900/40 dark:text-emerald-300
-                        @elseif($submission->status === 'rejected') bg-red-100 text-red-700 dark:bg-red-900/40 dark:text-red-300
-                        @else bg-amber-100 text-amber-700 dark:bg-amber-900/40 dark:text-amber-300
-                        @endif">
-                        {{ $submission->status_label }}
+                        <?php if($submission->status === 'approved'): ?> bg-emerald-100 text-emerald-700 dark:bg-emerald-900/40 dark:text-emerald-300
+                        <?php elseif($submission->status === 'rejected'): ?> bg-red-100 text-red-700 dark:bg-red-900/40 dark:text-red-300
+                        <?php else: ?> bg-amber-100 text-amber-700 dark:bg-amber-900/40 dark:text-amber-300
+                        <?php endif; ?>">
+                        <?php echo e($submission->status_label); ?>
+
                     </span>
                 </div>
-            @endforeach
+            <?php endforeach; $__env->popLoop(); $loop = $__env->getLastLoop(); ?>
         </div>
     </div>
-@endif
+<?php endif; ?>
 
-@once
-    @push('scripts')
+<?php if (! $__env->hasRenderedOnce('65287dae-c5ef-4394-96a6-4ae22778b364')): $__env->markAsRenderedOnce('65287dae-c5ef-4394-96a6-4ae22778b364'); ?>
+    <?php $__env->startPush('scripts'); ?>
         <script>
             document.addEventListener('DOMContentLoaded', () => {
                 document.querySelectorAll('[data-invoice-payment-widget]').forEach((widget) => {
@@ -346,5 +352,6 @@
                 });
             });
         </script>
-    @endpush
-@endonce
+    <?php $__env->stopPush(); ?>
+<?php endif; ?>
+<?php /**PATH /Users/ooglie/Website/ChatGPT/PRODUCTIONFrozen/BandaraFrozen/resources/views/customer/invoices/partials/payment-widget.blade.php ENDPATH**/ ?>

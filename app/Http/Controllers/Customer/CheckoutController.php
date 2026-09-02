@@ -94,6 +94,7 @@ class CheckoutController extends Controller
         );
 
         $isB2B = (($user->customer_type ?? 'b2c') === 'b2b');
+        $allowUnpaidCheckout = ! $isB2B && $user->canCheckoutWithoutOnlinePayment();
 
         if ($isB2B && $cart->coupon_id) {
             $cart->coupon_id = null;
@@ -119,14 +120,16 @@ class CheckoutController extends Controller
         $deliveryChargeTaxTotal = round((float) ($deliveryQuote['tax_total'] ?? 0), 2);
         $grandTotal = round($taxable + (float) $gst['tax_total'] + $shippingTotal + $deliveryChargeTaxTotal, 2);
 
-        $payLaterOption = app(B2BPayLaterService::class)->checkoutOptionFor($user, $grandTotal);
+        $payLaterOption = $allowUnpaidCheckout
+            ? $this->b2cUnpaidCheckoutOption()
+            : app(B2BPayLaterService::class)->checkoutOptionFor($user, $grandTotal);
 
-        $requestedBandaraCreditPoints = $isB2B ? 0 : max(0, (int) old(
+        $requestedBandaraCreditPoints = ($isB2B || $allowUnpaidCheckout) ? 0 : max(0, (int) old(
             'bandara_credit_points',
             $request->input('bandara_credit_points', 0)
         ));
 
-        $bandaraCreditQuote = $isB2B
+        $bandaraCreditQuote = ($isB2B || $allowUnpaidCheckout)
             ? []
             : $this->bandaraCreditQuoteForCheckout($user, $grandTotal, $requestedBandaraCreditPoints, [
                 'source' => 'checkout_index',
@@ -171,6 +174,7 @@ class CheckoutController extends Controller
             'itemWeight'          => $itemWeight,
             'sellUnit'            => $sellUnit,
             'payLaterOption'      => $payLaterOption,
+            'allowUnpaidCheckout' => $allowUnpaidCheckout,
             'bandaraCreditQuote'  => $bandaraCreditQuote,
             'bandaraCreditRedemption' => $bandaraCreditQuote,
             'bandaraCredit'       => $bandaraCreditQuote,
@@ -188,6 +192,9 @@ class CheckoutController extends Controller
         if ($request->routeIs('b2b.*') && ! $this->isB2BRequest($request)) {
             abort(403, 'B2B checkout is available only to B2B customers.');
         }
+
+        $isB2B = (($user->customer_type ?? 'b2c') === 'b2b');
+        $allowUnpaidCheckout = ! $isB2B && $user->canCheckoutWithoutOnlinePayment();
 
         $addresses = CustomerAddress::query()
             ->where('user_id', $user->id)
@@ -218,7 +225,16 @@ class CheckoutController extends Controller
             $request->merge(['billing_address_id' => $defaultBillingAddress->id]);
         }
 
-        if (! $request->filled('payment_method')) {
+        // Payment mode is decided by the account on the server. A normal B2C
+        // customer cannot enable Pay Later by changing the submitted form.
+        if ($allowUnpaidCheckout) {
+            $request->merge([
+                'payment_method' => 'pay_later',
+                'bandara_credit_points' => 0,
+            ]);
+        } elseif (! $isB2B) {
+            $request->merge(['payment_method' => 'razorpay']);
+        } elseif (! $request->filled('payment_method')) {
             $request->merge(['payment_method' => 'razorpay']);
         }
 
@@ -294,8 +310,6 @@ class CheckoutController extends Controller
         }
 
         // ✅ MOQ enforcement (B2B)
-        $isB2B = (($user->customer_type ?? 'b2c') === 'b2b');
-
         if ($isB2B) {
             $terms = app(\App\Services\B2BTermsService::class);
 
@@ -374,7 +388,9 @@ class CheckoutController extends Controller
         $grandTotal = round($taxable + (float) $gst['tax_total'] + $shippingTotal + $deliveryChargeTaxTotal, 2);
 
         $paymentMethod = (string) ($data['payment_method'] ?? 'razorpay');
-        $payLaterOption = app(B2BPayLaterService::class)->checkoutOptionFor($user, $grandTotal);
+        $payLaterOption = $allowUnpaidCheckout
+            ? $this->b2cUnpaidCheckoutOption()
+            : app(B2BPayLaterService::class)->checkoutOptionFor($user, $grandTotal);
 
         if ($paymentMethod === 'pay_later' && ! ($payLaterOption['eligible'] ?? false)) {
             return redirect()
@@ -383,14 +399,16 @@ class CheckoutController extends Controller
                 ->withInput();
         }
 
-        $requestedBandaraCreditPoints = $isB2B ? 0 : max(0, (int) ($data['bandara_credit_points'] ?? 0));
+        $requestedBandaraCreditPoints = ($isB2B || $allowUnpaidCheckout)
+            ? 0
+            : max(0, (int) ($data['bandara_credit_points'] ?? 0));
         $bandaraCreditQuote = [];
         $bandaraCreditPointsToRedeem = 0;
         $bandaraCreditRedeemAmount = 0.0;
         $grandTotalBeforeBandaraCredit = $grandTotal;
         $payableGrandTotal = $grandTotal;
 
-        if (! $isB2B && $paymentMethod === 'razorpay') {
+        if (! $isB2B && ! $allowUnpaidCheckout && $paymentMethod === 'razorpay') {
             $bandaraCreditQuote = $this->bandaraCreditQuoteForCheckout($user, $grandTotal, $requestedBandaraCreditPoints, [
                 'source' => 'checkout_place',
             ]);
@@ -790,10 +808,10 @@ class CheckoutController extends Controller
             }
 
             if ($paymentMethod === 'pay_later') {
-                // Pay Later is an accepted B2B credit order, not a failed/pending
-                // Razorpay payment. Commit stock immediately inside this transaction
-                // so an inventory failure rolls the order back instead of creating a
-                // due invoice without stock being reserved/removed.
+                // Pay Later and authorised B2C unpaid checkout are accepted invoice
+                // orders, not failed/pending Razorpay payments. Commit stock immediately
+                // inside this transaction so an inventory failure rolls the order back
+                // instead of creating a due invoice without committed inventory.
                 app(OrderInventoryService::class)->commitPaidOrder($order);
             }
 
@@ -821,6 +839,12 @@ class CheckoutController extends Controller
                     'order_id' => $order->id,
                     'error' => $e->getMessage(),
                 ]);
+            }
+
+            if ($allowUnpaidCheckout) {
+                return redirect()
+                    ->route('orders.show', $order)
+                    ->with('status', 'Order placed. Payment will be recorded separately by Bandara.');
             }
 
             $dueLabel = $order->payment_due_at
@@ -851,7 +875,7 @@ class CheckoutController extends Controller
             return redirect()->guest(route('login', ['redirect' => $this->checkoutIndexUrl($request)]));
         }
 
-        if (($user->customer_type ?? 'b2c') === 'b2b') {
+        if (($user->customer_type ?? 'b2c') === 'b2b' || $user->canCheckoutWithoutOnlinePayment()) {
             return redirect()->route('checkout.index');
         }
 
@@ -877,7 +901,9 @@ class CheckoutController extends Controller
 
     public function removeBandaraCredit(Request $request)
     {
-        if (($request->user()?->customer_type ?? 'b2c') === 'b2b') {
+        $user = $request->user();
+
+        if (($user?->customer_type ?? 'b2c') === 'b2b' || $user?->canCheckoutWithoutOnlinePayment()) {
             return redirect()->route('checkout.index');
         }
 
@@ -1102,6 +1128,21 @@ class CheckoutController extends Controller
     protected function isB2BRequest(Request $request): bool
     {
         return (($request->user()?->customer_type ?? 'b2c') === 'b2b');
+    }
+
+    /**
+     * The account flag is the approval for this narrowly scoped B2C flow.
+     * Seven days matches the existing invoice default and does not affect B2B
+     * credit terms, which continue to come from B2BPayLaterService.
+     */
+    private function b2cUnpaidCheckoutOption(): array
+    {
+        return [
+            'eligible' => true,
+            'reason' => null,
+            'terms_days' => 7,
+            'available_credit' => null,
+        ];
     }
 
     protected function addressCreateUrl(Request $request, ?string $returnTo = null): string

@@ -1,0 +1,117 @@
+BANDARA — B2C UNPAID CHECKOUT v1.0
+==================================
+
+WHAT THIS PATCH DOES
+--------------------
+It adds one optional setting to an ordinary B2C customer account:
+
+    Allow checkout without online payment
+
+The setting is OFF by default for every existing and future customer.
+
+When enabled, that customer continues to use the existing /login, Shop, cart,
+delivery-address selection, billing-address selection and checkout. The
+existing "Place order" button remains unchanged. The server skips Razorpay,
+creates the order with payment pending, creates a due invoice, commits stock
+immediately, and leaves payment to be recorded later through the existing
+Admin > Invoices payment facility.
+
+No customer type, route, stylesheet, JavaScript bundle, package or .env value
+is changed.
+
+FILES / DATABASE BACKUP
+-----------------------
+Take a current code and database backup before deployment. This patch was
+prepared from the source-only project uploaded on 2 September 2026.
+
+INSTALLATION
+------------
+1. Extract this ZIP at the Laravel project root, preserving the folders and
+   replacing only the included files.
+2. From the Laravel project root run:
+
+       php artisan migrate --force
+       php artisan optimize:clear
+
+No npm/Vite build is required.
+No Composer install/update is required for this patch.
+Do not change .env.
+
+OPTIONAL TARGETED TEST
+----------------------
+Run this in the normal project environment where vendor/ is installed:
+
+    php artisan test --filter=B2CUnpaidCheckoutCapabilityTest
+
+Run the normal full project test suite before production when practical:
+
+    php artisan test
+
+HOW TO ENABLE IT
+----------------
+1. Sign in at /admin/login as Admin or Manager.
+2. Open Customers > B2C Customers.
+3. Edit the required B2C customer.
+4. Tick "Allow checkout without online payment".
+5. Save.
+6. Sign in at /login using that customer's credentials and place the order
+   through the normal storefront checkout.
+
+EXPECTED RESULT FOR THE ENABLED ACCOUNT
+---------------------------------------
+- B2C pricing, coupon, GST and delivery rules remain unchanged.
+- Delivery and billing addresses are both selected and stored as before.
+- The existing checkout layout and "Place order" button remain unchanged.
+- Bandara Credit redemption is not offered on this unpaid checkout because its
+  current reservation flow is tied to successful online payment.
+- Razorpay is not created or opened.
+- Order status: Processing.
+- Payment status: Pending.
+- Invoice status: Due.
+- Stock is committed immediately through the existing Pay Later inventory
+  finalisation path.
+- Customer invoice/order screens do not offer a payment action for this order.
+- Admin or Manager records full or partial payment from Admin > Invoices.
+
+NORMAL CUSTOMER SAFETY
+----------------------
+For every B2C account where the setting is OFF, the backend forces Razorpay.
+Changing the browser form or URL cannot enable unpaid checkout.
+B2B checkout and its existing Pay Later eligibility checks remain unchanged.
+
+RETURN THE CUSTOMER TO NORMAL RAZORPAY CHECKOUT
+------------------------------------------------
+Edit the same B2C customer, untick the setting, and save. New orders immediately
+return to the normal Razorpay flow. Existing unpaid orders remain payable only
+through the Admin payment-recording process.
+
+DATABASE CHANGE
+---------------
+One additive column is introduced:
+
+    users.allow_unpaid_checkout BOOLEAN NOT NULL DEFAULT FALSE
+
+No existing customer is enabled automatically.
+
+RELEASE FILES
+-------------
+app/Http/Controllers/Admin/B2CCustomerController.php
+app/Http/Controllers/Customer/CheckoutController.php
+app/Http/Controllers/Customer/InvoicePaymentSubmissionController.php
+app/Http/Controllers/Customer/PaymentController.php
+app/Models/User.php
+database/migrations/2026_09_02_000001_add_allow_unpaid_checkout_to_users_table.php
+resources/views/admin/customers/b2c/_form.blade.php
+resources/views/customer/checkout/index.blade.php
+resources/views/customer/invoices/index.blade.php
+resources/views/customer/invoices/partials/payment-widget.blade.php
+tests/Unit/B2CUnpaidCheckoutCapabilityTest.php
+
+ROLLBACK
+--------
+The safest immediate operational rollback is simply to untick the setting for
+the customer. This restores Razorpay for new orders without changing data.
+
+For a complete release rollback, restore the backed-up source files and then
+roll back the new migration through the normal deployment process. Do not drop
+the column while feature code is still deployed.
